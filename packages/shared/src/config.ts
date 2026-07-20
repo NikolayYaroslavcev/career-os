@@ -1,12 +1,43 @@
 import { z } from 'zod';
 
+// z.coerce.number() runs `Number(value)` — for the empty string that's `0`,
+// not NaN, so a blank-but-present line in `.env` (e.g. `AI_TIMEOUT_MS=`, which
+// .env.example uses throughout to mean "unset, use the default") would
+// silently coerce to 0 instead of falling through to .default()/.optional().
+// For AI_TIMEOUT_MS specifically that means AbortSignal.timeout(0) — every AI
+// call aborts instantly. Normalizing '' to undefined before coercion makes a
+// blank value behave the same as an absent one.
+const blankToUndefined = (v: unknown) => (v === '' ? undefined : v);
+
+function numberField(defaultValue: number) {
+  return z.preprocess(blankToUndefined, z.coerce.number().default(defaultValue));
+}
+
+function optionalNumberField() {
+  return z.preprocess(blankToUndefined, z.coerce.number().optional());
+}
+
+// z.coerce.boolean() runs `Boolean(value)`, which is true for any non-empty
+// string — including the literal string "false". A `.env` line like
+// `AI_ENABLED=false` would silently coerce to `true`. Parse "true"/"1" as
+// true and everything else (including blank) as false/default explicitly.
+function booleanField(defaultValue: boolean) {
+  return z.preprocess((v) => {
+    if (typeof v !== 'string') return v;
+    if (v === '') return undefined;
+    return v.toLowerCase() === 'true' || v === '1';
+  }, z.boolean().default(defaultValue));
+}
+
 const configSchema = z.object({
   // App
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z.coerce.number().default(3000),
+  PORT: numberField(3000),
   HOST: z.string().default('0.0.0.0'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   CORS_ORIGIN: z.string().default('http://localhost:3001'),
+  // apps/worker's own HTTP health server (it has no other HTTP interface).
+  WORKER_HEALTH_PORT: numberField(3002),
 
   // Database
   DATABASE_URL: z.string(),
@@ -16,7 +47,7 @@ const configSchema = z.object({
 
   // MinIO
   MINIO_ENDPOINT: z.string().default('localhost'),
-  MINIO_PORT: z.coerce.number().default(9000),
+  MINIO_PORT: numberField(9000),
   MINIO_ACCESS_KEY: z.string().default('minioadmin'),
   MINIO_SECRET_KEY: z.string().default('minioadmin'),
   MINIO_BUCKET: z.string().default('careeros'),
@@ -24,7 +55,7 @@ const configSchema = z.object({
 
   // Mailpit / SMTP
   SMTP_HOST: z.string().default('localhost'),
-  SMTP_PORT: z.coerce.number().default(1025),
+  SMTP_PORT: numberField(1025),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   EMAIL_FROM: z.string().default('CareerOS <noreply@careeros.local>'),
@@ -33,23 +64,28 @@ const configSchema = z.object({
   JWT_SECRET: z.string().min(32),
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
-  ARGON2_MEMORY_COST: z.coerce.number().default(65536),
-  ARGON2_TIME_COST: z.coerce.number().default(3),
-  ARGON2_PARALLELISM: z.coerce.number().default(4),
+  ARGON2_MEMORY_COST: numberField(65536),
+  ARGON2_TIME_COST: numberField(3),
+  ARGON2_PARALLELISM: numberField(4),
 
   // AI
+  // When false, the backend skips AI matching and the vacancy-analysis queue
+  // entirely — search returns persisted vacancies with no scores. Useful for
+  // local development, UI testing, and provider debugging without burning
+  // AI provider quota.
+  AI_ENABLED: booleanField(true),
   AI_PROVIDER: z.string().default('openai'),
   // Overrides the selected provider's hardcoded default model when set. Only
   // applied to the primary AI_PROVIDER — fallback providers (AI_FALLBACK_PROVIDERS)
   // use their own defaults, since model IDs aren't portable across vendors.
   AI_MODEL: z.string().optional(),
   // Overrides the 60s default every provider falls back to when unset.
-  AI_TIMEOUT_MS: z.coerce.number().optional(),
+  AI_TIMEOUT_MS: optionalNumberField(),
   // Comma-separated, ordered list of provider names to fall back to when the
   // primary AI_PROVIDER fails with a retryable error, e.g. "openrouter,openai".
   AI_FALLBACK_PROVIDERS: z.string().optional(),
   // Caps concurrent in-flight AI completion calls; unset means unlimited.
-  AI_MAX_CONCURRENCY: z.coerce.number().optional(),
+  AI_MAX_CONCURRENCY: optionalNumberField(),
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   GROQ_API_KEY: z.string().optional(),
@@ -67,6 +103,9 @@ const configSchema = z.object({
   // Job providers — each is optional; a provider is only registered when its
   // required identifiers are present, so an unconfigured board is silently
   // skipped rather than failing backend startup.
+  // HH (HeadHunter) is the exception: it needs no key to search, so it's
+  // always registered. An access token is optional and only raises rate limits.
+  HH_ACCESS_TOKEN: z.string().optional(),
   GREENHOUSE_BOARD_TOKEN: z.string().optional(),
   GREENHOUSE_COMPANY_NAME: z.string().optional(),
   LEVER_COMPANY: z.string().optional(),

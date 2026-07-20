@@ -39,6 +39,7 @@ import type { AIProvider } from '@careeros/ai';
 import {
   ProviderRegistry,
   createRemoteOKProvider,
+  createHHProvider,
   createGreenhouseProvider,
   createLeverProvider,
   createAshbyProvider,
@@ -94,6 +95,7 @@ export interface Container {
   };
   readonly authProvider: ReturnType<typeof createAuthProvider>;
   readonly providerRegistry: ProviderRegistry;
+  readonly aiProvider: AIProvider;
   readonly applicationService: ApplicationService;
   readonly services: {
     readonly auth: AuthService;
@@ -125,6 +127,17 @@ export interface Container {
 function registerConfiguredProviders(registry: ProviderRegistry, config: Config, logger: ProviderLogger): void {
   registry.register(
     createRemoteOKProvider({
+      logger,
+      metrics: new ProviderInMemoryMetricsCollector(),
+      tracer: new ProviderInMemoryTracer(),
+    })
+  );
+
+  // HH (HeadHunter) requires no API key for search — an access token only
+  // raises rate limits, so it's registered unconditionally, same as RemoteOK.
+  registry.register(
+    createHHProvider({
+      accessToken: config.HH_ACCESS_TOKEN,
       logger,
       metrics: new ProviderInMemoryMetricsCollector(),
       tracer: new ProviderInMemoryTracer(),
@@ -329,8 +342,10 @@ export function buildContainer(config: Config): Container {
     recommendationService,
     resumeRepository,
     userRepository,
+    vacancyRepository,
     vacancyAnalysisQueue,
-    new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info')
+    new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info'),
+    config.AI_ENABLED
   );
 
   const digestMetrics = new ProviderInMemoryMetricsCollector();
@@ -418,6 +433,7 @@ export function buildContainer(config: Config): Container {
     },
     authProvider,
     providerRegistry,
+    aiProvider,
     applicationService,
     services: {
       auth: authService,
