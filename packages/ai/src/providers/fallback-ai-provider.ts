@@ -6,12 +6,15 @@ import { AI_METRICS } from '../observability/ai-metrics.js';
 import type { AILogger } from '../observability/ai-logger.js';
 import { AIRetryPolicy } from '../resilience/retry-policy.js';
 import { AIProviderHealthMonitor } from '../resilience/health-monitor.js';
+import { AIConcurrencyLimiter } from '../resilience/concurrency-limiter.js';
 
 export interface FallbackAIProviderOptions {
   readonly retryPolicy?: AIRetryPolicy;
   readonly healthMonitor?: AIProviderHealthMonitor;
   readonly metrics?: AIMetricsCollector;
   readonly logger?: AILogger;
+  /** Caps concurrent in-flight complete() calls across the whole chain. Unset = unlimited. */
+  readonly concurrencyLimiter?: AIConcurrencyLimiter;
 }
 
 /**
@@ -35,6 +38,7 @@ export class FallbackAIProvider implements AIProvider {
   private readonly healthMonitor: AIProviderHealthMonitor;
   private readonly metrics: AIMetricsCollector | undefined;
   private readonly logger: AILogger | undefined;
+  private readonly concurrencyLimiter: AIConcurrencyLimiter | undefined;
 
   constructor(providers: readonly AIProvider[], options: FallbackAIProviderOptions = {}) {
     if (providers.length === 0) {
@@ -48,6 +52,7 @@ export class FallbackAIProvider implements AIProvider {
     this.healthMonitor = options.healthMonitor ?? new AIProviderHealthMonitor();
     this.metrics = options.metrics;
     this.logger = options.logger;
+    this.concurrencyLimiter = options.concurrencyLimiter;
   }
 
   getCapabilities(): AICapabilities {
@@ -59,6 +64,13 @@ export class FallbackAIProvider implements AIProvider {
   }
 
   async complete(request: AIRequest): Promise<AIResponse> {
+    if (this.concurrencyLimiter) {
+      return this.concurrencyLimiter.run(() => this.completeChain(request));
+    }
+    return this.completeChain(request);
+  }
+
+  private async completeChain(request: AIRequest): Promise<AIResponse> {
     let lastError: unknown;
 
     for (const provider of this.providers) {

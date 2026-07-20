@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { FallbackAIProvider } from '../providers/fallback-ai-provider.js';
 import { AIRetryPolicy } from '../resilience/retry-policy.js';
 import { AIProviderHealthMonitor } from '../resilience/health-monitor.js';
+import { AIConcurrencyLimiter } from '../resilience/concurrency-limiter.js';
 import { InMemoryAIMetricsCollector, AI_METRICS } from '../observability/ai-metrics.js';
 import { AIError, AIErrorType } from '../domain/ai-error.js';
 import type { AIProvider } from '../domain/ai-provider.js';
@@ -143,5 +144,31 @@ describe('FallbackAIProvider', () => {
     expect(metrics.getCounter(AI_METRICS.PROVIDER_SUCCESS)).toBe(1);
     expect(metrics.getHistogram(AI_METRICS.TOKENS_TOTAL)).toEqual([30]);
     expect(healthMonitor.getStatus('primary')?.consecutiveFailures).toBe(0); // reset by the eventual success
+  });
+
+  it('routes complete() through the injected concurrency limiter', async () => {
+    const primary = makeProvider('primary');
+    let resolveComplete!: (response: AIResponse) => void;
+    primary.complete.mockImplementation(
+      () => new Promise<AIResponse>((resolve) => {
+        resolveComplete = resolve;
+      })
+    );
+
+    const concurrencyLimiter = new AIConcurrencyLimiter(1);
+    const fallback = new FallbackAIProvider([primary], { concurrencyLimiter, retryPolicy: noDelayRetryPolicy() });
+
+    const inFlight = fallback.complete(baseRequest);
+    expect(concurrencyLimiter.activeCount).toBe(1);
+
+    // The limiter's own `await acquire()` needs a microtask turn to resume
+    // before execution cascades down to provider.complete() and assigns
+    // resolveComplete — flush that turn before calling it.
+    await Promise.resolve();
+
+    resolveComplete(makeResponse());
+    await inFlight;
+
+    expect(concurrencyLimiter.activeCount).toBe(0);
   });
 });

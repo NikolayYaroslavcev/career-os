@@ -127,3 +127,4 @@ export type {
   AIProviderHealthStatus,
 } from './resilience/health-monitor.js';
 export { AIProviderHealthMonitor, DEFAULT_AI_PROVIDER_HEALTH_CONFIG } from './resilience/health-monitor.js';
+export { AIConcurrencyLimiter } from './resilience/concurrency-limiter.js';

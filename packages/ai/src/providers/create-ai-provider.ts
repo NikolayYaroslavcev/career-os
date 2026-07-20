@@ -9,6 +9,7 @@ import { GroqProvider } from './groq-provider.js';
 import { FallbackAIProvider } from './fallback-ai-provider.js';
 import { AIRetryPolicy } from '../resilience/retry-policy.js';
 import { AIProviderHealthMonitor } from '../resilience/health-monitor.js';
+import { AIConcurrencyLimiter } from '../resilience/concurrency-limiter.js';
 
 export type SupportedAIProviderName = 'openai' | 'anthropic' | 'groq' | 'gemini' | 'openrouter';
 
@@ -68,6 +69,7 @@ export interface AIProviderEnvConfig {
   readonly AI_MODEL?: string;
   readonly AI_TIMEOUT_MS?: number;
   readonly AI_FALLBACK_PROVIDERS?: string;
+  readonly AI_MAX_CONCURRENCY?: number;
   readonly OPENAI_API_KEY?: string;
   readonly ANTHROPIC_API_KEY?: string;
   readonly GROQ_API_KEY?: string;
@@ -118,6 +120,7 @@ export interface AIProviderRuntimeDeps {
   readonly logger?: AILogger;
   readonly retryPolicy?: AIRetryPolicy;
   readonly healthMonitor?: AIProviderHealthMonitor;
+  readonly concurrencyLimiter?: AIConcurrencyLimiter;
 }
 
 /**
@@ -155,5 +158,8 @@ export function createPrimaryAIProviderFromEnv(
     // unconfigured, matching historical behavior (it just fails at call time).
     .filter((provider, index) => index === 0 || provider.validateConfig());
 
-  return new FallbackAIProvider(providers, deps);
+  return new FallbackAIProvider(providers, {
+    ...deps,
+    concurrencyLimiter: deps.concurrencyLimiter ?? new AIConcurrencyLimiter(config.AI_MAX_CONCURRENCY),
+  });
 }
