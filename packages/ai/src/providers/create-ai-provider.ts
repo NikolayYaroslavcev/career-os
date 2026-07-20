@@ -1,9 +1,14 @@
 import type { AIProvider, AIProviderConfig } from '../domain/ai-provider.js';
+import type { AIMetricsCollector } from '../observability/ai-metrics.js';
+import type { AILogger } from '../observability/ai-logger.js';
 import { OpenAIProvider } from './openai-provider.js';
 import { AnthropicProvider } from './anthropic-provider.js';
 import { GeminiProvider } from './gemini-provider.js';
 import { OpenRouterProvider } from './openrouter-provider.js';
 import { GroqProvider } from './groq-provider.js';
+import { FallbackAIProvider } from './fallback-ai-provider.js';
+import { AIRetryPolicy } from '../resilience/retry-policy.js';
+import { AIProviderHealthMonitor } from '../resilience/health-monitor.js';
 
 export type SupportedAIProviderName = 'openai' | 'anthropic' | 'groq' | 'gemini' | 'openrouter';
 
@@ -62,6 +67,7 @@ export interface AIProviderEnvConfig {
   readonly AI_PROVIDER?: string;
   readonly AI_MODEL?: string;
   readonly AI_TIMEOUT_MS?: number;
+  readonly AI_FALLBACK_PROVIDERS?: string;
   readonly OPENAI_API_KEY?: string;
   readonly ANTHROPIC_API_KEY?: string;
   readonly GROQ_API_KEY?: string;
@@ -86,18 +92,68 @@ export function resolveAIProviderApiKey(provider: SupportedAIProviderName, confi
 }
 
 /**
+ * Builds the ordered provider-name chain: the primary first, then
+ * AI_FALLBACK_PROVIDERS' entries (comma-separated), skipping unrecognized
+ * names, duplicates, and the primary itself if it's repeated in the list.
+ */
+export function resolveAIProviderChain(
+  primary: SupportedAIProviderName,
+  fallbackList: string | undefined
+): readonly SupportedAIProviderName[] {
+  const seen = new Set<SupportedAIProviderName>([primary]);
+  const fallbacks: SupportedAIProviderName[] = [];
+
+  for (const raw of (fallbackList ?? '').split(',')) {
+    const name = raw.trim();
+    if (!name || !isSupportedAIProviderName(name) || seen.has(name)) continue;
+    seen.add(name);
+    fallbacks.push(name);
+  }
+
+  return [primary, ...fallbacks];
+}
+
+export interface AIProviderRuntimeDeps {
+  readonly metrics?: AIMetricsCollector;
+  readonly logger?: AILogger;
+  readonly retryPolicy?: AIRetryPolicy;
+  readonly healthMonitor?: AIProviderHealthMonitor;
+}
+
+/**
  * The one source of truth for turning env-shaped config into a ready-to-use
  * primary `AIProvider` — resolves provider name, API key, model override, and
- * timeout override in one place instead of each app re-deriving them.
+ * timeout override, builds the AI_FALLBACK_PROVIDERS chain, and wraps it all
+ * in a FallbackAIProvider (retry + health tracking + metrics, on by default
+ * even for a single-provider chain — see FallbackAIProvider).
+ *
+ * Shared between apps/backend and apps/worker instead of each app re-deriving
+ * this mapping itself.
  */
-export function createPrimaryAIProviderFromEnv(config: AIProviderEnvConfig): AIProvider {
-  const provider = resolveAIProviderName(config.AI_PROVIDER);
-  return createAIProviderFromConfig({
-    provider,
-    config: {
-      apiKey: resolveAIProviderApiKey(provider, config),
-      model: config.AI_MODEL,
-      timeoutMs: config.AI_TIMEOUT_MS,
-    },
-  });
+export function createPrimaryAIProviderFromEnv(
+  config: AIProviderEnvConfig,
+  deps: AIProviderRuntimeDeps = {}
+): AIProvider {
+  const primary = resolveAIProviderName(config.AI_PROVIDER);
+  const chain = resolveAIProviderChain(primary, config.AI_FALLBACK_PROVIDERS);
+
+  const providers = chain
+    .map((name) =>
+      createAIProviderFromConfig({
+        provider: name,
+        config: {
+          apiKey: resolveAIProviderApiKey(name, config),
+          // AI_MODEL only applies to the primary — model IDs aren't portable
+          // across vendors (e.g. OpenRouter needs "anthropic/claude-...").
+          model: name === primary ? config.AI_MODEL : undefined,
+          timeoutMs: config.AI_TIMEOUT_MS,
+        },
+      })
+    )
+    // Drop unconfigured fallbacks (missing API key) rather than including a
+    // provider that would fail every call; always keep the primary, even if
+    // unconfigured, matching historical behavior (it just fails at call time).
+    .filter((provider, index) => index === 0 || provider.validateConfig());
+
+  return new FallbackAIProvider(providers, deps);
 }

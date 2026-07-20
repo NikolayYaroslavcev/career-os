@@ -104,12 +104,26 @@ export type {
   SupportedAIProviderName,
   CreateAIProviderInput,
   AIProviderEnvConfig,
+  AIProviderRuntimeDeps,
 } from './providers/create-ai-provider.js';
 export {
   createAIProviderFromConfig,
   createPrimaryAIProviderFromEnv,
   resolveAIProviderName,
   resolveAIProviderApiKey,
+  resolveAIProviderChain,
   isSupportedAIProviderName,
   SUPPORTED_AI_PROVIDER_NAMES,
 } from './providers/create-ai-provider.js';
+export type { FallbackAIProviderOptions } from './providers/fallback-ai-provider.js';
+export { FallbackAIProvider } from './providers/fallback-ai-provider.js';
+
+// Resilience
+export type { AIRetryConfig } from './resilience/retry-policy.js';
+export { AIRetryPolicy, DEFAULT_AI_RETRY_CONFIG } from './resilience/retry-policy.js';
+export type {
+  AIProviderHealthConfig,
+  AIProviderHealthState,
+  AIProviderHealthStatus,
+} from './resilience/health-monitor.js';
+export { AIProviderHealthMonitor, DEFAULT_AI_PROVIDER_HEALTH_CONFIG } from './resilience/health-monitor.js';

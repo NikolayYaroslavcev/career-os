@@ -137,9 +137,14 @@ describe('Container AI Provider Selection', () => {
 
     // apps/backend no longer resolves provider name/API key itself — it hands
     // the whole config to packages/ai's createPrimaryAIProviderFromEnv, the
-    // one place that owns that mapping (also used by apps/worker).
-    expect(createPrimaryAIProviderFromEnv).toHaveBeenCalledWith(config);
+    // one place that owns that mapping (also used by apps/worker), plus a
+    // logger/metrics collector for the resilience wrapper to report through.
     expect(createPrimaryAIProviderFromEnv).toHaveBeenCalledTimes(1);
+    const [calledConfig, deps] = (createPrimaryAIProviderFromEnv as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(calledConfig).toBe(config);
+    expect(deps).toEqual(
+      expect.objectContaining({ logger: expect.anything(), metrics: expect.anything() })
+    );
   });
 
   it('pins a separate, cheaper Groq model for search profile suggestion, distinct from vacancy matching', async () => {

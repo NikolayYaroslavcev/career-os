@@ -53,7 +53,10 @@ function createTelegramClient(config: Config): TelegramClient {
 // for provider-name -> implementation resolution, shared with apps/backend;
 // this wrapper only exists because apps can't import another app's src (ADR-016).
 export function createAIProvider(config: Config): AIProvider {
-  return createPrimaryAIProviderFromEnv(config);
+  return createPrimaryAIProviderFromEnv(config, {
+    logger: new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info'),
+    metrics: new InMemoryAIMetricsCollector(),
+  });
 }
 
 export function buildWorkerContainer(config: Config): WorkerContainer {
