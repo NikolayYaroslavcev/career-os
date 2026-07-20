@@ -90,6 +90,10 @@ vi.mock('@careeros/providers', () => ({
   })),
   InMemoryMetricsCollector: vi.fn(),
   InMemoryTracer: vi.fn(),
+  ProviderHealthMonitor: vi.fn().mockImplementation(() => ({
+    getStatus: vi.fn(),
+    getAllStatuses: vi.fn().mockReturnValue([]),
+  })),
 }));
 
 const mockConfig = {
@@ -118,12 +122,20 @@ const mockConfig = {
   ARGON2_PARALLELISM: 4,
   AI_ENABLED: true,
   AI_PROVIDER: 'openai',
+  AI_MAX_CANDIDATES: 15,
+  AI_MATCHING_CONCURRENCY: 5,
+  AI_BATCH_SIZE: 15,
   OPENAI_API_KEY: '',
   ANTHROPIC_API_KEY: '',
   GROQ_API_KEY: '',
   GROQ_SUGGESTION_MODEL: 'llama-3.1-8b-instant',
   TELEGRAM_BOT_TOKEN: '',
   TELEGRAM_WEBHOOK_URL: '',
+  PROVIDER_SEARCH_LIMIT: 50,
+  PROVIDER_TIMEOUT_MS: 15_000,
+  MIN_RELEVANCE_SCORE: 1,
+  WORKER_CONCURRENCY: 5,
+  DIAGNOSTICS_ENABLED: false,
 };
 
 describe('Container AI Provider Selection', () => {

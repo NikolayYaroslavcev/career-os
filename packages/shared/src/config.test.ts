@@ -55,4 +55,44 @@ describe('Config', () => {
       expect(loadConfig().AI_ENABLED).toBe(true);
     });
   });
+
+  describe('EPIC-17 configurable pipeline limits', () => {
+    it('defaults every new pipeline knob when unset', () => {
+      resetConfig();
+      const config = loadConfig();
+
+      expect(config.AI_MAX_CANDIDATES).toBe(15);
+      expect(config.AI_MATCHING_CONCURRENCY).toBe(5);
+      expect(config.AI_BATCH_SIZE).toBe(15);
+      expect(config.PROVIDER_SEARCH_LIMIT).toBe(50);
+      expect(config.PROVIDER_TIMEOUT_MS).toBe(15_000);
+      expect(config.MIN_RELEVANCE_SCORE).toBe(1);
+      expect(config.WORKER_CONCURRENCY).toBe(5);
+      expect(config.DIAGNOSTICS_ENABLED).toBe(false);
+    });
+
+    it('reads overrides from the environment', () => {
+      process.env.AI_MAX_CANDIDATES = '25';
+      process.env.PROVIDER_TIMEOUT_MS = '30000';
+      process.env.DIAGNOSTICS_ENABLED = 'true';
+      resetConfig();
+
+      const config = loadConfig();
+      expect(config.AI_MAX_CANDIDATES).toBe(25);
+      expect(config.PROVIDER_TIMEOUT_MS).toBe(30_000);
+      expect(config.DIAGNOSTICS_ENABLED).toBe(true);
+    });
+
+    it('treats a blank numeric value the same as unset (uses the default, not 0)', () => {
+      process.env.PROVIDER_SEARCH_LIMIT = '';
+      resetConfig();
+      expect(loadConfig().PROVIDER_SEARCH_LIMIT).toBe(50);
+    });
+
+    it('parses DIAGNOSTICS_ENABLED="false" as false, not JS Boolean() truthy-string coercion', () => {
+      process.env.DIAGNOSTICS_ENABLED = 'false';
+      resetConfig();
+      expect(loadConfig().DIAGNOSTICS_ENABLED).toBe(false);
+    });
+  });
 });

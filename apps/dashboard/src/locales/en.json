@@ -18,7 +18,8 @@
     "searchProfiles": "Search Profiles",
     "findVacancies": "Find Vacancies",
     "applications": "Applications",
-    "telegram": "Telegram"
+    "telegram": "Telegram",
+    "diagnostics": "Diagnostics"
   },
   "shell": {
     "logout": "Log out"

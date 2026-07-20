@@ -15,12 +15,14 @@ import {
 } from '@careeros/providers';
 import type { FakeProviderBehavior } from '@careeros/providers';
 import { InMemoryTelegramClient } from '@careeros/telegram';
+import { InMemoryAiBatchBacklog } from '@careeros/shared';
 import { SearchProfileService } from '../services/search-profile-service.js';
 import { ProviderSearchService } from '../services/provider-search-service.js';
 import { AiMatchingService } from '../services/ai-matching-service.js';
 import { RecommendationService } from '../services/recommendation-service.js';
 import { ApplicationCreationService } from '../services/application-creation-service.js';
 import { IntelligenceWorkflowService } from '../services/intelligence-workflow-service.js';
+import { SearchRunTraceRecorder } from '../services/search-run-trace.js';
 import { MorningDigestService } from '../services/morning-digest-service.js';
 import { DigestBuilder } from '../services/digest-builder.js';
 import { TelegramDigestFormatter } from '../services/telegram-digest-formatter.js';
@@ -77,6 +79,8 @@ export interface TestWorkflow {
   readonly providerMetrics: ProviderInMemoryMetricsCollector;
   readonly telegramClient: InMemoryTelegramClient;
   readonly vacancyAnalysisQueue: InMemoryVacancyAnalysisQueue;
+  readonly aiBatchBacklog: InMemoryAiBatchBacklog;
+  readonly searchRunTraces: SearchRunTraceRecorder;
 }
 
 /**
@@ -131,6 +135,8 @@ export function buildTestWorkflow(providerBehavior?: FakeProviderBehavior, optio
   const recommendationService = new RecommendationService(aiMetrics);
   const applicationCreationService = new ApplicationCreationService(applicationService);
   const vacancyAnalysisQueue = new InMemoryVacancyAnalysisQueue();
+  const aiBatchBacklog = new InMemoryAiBatchBacklog();
+  const searchRunTraces = new SearchRunTraceRecorder();
   const intelligenceWorkflowService = new IntelligenceWorkflowService(
     searchProfileService,
     providerSearchService,
@@ -141,7 +147,9 @@ export function buildTestWorkflow(providerBehavior?: FakeProviderBehavior, optio
     vacancyRepository,
     vacancyAnalysisQueue,
     new NoopAILogger(),
-    options?.aiEnabled ?? true
+    options?.aiEnabled ?? true,
+    aiBatchBacklog,
+    searchRunTraces
   );
 
   const digestBuilder = new DigestBuilder();
@@ -207,5 +215,7 @@ export function buildTestWorkflow(providerBehavior?: FakeProviderBehavior, optio
     providerMetrics,
     telegramClient,
     vacancyAnalysisQueue,
+    aiBatchBacklog,
+    searchRunTraces,
   };
 }

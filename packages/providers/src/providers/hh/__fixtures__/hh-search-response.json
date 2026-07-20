@@ -1,0 +1,102 @@
+{
+  "items": [
+    {
+      "id": "98765432",
+      "premium": false,
+      "name": "Frontend Developer (React)",
+      "area": { "id": "1", "name": "Москва", "url": "https://api.hh.ru/areas/1" },
+      "salary": { "from": 200000, "to": 300000, "currency": "RUR", "gross": true },
+      "address": null,
+      "response_letter_required": false,
+      "published_at": "2026-07-15T10:00:00+0300",
+      "created_at": "2026-07-15T10:00:00+0300",
+      "archived": false,
+      "url": "https://api.hh.ru/vacancies/98765432?host=hh.ru",
+      "alternate_url": "https://hh.ru/vacancy/98765432",
+      "employer": {
+        "id": "111",
+        "name": "Tech Company LLC",
+        "url": "https://api.hh.ru/employers/111",
+        "alternate_url": "https://hh.ru/employer/111",
+        "logo_urls": { "original": "https://hhcdn.ru/logo/111.png" },
+        "vacancies_url": "https://api.hh.ru/vacancies?employer_id=111",
+        "trusted": true
+      },
+      "snippet": {
+        "requirement": "Опыт работы с <highlighttext>React</highlighttext> от 2 лет. Знание TypeScript и Redux.",
+        "responsibility": "Разработка и поддержка пользовательских интерфейсов на <highlighttext>React</highlighttext>."
+      },
+      "schedule": { "id": "fullDay", "name": "Полный день" },
+      "accept_temporary": false,
+      "professional_roles": [{ "id": "96", "name": "Программист, разработчик" }],
+      "experience": { "id": "between1And3", "name": "От 1 года до 3 лет" },
+      "employment": { "id": "full", "name": "Полная занятость" }
+    },
+    {
+      "id": "98765433",
+      "premium": false,
+      "name": "Backend Engineer (Remote)",
+      "area": { "id": "2", "name": "Санкт-Петербург", "url": "https://api.hh.ru/areas/2" },
+      "salary": null,
+      "address": null,
+      "response_letter_required": false,
+      "published_at": "2026-07-14T09:30:00+0300",
+      "created_at": "2026-07-14T09:30:00+0300",
+      "archived": false,
+      "url": "https://api.hh.ru/vacancies/98765433?host=hh.ru",
+      "alternate_url": "https://hh.ru/vacancy/98765433",
+      "employer": {
+        "id": "222",
+        "name": "Remote First Inc",
+        "url": "https://api.hh.ru/employers/222",
+        "alternate_url": "https://hh.ru/employer/222",
+        "vacancies_url": "https://api.hh.ru/vacancies?employer_id=222",
+        "trusted": true
+      },
+      "snippet": {
+        "requirement": "Node.js, PostgreSQL, Docker. Опыт от 3 лет.",
+        "responsibility": "Проектирование и разработка backend-сервисов."
+      },
+      "schedule": { "id": "remote", "name": "Удаленная работа" },
+      "accept_temporary": false,
+      "professional_roles": [{ "id": "96", "name": "Программист, разработчик" }],
+      "experience": { "id": "between3And6", "name": "От 3 до 6 лет" },
+      "employment": { "id": "full", "name": "Полная занятость" }
+    },
+    {
+      "id": "98765434",
+      "premium": true,
+      "name": "Junior QA Engineer",
+      "area": { "id": "1", "name": "Москва", "url": "https://api.hh.ru/areas/1" },
+      "salary": { "from": null, "to": 80000, "currency": "RUR", "gross": false },
+      "address": null,
+      "response_letter_required": false,
+      "published_at": "2026-07-13T12:00:00+0300",
+      "created_at": "2026-07-13T12:00:00+0300",
+      "archived": false,
+      "url": "https://api.hh.ru/vacancies/98765434?host=hh.ru",
+      "alternate_url": "https://hh.ru/vacancy/98765434",
+      "employer": {
+        "id": "333",
+        "name": "QA Solutions",
+        "url": "https://api.hh.ru/employers/333",
+        "alternate_url": "https://hh.ru/employer/333",
+        "vacancies_url": "https://api.hh.ru/vacancies?employer_id=333",
+        "trusted": false
+      },
+      "snippet": {
+        "requirement": null,
+        "responsibility": "Тестирование веб-приложений, написание тест-кейсов."
+      },
+      "schedule": { "id": "fullDay", "name": "Полный день" },
+      "accept_temporary": false,
+      "professional_roles": [{ "id": "124", "name": "Тестировщик" }],
+      "experience": { "id": "noExperience", "name": "Нет опыта" },
+      "employment": { "id": "full", "name": "Полная занятость" }
+    }
+  ],
+  "found": 3,
+  "pages": 1,
+  "per_page": 100,
+  "page": 0
+}

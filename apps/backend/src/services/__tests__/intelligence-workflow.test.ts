@@ -70,6 +70,60 @@ describe('IntelligenceWorkflowService (Search Profile -> Provider -> AI Matching
       expect(workflow.vacancyAnalysisQueue.enqueued).toHaveLength(15);
     });
 
+    it('pushes candidates ranked beyond the first batch onto the continuation backlog (EPIC-17 Part 6) instead of discarding them', async () => {
+      workflow = buildTestWorkflow({ jobsToReturn: 91 });
+
+      const resume = buildFixtureResume();
+      await workflow.repositories.resume.save(resume);
+      const profile = buildFixtureSearchProfile();
+      await workflow.repositories.searchProfile.save(profile, {});
+
+      await workflow.services.intelligenceWorkflow.run({ userId: FIXTURE_USER_ID });
+
+      // All 91 fixture vacancies score >= the default minScore of 0, so every
+      // one of the 76 that didn't make the first Top-15 batch is a genuine
+      // "ranked below the cut" candidate (outside_top_n), not a dead-end
+      // (low_relevance) — all 76 belong in the backlog for later batches.
+      expect(await workflow.aiBatchBacklog.remaining(profile.id)).toBe(76);
+    });
+
+    it('records a search run trace (EPIC-17 Part 4) with per-stage counts and a per-vacancy exclusion reason for every non-included vacancy', async () => {
+      workflow = buildTestWorkflow({ jobsToReturn: 91 });
+
+      const resume = buildFixtureResume();
+      await workflow.repositories.resume.save(resume);
+      const profile = buildFixtureSearchProfile();
+      await workflow.repositories.searchProfile.save(profile, {});
+
+      await workflow.services.intelligenceWorkflow.run({ userId: FIXTURE_USER_ID });
+
+      const traces = workflow.searchRunTraces.getAll();
+      expect(traces).toHaveLength(1);
+      const trace = traces[0]!;
+
+      expect(trace.searchProfileId).toBe(profile.id);
+      expect(trace.awaitedAiMatching).toBe(false);
+
+      const stageNames = trace.stages.map((s) => s.name);
+      expect(stageNames).toEqual([
+        'Provider Fetch',
+        'Normalization',
+        'Deduplication',
+        'Rule Filtering',
+        'AI Selection',
+        'Keyword Ranking',
+        'Queue',
+      ]);
+
+      const queueStage = trace.stages.find((s) => s.name === 'Queue')!;
+      expect(queueStage.output).toBe(15);
+      expect(queueStage.success).toBe(true);
+
+      // 76 outside_top_n exclusions accounts for every vacancy not enqueued.
+      expect(trace.exclusions.filter((e) => e.reason === 'outside_top_n')).toHaveLength(76);
+      expect(trace.exclusions.filter((e) => e.reason === 'duplicate')).toHaveLength(0);
+    });
+
     it('skips AI and the queue entirely when AI_ENABLED is false, still returning all persisted vacancies', async () => {
       workflow = buildTestWorkflow({ jobsToReturn: 4 }, { aiEnabled: false });
 

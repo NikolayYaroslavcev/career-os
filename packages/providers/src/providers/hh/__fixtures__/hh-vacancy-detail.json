@@ -1,0 +1,38 @@
+{
+  "id": "98765432",
+  "premium": false,
+  "name": "Frontend Developer (React)",
+  "area": { "id": "1", "name": "Москва", "url": "https://api.hh.ru/areas/1" },
+  "salary": { "from": 200000, "to": 300000, "currency": "RUR", "gross": true },
+  "address": null,
+  "response_letter_required": false,
+  "published_at": "2026-07-15T10:00:00+0300",
+  "created_at": "2026-07-15T10:00:00+0300",
+  "archived": false,
+  "url": "https://api.hh.ru/vacancies/98765432?host=hh.ru",
+  "alternate_url": "https://hh.ru/vacancy/98765432",
+  "employer": {
+    "id": "111",
+    "name": "Tech Company LLC",
+    "url": "https://api.hh.ru/employers/111",
+    "alternate_url": "https://hh.ru/employer/111",
+    "logo_urls": { "original": "https://hhcdn.ru/logo/111.png" },
+    "vacancies_url": "https://api.hh.ru/vacancies?employer_id=111",
+    "trusted": true
+  },
+  "snippet": {
+    "requirement": "Опыт работы с <highlighttext>React</highlighttext> от 2 лет.",
+    "responsibility": "Разработка пользовательских интерфейсов."
+  },
+  "schedule": { "id": "fullDay", "name": "Полный день" },
+  "accept_temporary": false,
+  "professional_roles": [{ "id": "96", "name": "Программист, разработчик" }],
+  "experience": { "id": "between1And3", "name": "От 1 года до 3 лет" },
+  "employment": { "id": "full", "name": "Полная занятость" },
+  "description": "<p><strong>О компании:</strong> Мы разрабатываем SaaS-продукты для e-commerce.</p><p><strong>Обязанности:</strong></p><ul><li>Разработка UI на React и TypeScript</li><li>Код-ревью</li></ul><p><strong>Требования:</strong></p><ul><li>Опыт с React от 2 лет</li><li>Знание Redux, TypeScript</li></ul>",
+  "key_skills": [
+    { "name": "React" },
+    { "name": "TypeScript" },
+    { "name": "Redux" }
+  ]
+}

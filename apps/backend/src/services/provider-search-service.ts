@@ -21,7 +21,11 @@ import type {
   MetricsCollector,
   ExperienceLevel as ProviderExperienceLevel,
 } from '@careeros/providers';
+import type { ProviderDiagnosticsService } from './provider-diagnostics-service.js';
 
+// Fallback defaults only used if a caller omits the config-sourced constructor
+// args below (e.g. older tests) — production wiring always passes explicit
+// values from Config (PROVIDER_SEARCH_LIMIT / PROVIDER_TIMEOUT_MS / MIN_RELEVANCE_SCORE).
 const DEFAULT_SEARCH_LIMIT = 50;
 const MIN_RELEVANCE_SCORE = 1;
 const DEFAULT_PROVIDER_TIMEOUT_MS = 15_000;
@@ -33,6 +37,14 @@ export interface ProviderSearchProviderStats {
   readonly durationMs: number;
   readonly timedOut?: boolean;
   readonly error?: string;
+  /** Raw jobs the fetcher returned, before mapping/normalization/validation. */
+  readonly rawFetchedCount?: number;
+  /** Passed Normalizer.validate() — same population `fetched` already reports. */
+  readonly normalizedCount?: number;
+  /** Failed Normalizer.validate() — previously discarded entirely (see DefaultProviderJob.search()'s `normalization.failed`). */
+  readonly parseFailureCount?: number;
+  /** The specific vacancies that failed, for per-vacancy search diagnostics. */
+  readonly parseFailures?: readonly { readonly sourceId: string; readonly reason: string }[];
 }
 
 export interface ProviderSearchStats {
@@ -45,6 +57,12 @@ export interface ProviderSearchStats {
   readonly fetchDurationMs: number;
   /** The per-vacancy persist loop only — isolated so callers can tell fetch latency apart from DB latency. */
   readonly persistDurationMs: number;
+  /** Cross-provider survivors after DeduplicationEngine — previously only logged, not returned. */
+  readonly deduplicatedCount: number;
+  /** Survivors after the local keyword relevance filter — previously only logged, not returned. */
+  readonly filteredCount: number;
+  /** NormalizedVacancy.id (`source:sourceId`) of every vacancy dropped as a cross-provider duplicate — for per-vacancy search diagnostics. */
+  readonly duplicateVacancyIds: readonly string[];
   readonly perProvider: readonly ProviderSearchProviderStats[];
 }
 
@@ -67,7 +85,10 @@ export class ProviderSearchService {
     private readonly companyRepository: CompanyRepository,
     private readonly logger: Logger,
     private readonly metrics: MetricsCollector,
-    private readonly providerTimeoutMs: number = DEFAULT_PROVIDER_TIMEOUT_MS
+    private readonly providerTimeoutMs: number = DEFAULT_PROVIDER_TIMEOUT_MS,
+    private readonly searchLimit: number = DEFAULT_SEARCH_LIMIT,
+    private readonly minRelevanceScore: number = MIN_RELEVANCE_SCORE,
+    private readonly diagnostics?: ProviderDiagnosticsService
   ) {}
 
   /**
@@ -133,8 +154,8 @@ export class ProviderSearchService {
       );
     }
 
-    const deduped = this.deduplicate(fetchedVacancies);
-    const filtered = filterByRelevance(deduped, profile);
+    const { unique: deduped, duplicateIds } = this.deduplicate(fetchedVacancies);
+    const filtered = filterByRelevance(deduped, profile, this.minRelevanceScore);
 
     this.logger.info('Relevance filtering applied', {
       beforeFilter: deduped.length,
@@ -169,6 +190,8 @@ export class ProviderSearchService {
       durationMs,
     });
 
+    this.recordProviderDiagnostics(perProvider, deduped, filtered, persisted);
+
     return {
       vacancies: persisted,
       stats: {
@@ -179,9 +202,46 @@ export class ProviderSearchService {
         durationMs,
         fetchDurationMs,
         persistDurationMs,
+        deduplicatedCount: deduped.length,
+        filteredCount: filtered.length,
+        duplicateVacancyIds: duplicateIds,
         perProvider,
       },
     };
+  }
+
+  /**
+   * Records one ProviderFetchDiagnostics snapshot per provider by grouping
+   * each pipeline stage's output on NormalizedVacancy/Vacancy's `.source`
+   * field — no restructuring of the fetch/dedup/filter pipeline itself, just
+   * counting what's already there before it's discarded.
+   */
+  private recordProviderDiagnostics(
+    perProvider: readonly ProviderSearchProviderStats[],
+    deduped: readonly NormalizedVacancy[],
+    filtered: readonly NormalizedVacancy[],
+    persisted: readonly Vacancy[]
+  ): void {
+    if (!this.diagnostics) return;
+
+    const dedupedCounts = countBySource(deduped, (v) => v.source);
+    const filteredCounts = countBySource(filtered, (v) => v.source);
+    const persistedCounts = countBySource(persisted, (v) => v.source);
+
+    for (const stats of perProvider) {
+      this.diagnostics.recordFetch(stats.providerId, {
+        at: new Date(),
+        durationMs: stats.durationMs,
+        ok: stats.ok,
+        error: stats.error,
+        fetchedCount: stats.rawFetchedCount ?? stats.fetched,
+        normalizedCount: stats.normalizedCount ?? stats.fetched,
+        deduplicatedCount: dedupedCounts.get(stats.providerId) ?? 0,
+        filteredCount: filteredCounts.get(stats.providerId) ?? 0,
+        persistedCount: persistedCounts.get(stats.providerId) ?? 0,
+        parseFailureCount: stats.parseFailureCount ?? 0,
+      });
+    }
   }
 
   /**
@@ -212,9 +272,26 @@ export class ProviderSearchService {
       }
 
       this.metrics.incrementCounter('careeros.provider_search.succeeded', 1, { providerId });
+      const parseFailureCount = result.data.normalization.failed.length;
+      if (parseFailureCount > 0) {
+        this.logger.warn('Provider returned vacancies that failed normalization', {
+          providerId,
+          parseFailureCount,
+          reasons: result.data.normalization.failed.map((f) => `${f.sourceId}: ${f.reason}`).join('; '),
+        });
+      }
       return {
         vacancies: [...result.data.vacancies],
-        stats: { providerId, ok: true, fetched: result.data.vacancies.length, durationMs },
+        stats: {
+          providerId,
+          ok: true,
+          fetched: result.data.vacancies.length,
+          durationMs,
+          rawFetchedCount: result.data.normalization.stats.total,
+          normalizedCount: result.data.normalization.stats.succeeded,
+          parseFailureCount,
+          parseFailures: result.data.normalization.failed,
+        },
       };
     } catch (error) {
       const durationMs = Date.now() - startedAt;
@@ -250,8 +327,8 @@ export class ProviderSearchService {
     });
   }
 
-  private deduplicate(vacancies: readonly NormalizedVacancy[]): NormalizedVacancy[] {
-    if (vacancies.length === 0) return [];
+  private deduplicate(vacancies: readonly NormalizedVacancy[]): { unique: NormalizedVacancy[]; duplicateIds: string[] } {
+    if (vacancies.length === 0) return { unique: [], duplicateIds: [] };
 
     const engine = new DeduplicationEngine({ keyFields: ['contentHash'], similarityThreshold: 1, timeWindowMs: 0 });
     const result = engine.deduplicate([...vacancies]);
@@ -264,7 +341,11 @@ export class ProviderSearchService {
       });
     }
 
-    return result.unique;
+    // Every non-canonical entry in each group is the one dropped as a
+    // duplicate — the canonical entry survives into `unique` above.
+    const duplicateIds = result.duplicates.flatMap((group) => group.all.slice(1).map((v) => v.id));
+
+    return { unique: result.unique, duplicateIds };
   }
 
   private toSearchCriteria(profile: SearchProfile): SearchCriteria {
@@ -275,7 +356,7 @@ export class ProviderSearchService {
       experienceLevel: {
         min: profile.experienceLevel as ProviderExperienceLevel,
       },
-      limit: DEFAULT_SEARCH_LIMIT,
+      limit: this.searchLimit,
     };
   }
 
@@ -361,7 +442,20 @@ function isValidUrl(value: string): boolean {
   return /^https?:\/\/.+/.test(value.trim());
 }
 
-function filterByRelevance(vacancies: readonly NormalizedVacancy[], profile: SearchProfile): NormalizedVacancy[] {
+function countBySource<T>(items: readonly T[], getSource: (item: T) => string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const source = getSource(item);
+    counts.set(source, (counts.get(source) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function filterByRelevance(
+  vacancies: readonly NormalizedVacancy[],
+  profile: SearchProfile,
+  minRelevanceScore: number
+): NormalizedVacancy[] {
   const desiredPositions = profile.desiredPositions.map((p) => p.toLowerCase());
   const desiredTechs = new Set(profile.desiredTechnologies.map((t) => t.name.toLowerCase()));
 
@@ -369,7 +463,7 @@ function filterByRelevance(vacancies: readonly NormalizedVacancy[], profile: Sea
 
   return vacancies.filter((vacancy) => {
     const score = calculateVacancyRelevance(vacancy, positionKeywords, desiredTechs);
-    return score >= MIN_RELEVANCE_SCORE;
+    return score >= minRelevanceScore;
   });
 }
 

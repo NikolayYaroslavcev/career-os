@@ -1,4 +1,5 @@
 import type { Config } from '@careeros/shared';
+import { RedisAiBatchBacklog, getRedis } from '@careeros/shared';
 import {
   PrismaUserRepository,
   PrismaResumeRepository,
@@ -34,6 +35,7 @@ import {
   InMemoryAITracer,
   createAIProviderFromConfig,
   createPrimaryAIProviderFromEnv,
+  AIProviderHealthMonitor,
 } from '@careeros/ai';
 import type { AIProvider } from '@careeros/ai';
 import {
@@ -48,6 +50,7 @@ import {
   ConsoleLogger as ProviderConsoleLogger,
   InMemoryMetricsCollector as ProviderInMemoryMetricsCollector,
   InMemoryTracer as ProviderInMemoryTracer,
+  ProviderHealthMonitor,
 } from '@careeros/providers';
 import type { Logger as ProviderLogger } from '@careeros/providers';
 import { TelegramAdapter, InMemoryTelegramClient } from '@careeros/telegram';
@@ -72,6 +75,9 @@ import { AuthService } from './services/auth-service.js';
 import { ResumeService } from './services/resume-service.js';
 import { SearchProfileSuggestionService } from './services/search-profile-suggestion-service.js';
 import { BullMqVacancyAnalysisQueue, type VacancyAnalysisQueue } from './queues/vacancy-analysis-queue.js';
+import { ProviderDiagnosticsService, type ProviderRegistrationOutcome } from './services/provider-diagnostics-service.js';
+import { SearchRunTraceRecorder } from './services/search-run-trace.js';
+import { QueueDiagnosticsService } from './services/queue-diagnostics-service.js';
 
 export interface Container {
   readonly repositories: {
@@ -95,7 +101,13 @@ export interface Container {
   };
   readonly authProvider: ReturnType<typeof createAuthProvider>;
   readonly providerRegistry: ProviderRegistry;
+  readonly providerHealthMonitor: ProviderHealthMonitor;
+  readonly providerDiagnostics: ProviderDiagnosticsService;
+  readonly searchRunTraces: SearchRunTraceRecorder;
+  readonly queueDiagnostics: QueueDiagnosticsService;
   readonly aiProvider: AIProvider;
+  readonly aiProviderHealthMonitor: AIProviderHealthMonitor;
+  readonly aiMetrics: InMemoryAIMetricsCollector;
   readonly applicationService: ApplicationService;
   readonly services: {
     readonly auth: AuthService;
@@ -123,8 +135,18 @@ export interface Container {
  * config. Each of Greenhouse/Lever/Ashby/Workday/Teamtailor is board- or
  * tenant-scoped (there's no universal endpoint), so a provider with missing
  * config is skipped with a warning rather than failing backend startup.
+ *
+ * Returns one ProviderRegistrationOutcome per *known* provider — including
+ * the ones that were skipped — so ProviderDiagnosticsService never has to
+ * treat an unconfigured provider as silently invisible.
  */
-function registerConfiguredProviders(registry: ProviderRegistry, config: Config, logger: ProviderLogger): void {
+function registerConfiguredProviders(
+  registry: ProviderRegistry,
+  config: Config,
+  logger: ProviderLogger
+): ProviderRegistrationOutcome[] {
+  const outcomes: ProviderRegistrationOutcome[] = [];
+
   registry.register(
     createRemoteOKProvider({
       logger,
@@ -132,6 +154,7 @@ function registerConfiguredProviders(registry: ProviderRegistry, config: Config,
       tracer: new ProviderInMemoryTracer(),
     })
   );
+  outcomes.push({ providerId: 'remote_ok', registered: true, configured: true, authenticated: 'not_required' });
 
   // HH (HeadHunter) requires no API key for search — an access token only
   // raises rate limits, so it's registered unconditionally, same as RemoteOK.
@@ -143,6 +166,12 @@ function registerConfiguredProviders(registry: ProviderRegistry, config: Config,
       tracer: new ProviderInMemoryTracer(),
     })
   );
+  outcomes.push({
+    providerId: 'hh',
+    registered: true,
+    configured: true,
+    authenticated: config.HH_ACCESS_TOKEN ? 'configured' : 'not_required',
+  });
 
   if (config.GREENHOUSE_BOARD_TOKEN && config.GREENHOUSE_COMPANY_NAME) {
     registry.register(
@@ -154,8 +183,11 @@ function registerConfiguredProviders(registry: ProviderRegistry, config: Config,
         tracer: new ProviderInMemoryTracer(),
       })
     );
+    outcomes.push({ providerId: 'greenhouse', registered: true, configured: true, authenticated: 'configured' });
   } else {
-    logger.warn('Greenhouse provider not registered: GREENHOUSE_BOARD_TOKEN/GREENHOUSE_COMPANY_NAME not set');
+    const reason = 'GREENHOUSE_BOARD_TOKEN/GREENHOUSE_COMPANY_NAME not set';
+    logger.warn(`Greenhouse provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'greenhouse', registered: false, configured: false, authenticated: 'missing', reason });
   }
 
   if (config.LEVER_COMPANY && config.LEVER_COMPANY_NAME) {
@@ -168,8 +200,11 @@ function registerConfiguredProviders(registry: ProviderRegistry, config: Config,
         tracer: new ProviderInMemoryTracer(),
       })
     );
+    outcomes.push({ providerId: 'lever', registered: true, configured: true, authenticated: 'not_required' });
   } else {
-    logger.warn('Lever provider not registered: LEVER_COMPANY/LEVER_COMPANY_NAME not set');
+    const reason = 'LEVER_COMPANY/LEVER_COMPANY_NAME not set';
+    logger.warn(`Lever provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'lever', registered: false, configured: false, authenticated: 'missing', reason });
   }
 
   if (config.ASHBY_JOB_BOARD_NAME && config.ASHBY_COMPANY_NAME) {
@@ -182,8 +217,11 @@ function registerConfiguredProviders(registry: ProviderRegistry, config: Config,
         tracer: new ProviderInMemoryTracer(),
       })
     );
+    outcomes.push({ providerId: 'ashby', registered: true, configured: true, authenticated: 'not_required' });
   } else {
-    logger.warn('Ashby provider not registered: ASHBY_JOB_BOARD_NAME/ASHBY_COMPANY_NAME not set');
+    const reason = 'ASHBY_JOB_BOARD_NAME/ASHBY_COMPANY_NAME not set';
+    logger.warn(`Ashby provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'ashby', registered: false, configured: false, authenticated: 'missing', reason });
   }
 
   if (config.WORKDAY_TENANT && config.WORKDAY_SITE && config.WORKDAY_COMPANY_NAME) {
@@ -198,8 +236,11 @@ function registerConfiguredProviders(registry: ProviderRegistry, config: Config,
         tracer: new ProviderInMemoryTracer(),
       })
     );
+    outcomes.push({ providerId: 'workday', registered: true, configured: true, authenticated: 'not_required' });
   } else {
-    logger.warn('Workday provider not registered: WORKDAY_TENANT/WORKDAY_SITE/WORKDAY_COMPANY_NAME not set');
+    const reason = 'WORKDAY_TENANT/WORKDAY_SITE/WORKDAY_COMPANY_NAME not set';
+    logger.warn(`Workday provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'workday', registered: false, configured: false, authenticated: 'missing', reason });
   }
 
   if (config.TEAMTAILOR_API_KEY && config.TEAMTAILOR_COMPANY_NAME) {
@@ -212,9 +253,14 @@ function registerConfiguredProviders(registry: ProviderRegistry, config: Config,
         tracer: new ProviderInMemoryTracer(),
       })
     );
+    outcomes.push({ providerId: 'teamtailor', registered: true, configured: true, authenticated: 'configured' });
   } else {
-    logger.warn('Teamtailor provider not registered: TEAMTAILOR_API_KEY/TEAMTAILOR_COMPANY_NAME not set');
+    const reason = 'TEAMTAILOR_API_KEY/TEAMTAILOR_COMPANY_NAME not set';
+    logger.warn(`Teamtailor provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'teamtailor', registered: false, configured: false, authenticated: 'missing', reason });
   }
+
+  return outcomes;
 }
 
 function createTelegramClient(config: Config): TelegramClient {
@@ -227,10 +273,15 @@ function createTelegramClient(config: Config): TelegramClient {
 // createPrimaryAIProviderFromEnv (packages/ai) is the single source of truth
 // for provider-name -> implementation resolution, shared with apps/worker;
 // this wrapper only exists because apps can't import another app's src (ADR-016).
-export function createAIProvider(config: Config): AIProvider {
+// The health monitor is passed in (rather than left to FallbackAIProvider's
+// own default) so the diagnostics routes can read the exact same instance
+// FallbackAIProvider records successes/failures against, instead of a
+// separate, out-of-sync health tracker.
+export function createAIProvider(config: Config, healthMonitor: AIProviderHealthMonitor): AIProvider {
   return createPrimaryAIProviderFromEnv(config, {
     logger: new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info'),
     metrics: new InMemoryAIMetricsCollector(),
+    healthMonitor,
   });
 }
 
@@ -279,9 +330,25 @@ export function buildContainer(config: Config): Container {
   });
 
   const providerRegistry = new ProviderRegistry();
-  registerConfiguredProviders(providerRegistry, config, new ProviderConsoleLogger(config.LOG_LEVEL));
+  const registrationOutcomes = registerConfiguredProviders(
+    providerRegistry,
+    config,
+    new ProviderConsoleLogger(config.LOG_LEVEL)
+  );
 
-  const aiProvider = createAIProvider(config);
+  const providerHealthMonitor = new ProviderHealthMonitor({
+    checkIntervalMs: 5 * 60 * 1000,
+    unhealthyThreshold: 3,
+    degradedThresholdMs: 3000,
+    healthyThresholdMs: 1000,
+  });
+  const providerDiagnosticsService = new ProviderDiagnosticsService(providerHealthMonitor);
+  providerDiagnosticsService.recordRegistrations(registrationOutcomes);
+  const searchRunTraceRecorder = new SearchRunTraceRecorder();
+  const queueDiagnosticsService = new QueueDiagnosticsService(config.REDIS_URL);
+
+  const aiProviderHealthMonitor = new AIProviderHealthMonitor();
+  const aiProvider = createAIProvider(config, aiProviderHealthMonitor);
   const suggestionAIProvider = createSuggestionAIProvider(config, aiProvider);
 
   const matchingEngine = new MatchingEngine({
@@ -303,7 +370,11 @@ export function buildContainer(config: Config): Container {
     vacancyRepository,
     companyRepository,
     new ProviderConsoleLogger(config.LOG_LEVEL),
-    new ProviderInMemoryMetricsCollector()
+    new ProviderInMemoryMetricsCollector(),
+    config.PROVIDER_TIMEOUT_MS,
+    config.PROVIDER_SEARCH_LIMIT,
+    config.MIN_RELEVANCE_SCORE,
+    providerDiagnosticsService
   );
   const aiMatchingService = new AiMatchingService(
     matchingEngine,
@@ -312,9 +383,9 @@ export function buildContainer(config: Config): Container {
     aiMetrics,
     // Groq's free-tier TPM budget can't absorb several ~6-7k token match
     // prompts fired concurrently, so serialize matching for it instead of
-    // fanning out at the default concurrency.
-    config.AI_PROVIDER === 'groq' ? 1 : undefined,
-    undefined,
+    // fanning out at the configured concurrency.
+    config.AI_PROVIDER === 'groq' ? 1 : config.AI_MATCHING_CONCURRENCY,
+    config.AI_MAX_CANDIDATES,
     new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info')
   );
   const recommendationService = new RecommendationService(aiMetrics);
@@ -345,7 +416,9 @@ export function buildContainer(config: Config): Container {
     vacancyRepository,
     vacancyAnalysisQueue,
     new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info'),
-    config.AI_ENABLED
+    config.AI_ENABLED,
+    new RedisAiBatchBacklog(getRedis(config.REDIS_URL)),
+    searchRunTraceRecorder
   );
 
   const digestMetrics = new ProviderInMemoryMetricsCollector();
@@ -433,7 +506,13 @@ export function buildContainer(config: Config): Container {
     },
     authProvider,
     providerRegistry,
+    providerHealthMonitor,
+    providerDiagnostics: providerDiagnosticsService,
+    searchRunTraces: searchRunTraceRecorder,
+    queueDiagnostics: queueDiagnosticsService,
     aiProvider,
+    aiProviderHealthMonitor,
+    aiMetrics,
     applicationService,
     services: {
       auth: authService,

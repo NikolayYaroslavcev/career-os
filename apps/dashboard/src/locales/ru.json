@@ -18,7 +18,8 @@
     "searchProfiles": "Профили поиска",
     "findVacancies": "Найти вакансии",
     "applications": "Отклики",
-    "telegram": "Telegram"
+    "telegram": "Telegram",
+    "diagnostics": "Диагностика"
   },
   "shell": {
     "logout": "Выйти"

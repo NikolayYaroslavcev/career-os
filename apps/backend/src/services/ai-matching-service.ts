@@ -30,6 +30,8 @@ export interface AiMatchingOutcome {
   readonly triage: TriageOutcome;
   readonly stats: AiMatchingStats;
   readonly aiError?: AIErrorType;
+  /** Vacancy IDs whose AI call threw — for per-vacancy search diagnostics. */
+  readonly failedVacancyIds: readonly string[];
 }
 
 export interface AiMatchAllParams {
@@ -146,6 +148,7 @@ export class AiMatchingService {
     const startedAt = Date.now();
     const companyNameCache = new Map<string, string>();
     let failed = 0;
+    const failedVacancyIds: string[] = [];
     let firstAiError: AIErrorType | undefined;
 
     const triageStart = Date.now();
@@ -161,6 +164,7 @@ export class AiMatchingService {
         return await this.matchVacancy(params, vacancy, companyNameCache);
       } catch (error) {
         failed += 1;
+        failedVacancyIds.push(vacancy.id);
         this.metrics.incrementCounter('careeros.ai_matching.failed');
         const aiError = error instanceof AIError ? error : undefined;
         this.logger.error('AI matching failed for vacancy', error instanceof Error ? error : undefined, {
@@ -204,6 +208,7 @@ export class AiMatchingService {
         durationMs,
       },
       aiError: firstAiError,
+      failedVacancyIds,
     };
   }
 

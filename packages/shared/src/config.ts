@@ -86,6 +86,16 @@ const configSchema = z.object({
   AI_FALLBACK_PROVIDERS: z.string().optional(),
   // Caps concurrent in-flight AI completion calls; unset means unlimited.
   AI_MAX_CONCURRENCY: optionalNumberField(),
+  // How many triage-ranked vacancies get an AI call per search profile per
+  // batch. Also used as TriageMatchingService's topN (the two were always the
+  // same number, just hardcoded in two places).
+  AI_MAX_CANDIDATES: numberField(15),
+  // Fan-out for AiMatchingService's concurrent AI calls within a batch.
+  AI_MATCHING_CONCURRENCY: numberField(5),
+  // Size of each auto-continuation batch drawn from the backlog once a batch
+  // finishes (see AiBatchBacklog) — how many more candidates get enqueued at
+  // a time until the full candidate pool for a search profile is processed.
+  AI_BATCH_SIZE: numberField(15),
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   GROQ_API_KEY: z.string().optional(),
@@ -118,6 +128,21 @@ const configSchema = z.object({
   WORKDAY_HOST: z.string().optional(),
   TEAMTAILOR_API_KEY: z.string().optional(),
   TEAMTAILOR_COMPANY_NAME: z.string().optional(),
+
+  // Vacancy search / matching pipeline
+  // Max vacancies requested per provider per search.
+  PROVIDER_SEARCH_LIMIT: numberField(50),
+  // Per-provider search timeout — one slow/hung provider can't block the rest.
+  PROVIDER_TIMEOUT_MS: numberField(15_000),
+  // Local keyword-relevance floor a vacancy must clear to survive rule
+  // filtering (before triage/AI ever sees it).
+  MIN_RELEVANCE_SCORE: numberField(1),
+  // BullMQ vacancy-analysis worker concurrency (apps/worker).
+  WORKER_CONCURRENCY: numberField(5),
+  // Gates the /api/v1/diagnostics/* routes and the dashboard diagnostics page.
+  // Default off so a misconfigured production deploy never exposes pipeline
+  // internals by accident.
+  DIAGNOSTICS_ENABLED: booleanField(false),
 });
 
 export type Config = z.infer<typeof configSchema>;

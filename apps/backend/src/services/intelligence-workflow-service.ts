@@ -9,6 +9,10 @@ import type { SearchProfile } from '@careeros/career';
 import type { SearchProfileService } from './search-profile-service.js';
 import type { VacancyAnalysisQueue } from '../queues/vacancy-analysis-queue.js';
 import { NoopVacancyAnalysisQueue } from '../queues/vacancy-analysis-queue.js';
+import type { AiBatchBacklog } from '@careeros/shared';
+import { InMemoryAiBatchBacklog } from '@careeros/shared';
+import type { SearchRunStage, VacancyExclusion, VacancyExclusionReason } from './search-run-trace.js';
+import { SearchRunTraceRecorder } from './search-run-trace.js';
 
 export class NoResumeFoundError extends Error {
   constructor(userId: string) {
@@ -68,7 +72,9 @@ export class IntelligenceWorkflowService {
     private readonly vacancyRepository: VacancyRepository,
     private readonly vacancyAnalysisQueue: VacancyAnalysisQueue = new NoopVacancyAnalysisQueue(),
     private readonly logger: AILogger = new NoopAILogger(),
-    private readonly aiEnabled: boolean = true
+    private readonly aiEnabled: boolean = true,
+    private readonly aiBatchBacklog: AiBatchBacklog = new InMemoryAiBatchBacklog(),
+    private readonly searchRunTraceRecorder: SearchRunTraceRecorder = new SearchRunTraceRecorder()
   ) {}
 
   /**
@@ -139,6 +145,44 @@ export class IntelligenceWorkflowService {
         .filter((vacancy) => !matchedIds.has(vacancy.id))
         .map((vacancy) => vacancy.id);
 
+      const { stages: providerStages, exclusions: providerExclusions } = this.buildProviderStagesAndExclusions(
+        providerSearch.stats
+      );
+      // Reused (cache-hit) vacancies never enter triage's `results` — only
+      // the ones that needed matching do — so the set difference against
+      // everything persisted for this search recovers exactly the cache hits.
+      const triagedIds = new Set(aiMatching.triage.results.map((r) => r.vacancy.id));
+      const cacheHitIds = providerSearch.vacancies.filter((v) => !triagedIds.has(v.id)).map((v) => v.id);
+
+      this.searchRunTraceRecorder.record({
+        runId: crypto.randomUUID(),
+        searchProfileId: profile.id,
+        userId: params.userId,
+        startedAt: new Date(startedAt),
+        totalDurationMs: Date.now() - startedAt,
+        aiEnabled: true,
+        awaitedAiMatching: true,
+        stages: [
+          ...providerStages,
+          { name: 'AI Selection', input: providerSearch.vacancies.length, output: aiMatching.triage.results.length, durationMs: aiMatching.stats.triageDurationMs, success: true },
+          { name: 'Keyword Ranking', input: aiMatching.triage.results.length, output: aiMatching.triage.passed.length, durationMs: 0, success: true },
+          { name: 'LLM', input: aiMatching.triage.passed.length, output: aiMatching.stats.computed, durationMs: aiMatching.stats.aiDurationMs, success: !aiMatching.aiError },
+          { name: 'Persistence', input: aiMatching.stats.computed, output: recommendations.length, durationMs: 0, success: true },
+        ],
+        exclusions: [
+          ...providerExclusions,
+          ...cacheHitIds.map((vacancyId): VacancyExclusion => ({ vacancyId, reason: 'cache_hit', stage: 'AI Selection' })),
+          ...aiMatching.triage.results
+            .filter((r) => !r.passed)
+            .map((r): VacancyExclusion => ({
+              vacancyId: r.vacancy.id,
+              reason: r.rejectionReason as VacancyExclusionReason,
+              stage: 'Keyword Ranking',
+            })),
+          ...aiMatching.failedVacancyIds.map((vacancyId): VacancyExclusion => ({ vacancyId, reason: 'ai_failed', stage: 'LLM' })),
+        ],
+      });
+
       return {
         searchProfileId: profile.id,
         vacancies: providerSearch.vacancies,
@@ -168,6 +212,7 @@ export class IntelligenceWorkflowService {
     const triageDurationMs = Date.now() - triageStart;
 
     let enqueueDurationMs = 0;
+    let queueSucceeded = true;
     if (this.aiEnabled) {
       const enqueueStart = Date.now();
       try {
@@ -180,8 +225,21 @@ export class IntelligenceWorkflowService {
           searchProfileId: profile.id,
           enqueueDurationMs,
         });
+
+        // Continuous background processing (EPIC-17 Part 6): candidates that
+        // scored above minScore but were ranked below this batch's topN cut
+        // aren't discarded — they're queued in the backlog so the worker can
+        // pull the next batch once this one finishes, continuing until every
+        // candidate above minScore has been processed. Vacancies that scored
+        // below minScore (or failed a hard remote-only mismatch) are true
+        // dead ends and never enter the backlog.
+        const backlogCandidateIds = selection.triage.results
+          .filter((result) => result.rejectionReason === 'outside_top_n')
+          .map((result) => result.vacancy.id);
+        await this.aiBatchBacklog.push(profile.id, backlogCandidateIds);
       } catch (error) {
         enqueueDurationMs = Date.now() - enqueueStart;
+        queueSucceeded = false;
         // Vacancies stay in "pending" state client-side until the queue
         // recovers — the search response itself must never fail because
         // Redis is unavailable. The frontend's polling timeout is the
@@ -208,6 +266,41 @@ export class IntelligenceWorkflowService {
       triageDurationMs,
       enqueueDurationMs,
       totalDurationMs,
+    });
+
+    const { stages: providerStages, exclusions: providerExclusions } = this.buildProviderStagesAndExclusions(
+      providerSearch.stats
+    );
+
+    this.searchRunTraceRecorder.record({
+      runId: crypto.randomUUID(),
+      searchProfileId: profile.id,
+      userId: params.userId,
+      startedAt: new Date(startedAt),
+      totalDurationMs,
+      aiEnabled: this.aiEnabled,
+      awaitedAiMatching: false,
+      stages: this.aiEnabled
+        ? [
+            ...providerStages,
+            { name: 'AI Selection', input: providerSearch.vacancies.length, output: selection.triage.results.length, durationMs: triageDurationMs, success: true },
+            { name: 'Keyword Ranking', input: selection.triage.results.length, output: selection.toAnalyze.length, durationMs: 0, success: true },
+            { name: 'Queue', input: selection.toAnalyze.length, output: queueSucceeded ? selection.toAnalyze.length : 0, durationMs: enqueueDurationMs, success: queueSucceeded },
+          ]
+        : providerStages,
+      exclusions: this.aiEnabled
+        ? [
+            ...providerExclusions,
+            ...selection.reused.map((match): VacancyExclusion => ({ vacancyId: match.vacancyId, reason: 'cache_hit', stage: 'AI Selection' })),
+            ...selection.triage.results
+              .filter((r) => !r.passed)
+              .map((r): VacancyExclusion => ({
+                vacancyId: r.vacancy.id,
+                reason: r.rejectionReason as VacancyExclusionReason,
+                stage: 'Keyword Ranking',
+              })),
+          ]
+        : providerExclusions,
     });
 
     return {
@@ -271,6 +364,41 @@ export class IntelligenceWorkflowService {
       pendingVacancyIds: selection.toAnalyze.map((vacancy) => vacancy.id),
       skippedVacancyIds: selection.skipped.map((vacancy) => vacancy.id),
     };
+  }
+
+  /**
+   * The Provider Fetch -> Normalization -> Deduplication -> Rule Filtering
+   * portion of the trace is identical for both the awaited and async paths
+   * (it happens before either branches), so it's built once here.
+   */
+  private buildProviderStagesAndExclusions(stats: ProviderSearchStats): {
+    stages: SearchRunStage[];
+    exclusions: VacancyExclusion[];
+  } {
+    const rawTotal = stats.perProvider.reduce((sum, p) => sum + (p.rawFetchedCount ?? p.fetched), 0);
+    const fetchOk = stats.perProvider.some((p) => p.ok);
+
+    const stages: SearchRunStage[] = [
+      { name: 'Provider Fetch', input: rawTotal, output: rawTotal, durationMs: stats.fetchDurationMs, success: fetchOk },
+      { name: 'Normalization', input: rawTotal, output: stats.fetched, durationMs: 0, success: true },
+      { name: 'Deduplication', input: stats.fetched, output: stats.deduplicatedCount, durationMs: 0, success: true },
+      { name: 'Rule Filtering', input: stats.deduplicatedCount, output: stats.filteredCount, durationMs: 0, success: true },
+    ];
+
+    const exclusions: VacancyExclusion[] = [
+      ...stats.duplicateVacancyIds.map((vacancyId): VacancyExclusion => ({ vacancyId, reason: 'duplicate', stage: 'Deduplication' })),
+      ...stats.perProvider.flatMap((provider) =>
+        (provider.parseFailures ?? []).map(
+          (failure): VacancyExclusion => ({
+            vacancyId: `${provider.providerId}:${failure.sourceId}`,
+            reason: 'provider_parse_failure',
+            stage: 'Normalization',
+          })
+        )
+      ),
+    ];
+
+    return { stages, exclusions };
   }
 
   private buildMatchParams(

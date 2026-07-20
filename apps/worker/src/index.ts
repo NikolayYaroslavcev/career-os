@@ -9,7 +9,9 @@ import { Queue, Worker } from 'bullmq';
 import {
   loadConfig,
   createLogger,
+  getRedis,
   VACANCY_ANALYSIS_QUEUE_NAME,
+  RedisAiBatchBacklog,
   FOLLOW_UP_REMINDER_QUEUE_NAME,
   FOLLOW_UP_REMINDER_JOB_NAME,
   FOLLOW_UP_REMINDER_SWEEP_INTERVAL_MS,
@@ -20,6 +22,7 @@ import { connectDatabase, disconnectDatabase } from '@careeros/database';
 import { buildWorkerContainer } from './container.js';
 import { createVacancyAnalysisJobHandler } from './jobs/vacancy-analysis-processor.js';
 import { createFollowUpReminderJobHandler } from './jobs/follow-up-reminder-processor.js';
+import { createContinuationHandler } from './continuation.js';
 import { startHealthServer } from './health-server.js';
 
 const start = async () => {
@@ -39,6 +42,23 @@ const start = async () => {
     logger: new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info'),
   });
 
+  // Continuous background processing (EPIC-17 Part 6): apps/backend pushes
+  // every triage-ranked candidate beyond the first batch into this backlog
+  // (see AiBatchBacklog); once a job completes, this same worker process
+  // pulls the next AI_BATCH_SIZE candidates for that search profile and
+  // enqueues them, repeating until the backlog drains. This mirrors the
+  // follow-up-reminder queue below, which is also both produced and consumed
+  // in this process.
+  const vacancyAnalysisQueue = new Queue<VacancyAnalysisJob>(VACANCY_ANALYSIS_QUEUE_NAME, {
+    connection: { url: config.REDIS_URL },
+  });
+  const continueBatch = createContinuationHandler({
+    backlog: new RedisAiBatchBacklog(getRedis(config.REDIS_URL)),
+    queue: vacancyAnalysisQueue,
+    batchSize: config.AI_BATCH_SIZE,
+    logger,
+  });
+
   const worker = new Worker<VacancyAnalysisJob>(
     VACANCY_ANALYSIS_QUEUE_NAME,
     async (job) => {
@@ -54,16 +74,25 @@ const start = async () => {
     },
     {
       connection: { url: config.REDIS_URL },
-      concurrency: 5,
+      concurrency: config.WORKER_CONCURRENCY,
     }
   );
 
   worker.on('completed', (job, result) => {
     logger.info('Job completed', { jobId: job.id, status: result?.status });
+    void continueBatch(job.data.searchProfileId);
   });
 
   worker.on('failed', (job, err) => {
     logger.error('Job failed', { jobId: job?.id, error: err.message });
+    // Continuation must not stall just because one vacancy's AI call failed
+    // (e.g. a rate limit) — BullMQ marks a thrown job 'failed', not
+    // 'completed', so without this the backlog would never drain past a
+    // failing vacancy. Safe to call on every retry attempt too: popping an
+    // empty backlog is a no-op.
+    if (job) {
+      void continueBatch(job.data.searchProfileId);
+    }
   });
 
   // EPIC-08 reminder worker: a self-scheduling recurring sweep — this process

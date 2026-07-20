@@ -1,5 +1,10 @@
 import { Queue } from 'bullmq';
-import { VACANCY_ANALYSIS_QUEUE_NAME, VACANCY_ANALYSIS_JOB_NAME, type VacancyAnalysisJob } from '@careeros/shared';
+import {
+  VACANCY_ANALYSIS_QUEUE_NAME,
+  VACANCY_ANALYSIS_JOB_NAME,
+  buildVacancyAnalysisJobId,
+  type VacancyAnalysisJob,
+} from '@careeros/shared';
 
 export type { VacancyAnalysisJob } from '@careeros/shared';
 
@@ -39,12 +44,7 @@ export class BullMqVacancyAnalysisQueue implements VacancyAnalysisQueue {
         name: VACANCY_ANALYSIS_JOB_NAME,
         data: job,
         opts: {
-          // One in-flight/pending job per (vacancy, profile) pair is enough —
-          // re-imports of the same vacancy for the same profile shouldn't
-          // pile up duplicate jobs while one is already queued.
-          // BullMQ rejects custom job IDs containing ':' (used internally as
-          // its own Redis key delimiter), so join with '__' instead.
-          jobId: `${job.searchProfileId}__${job.vacancyId}`,
+          jobId: buildVacancyAnalysisJobId(job.searchProfileId, job.vacancyId),
         },
       }))
     );
