@@ -33,6 +33,7 @@ export class FallbackAIProvider implements AIProvider {
   readonly name: string;
   readonly defaultModel: string;
 
+  private readonly primary: AIProvider;
   private readonly providers: readonly AIProvider[];
   private readonly retryPolicy: AIRetryPolicy;
   private readonly healthMonitor: AIProviderHealthMonitor;
@@ -41,13 +42,15 @@ export class FallbackAIProvider implements AIProvider {
   private readonly concurrencyLimiter: AIConcurrencyLimiter | undefined;
 
   constructor(providers: readonly AIProvider[], options: FallbackAIProviderOptions = {}) {
-    if (providers.length === 0) {
+    const [primary] = providers;
+    if (!primary) {
       throw new Error('FallbackAIProvider requires at least one provider');
     }
 
+    this.primary = primary;
     this.providers = providers;
-    this.name = providers[0]!.name;
-    this.defaultModel = providers[0]!.defaultModel;
+    this.name = primary.name;
+    this.defaultModel = primary.defaultModel;
     this.retryPolicy = options.retryPolicy ?? new AIRetryPolicy();
     this.healthMonitor = options.healthMonitor ?? new AIProviderHealthMonitor();
     this.metrics = options.metrics;
@@ -56,11 +59,11 @@ export class FallbackAIProvider implements AIProvider {
   }
 
   getCapabilities(): AICapabilities {
-    return this.providers[0]!.getCapabilities();
+    return this.primary.getCapabilities();
   }
 
   validateConfig(): boolean {
-    return this.providers[0]!.validateConfig();
+    return this.primary.validateConfig();
   }
 
   async complete(request: AIRequest): Promise<AIResponse> {
