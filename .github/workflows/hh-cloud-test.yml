@@ -1,0 +1,31 @@
+name: HH API Cloud Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['scripts/hh-test-curl.js', '.github/workflows/hh-cloud-test.yml']
+
+jobs:
+  test-github-actions:
+    name: Test from GitHub Actions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run HH API test
+        id: test
+        run: |
+          echo "DEPLOY_ENV=github-actions" >> $GITHUB_ENV
+          node scripts/hh-test-curl.js 2>&1 | tee /tmp/hh-result.json
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+        continue-on-error: true
+      - name: Print result
+        run: cat /tmp/hh-result.json
+      - name: Fail if 403
+        if: steps.test.outcome == 'failure'
+        run: |
+          echo "::error::HH API returned 403 from GitHub Actions"
+          exit 1
