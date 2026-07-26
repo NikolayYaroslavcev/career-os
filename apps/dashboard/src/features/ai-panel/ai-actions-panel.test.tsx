@@ -1,0 +1,137 @@
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { AiActionsPanel } from './ai-actions-panel';
+import { I18nProvider } from '@/lib/i18n/i18n-provider';
+import { listResumes } from '@/api/resumes';
+import { listSearchProfiles } from '@/api/search-profiles';
+import { getAIJobs } from '@/api/ai';
+import { tailorResumeForApplication } from '@/api/applications';
+
+vi.mock('@/api/resumes', () => ({
+  listResumes: vi.fn(),
+}));
+
+vi.mock('@/api/search-profiles', () => ({
+  listSearchProfiles: vi.fn(),
+}));
+
+vi.mock('@/api/ai', () => ({
+  analyzeVacancy: vi.fn(),
+  tailorResume: vi.fn(),
+  generateCoverLetter: vi.fn(),
+  getInterviewPrep: vi.fn(),
+  getAIJobs: vi.fn(),
+}));
+
+vi.mock('@/api/applications', () => ({
+  analyzeVacancyForApplication: vi.fn(),
+  tailorResumeForApplication: vi.fn(),
+  generateCoverLetterForApplication: vi.fn(),
+  interviewPrepForApplication: vi.fn(),
+}));
+
+function renderWithI18n(ui: React.ReactElement): ReturnType<typeof render> {
+  return render(<I18nProvider initialLocale="en">{ui}</I18nProvider>);
+}
+
+describe('AiActionsPanel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(listResumes).mockResolvedValue({
+      resumes: [{ id: 'resume-1', title: 'My Resume' } as never],
+    });
+    vi.mocked(listSearchProfiles).mockResolvedValue({ searchProfiles: [] });
+    vi.mocked(getAIJobs).mockResolvedValue({ jobs: [], total: 0 });
+  });
+
+  it('generates a tailored resume for an application and renders the result', async () => {
+    vi.mocked(tailorResumeForApplication).mockResolvedValue({
+      jobId: 'job-1',
+      status: 'completed',
+      cached: false,
+      result: {
+        optimizedSummary: 'Optimized summary',
+        reorderedExperience: [],
+        emphasizedSkills: ['TypeScript'],
+        keywordOptimizations: ['React'],
+        tailoredResume: 'Tailored resume text',
+      },
+    });
+
+    renderWithI18n(
+      <AiActionsPanel vacancyId="vacancy-1" vacancyTitle="Senior Engineer" applicationId="app-1" />
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Tailor Resume' }));
+    await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'resume-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Tailor Resume' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Tailored resume text')).toBeInTheDocument();
+    });
+    expect(screen.getByText('TypeScript')).toBeInTheDocument();
+    expect(tailorResumeForApplication).toHaveBeenCalledWith('app-1', 'resume-1');
+  });
+
+  it('shows an error message when tailoring fails', async () => {
+    vi.mocked(tailorResumeForApplication).mockRejectedValue(new Error('Tailoring failed'));
+
+    renderWithI18n(
+      <AiActionsPanel vacancyId="vacancy-1" vacancyTitle="Senior Engineer" applicationId="app-1" />
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Tailor Resume' }));
+    await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'resume-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Tailor Resume' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Tailoring failed')).toBeInTheDocument();
+    });
+  });
+
+  it('renders past AI results in the history tab', async () => {
+    vi.mocked(getAIJobs).mockResolvedValue({
+      jobs: [
+        {
+          id: 'job-1',
+          feature: 'cover_letter',
+          status: 'COMPLETED',
+          provider: 'openai',
+          model: 'gpt',
+          totalTokens: 100,
+          estimatedCost: 0.01,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          result: { coverLetter: 'Dear hiring manager', tone: 'formal', keyPoints: [] },
+        },
+      ],
+      total: 1,
+    });
+
+    renderWithI18n(<AiActionsPanel vacancyId="vacancy-1" vacancyTitle="Senior Engineer" />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
+
+    const panel = await screen.findByRole('tabpanel', { name: 'History' });
+    await waitFor(() => {
+      expect(within(panel).getByText('Cover Letter')).toBeInTheDocument();
+      expect(within(panel).getByText('COMPLETED')).toBeInTheDocument();
+    });
+    expect(getAIJobs).toHaveBeenCalledWith({ vacancyId: 'vacancy-1' });
+  });
+
+  it('shows a call-to-action instead of the analyze button when no active search profile exists', async () => {
+    vi.mocked(listSearchProfiles).mockResolvedValue({ searchProfiles: [{ id: '1', isActive: false } as never] });
+
+    renderWithI18n(<AiActionsPanel vacancyId="vacancy-1" vacancyTitle="Senior Engineer" />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Create an active search profile before running AI analysis.')
+      ).toBeInTheDocument();
+    });
+  });
+});

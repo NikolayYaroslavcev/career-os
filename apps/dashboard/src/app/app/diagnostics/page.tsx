@@ -2,6 +2,6 @@
 
 import { DiagnosticsDashboard } from '@/features/diagnostics/diagnostics-dashboard';
 
-export default function DiagnosticsPage() {
+export default function DiagnosticsPage(): React.JSX.Element {
   return <DiagnosticsDashboard />;
 }

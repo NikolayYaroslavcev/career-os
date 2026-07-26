@@ -2,6 +2,8 @@ import { apiClient } from './client';
 
 export type ProviderAuthStatus = 'not_required' | 'configured' | 'missing';
 export type HealthState = 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
+export type ProviderOperationalStatus = 'READY' | 'BLOCKED' | 'NEEDS_CONFIGURATION' | 'UNKNOWN';
+export type BulkSyncStatus = 'SUPPORTED' | 'NOT_SUPPORTED_FOR_BULK_SYNC';
 
 export interface ProviderFetchDiagnostics {
   readonly at: string;
@@ -25,6 +27,11 @@ export interface ProviderDiagnostics {
   readonly health: HealthState;
   readonly reason?: string;
   readonly lastFetch?: ProviderFetchDiagnostics;
+  readonly status: ProviderOperationalStatus;
+  readonly statusReason?: string;
+  readonly requiredConfig?: readonly string[];
+  readonly ingestionMode?: string;
+  readonly bulkSyncStatus: BulkSyncStatus;
 }
 
 export interface QueueJobCounts {

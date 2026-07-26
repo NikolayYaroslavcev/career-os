@@ -7,7 +7,7 @@ import { runSearch, pollMatchStatus } from '@/api/intelligence';
 const mockPush = vi.fn();
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({
+  useRouter: (): { push: typeof mockPush } => ({
     push: mockPush,
   }),
 }));
@@ -24,16 +24,17 @@ vi.mock('@/api/applications', () => ({
 const mockListSearchProfiles = vi.fn();
 
 vi.mock('@/api/search-profiles', () => ({
-  listSearchProfiles: (...args: unknown[]) => mockListSearchProfiles(...args),
+  listSearchProfiles: (...args: unknown[]): ReturnType<typeof mockListSearchProfiles> => mockListSearchProfiles(...args),
 }));
 
-function renderWithI18n(ui: React.ReactElement) {
+function renderWithI18n(ui: React.ReactElement): ReturnType<typeof render> {
   return render(<I18nProvider initialLocale="en">{ui}</I18nProvider>);
 }
 
 describe('SearchButton', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
     mockListSearchProfiles.mockResolvedValue({ searchProfiles: [] });
     vi.mocked(pollMatchStatus).mockResolvedValue({ vacancies: [] });
   });
@@ -43,7 +44,7 @@ describe('SearchButton', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText('Create your search profile before finding vacancies')
+        screen.getByText('Create your search profile to start AI job matching')
       ).toBeInTheDocument();
     });
 
@@ -80,10 +81,10 @@ describe('SearchButton', () => {
     renderWithI18n(<SearchButton />);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Find Vacancies' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'AI Job Matching' })).toBeInTheDocument();
     });
 
-    expect(screen.getByRole('button', { name: /find vacancies/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /run ai matching/i })).toBeInTheDocument();
   });
 
   it('displays AI summary, warnings, and a sort control after a search resolves with recommendations', async () => {
@@ -153,10 +154,10 @@ describe('SearchButton', () => {
     renderWithI18n(<SearchButton />);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /find vacancies/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /run ai matching/i })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /find vacancies/i }));
+    fireEvent.click(screen.getByRole('button', { name: /run ai matching/i }));
 
     await waitFor(() => {
       expect(screen.getByText('Great backend role with strong tech overlap.')).toBeInTheDocument();
@@ -164,10 +165,7 @@ describe('SearchButton', () => {
 
     expect(screen.getByText('Possible concerns')).toBeInTheDocument();
     expect(screen.getByText('no cloud experience')).toBeInTheDocument();
-    expect(screen.getByLabelText('Sort by')).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'score-asc' } });
-    expect(screen.getByLabelText('Sort by')).toHaveValue('score-asc');
+    expect(screen.getByText('AI Match Score (high to low)')).toBeInTheDocument();
   });
 
   it('shows vacancies immediately with a pending badge, then displays the score once polling reports a match', async () => {
@@ -214,10 +212,10 @@ describe('SearchButton', () => {
     renderWithI18n(<SearchButton />);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /find vacancies/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /run ai matching/i })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /find vacancies/i }));
+    fireEvent.click(screen.getByRole('button', { name: /run ai matching/i }));
 
     await waitFor(() => {
       expect(screen.getByText('Frontend Engineer')).toBeInTheDocument();
@@ -263,6 +261,91 @@ describe('SearchButton', () => {
     });
     expect(screen.getByText('Solid frontend fit.')).toBeInTheDocument();
   }, 10000);
+
+  it('restores the last search results after the component remounts (e.g. navigating away and back)', async () => {
+    mockListSearchProfiles.mockResolvedValue({
+      searchProfiles: [
+        {
+          id: '1',
+          name: 'Test Profile',
+          isActive: true,
+          desiredPositions: ['Developer'],
+          desiredTechnologies: ['TypeScript'],
+          experienceLevel: 'senior',
+          desiredSalary: null,
+          desiredLocations: [],
+          isRemoteOnly: false,
+          userId: 'user-1',
+          createdAt: '2024-01-01',
+          updatedAt: '2024-01-01',
+        },
+      ],
+    });
+
+    const vacancy = {
+      id: 'v3',
+      title: 'Platform Engineer',
+      companyId: 'c3',
+      source: 'remote_ok',
+      sourceUrl: null,
+      location: 'Remote',
+      remote: 'REMOTE',
+      salaryMin: null,
+      salaryMax: null,
+      currency: null,
+      publishedAt: null,
+    };
+
+    vi.mocked(runSearch).mockResolvedValue({
+      searchProfileId: 'profile-1',
+      vacancies: [
+        {
+          status: 'matched',
+          vacancy,
+          recommendation: {
+            matchResultId: 'match-3',
+            vacancy,
+            score: 0.9,
+            confidence: '0.9',
+            recommendation: 'strong_match',
+            summary: 'Excellent platform fit.',
+            strengths: [],
+            weaknesses: [],
+            requiredSkills: [],
+            missingSkills: [],
+            seniorityEstimation: 'Senior',
+            remotePolicy: 'Fully remote',
+            salaryObservations: null,
+            reasoning: '',
+            generatedAt: '2026-07-20T00:00:00.000Z',
+            matchingAlgorithmVersion: '1.0.0',
+          },
+        },
+      ],
+      stats: { totalVacancies: 1, matchedVacancies: 1, pendingVacancies: 0, averageScore: 0.9 },
+      aiEnabled: true,
+    });
+
+    const { unmount } = renderWithI18n(<SearchButton />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /run ai matching/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /run ai matching/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Excellent platform fit.')).toBeInTheDocument();
+    });
+
+    unmount();
+
+    renderWithI18n(<SearchButton />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Excellent platform fit.')).toBeInTheDocument();
+    });
+    expect(runSearch).toHaveBeenCalledTimes(1);
+  });
 
   it('navigates to search profiles page when Create Search Profile clicked', async () => {
     renderWithI18n(<SearchButton />);

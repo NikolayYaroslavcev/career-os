@@ -4,18 +4,23 @@ import { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loading } from '@/components/ui/loading';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Pagination } from '@/components/ui/pagination';
 import { ApiError } from '@/api/client';
+import { useTranslation } from '@/lib/i18n/i18n-provider';
+import { formatDateTime } from '@/lib/format';
 import {
   getProviderDiagnostics,
   getQueueDiagnostics,
   getSearchRunTraces,
   getAiDiagnostics,
   type ProviderDiagnostics,
+  type ProviderOperationalStatus,
   type QueueJobCounts,
   type SearchRunTrace,
   type AiProviderDiagnostics,
   type AiDiagnosticsMetrics,
-  type VacancyExclusionReason,
 } from '@/api/diagnostics';
 
 interface DiagnosticsData {
@@ -25,15 +30,6 @@ interface DiagnosticsData {
   readonly aiProviders: AiProviderDiagnostics[];
   readonly aiMetrics: AiDiagnosticsMetrics;
 }
-
-const EXCLUSION_LABELS: Record<VacancyExclusionReason, string> = {
-  duplicate: 'Duplicate',
-  provider_parse_failure: 'Provider parse failure',
-  low_relevance: 'Low relevance',
-  outside_top_n: 'Outside Top-N (queued for later batch)',
-  cache_hit: 'Already analyzed (cache hit)',
-  ai_failed: 'AI call failed',
-};
 
 function healthVariant(health: string): 'success' | 'warning' | 'destructive' | 'secondary' {
   if (health === 'healthy') return 'success';
@@ -46,13 +42,30 @@ function boolVariant(value: boolean): 'success' | 'destructive' {
   return value ? 'success' : 'destructive';
 }
 
-export function DiagnosticsDashboard() {
+function statusVariant(status: ProviderOperationalStatus): 'success' | 'warning' | 'destructive' | 'secondary' {
+  if (status === 'READY') return 'success';
+  if (status === 'NEEDS_CONFIGURATION') return 'warning';
+  if (status === 'BLOCKED') return 'destructive';
+  return 'secondary';
+}
+
+const PAGE_SIZE = 10;
+
+function paginate<T>(items: readonly T[], page: number): T[] {
+  return items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+}
+
+export function DiagnosticsDashboard(): React.JSX.Element {
+  const { t, locale } = useTranslation();
   const [data, setData] = useState<DiagnosticsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [disabled, setDisabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [providersPage, setProvidersPage] = useState(1);
+  const [exclusionsPage, setExclusionsPage] = useState(1);
+  const [runsPage, setRunsPage] = useState(1);
 
-  const load = async () => {
+  const load = async (): Promise<void> => {
     setIsLoading(true);
     setError(null);
     try {
@@ -69,11 +82,14 @@ export function DiagnosticsDashboard() {
         aiProviders: aiRes.providers,
         aiMetrics: aiRes.metrics,
       });
+      setProvidersPage(1);
+      setExclusionsPage(1);
+      setRunsPage(1);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         setDisabled(true);
       } else {
-        setError(err instanceof Error ? err.message : 'Failed to load diagnostics');
+        setError(err instanceof Error ? err.message : t('diagnosticsPage.loadFailed'));
       }
     } finally {
       setIsLoading(false);
@@ -85,20 +101,25 @@ export function DiagnosticsDashboard() {
   }, []);
 
   if (isLoading) {
-    return <Loading size="lg" text="Loading diagnostics..." />;
+    return <Loading size="lg" text={t('diagnosticsPage.loading')} />;
   }
 
   if (disabled) {
     return (
-      <div className="rounded-md bg-yellow-50 p-4 text-sm text-yellow-800">
-        Diagnostics are disabled on this environment. Set <code>DIAGNOSTICS_ENABLED=true</code> in the backend
-        environment to enable this page.
-      </div>
+      <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400">
+        <AlertDescription className="text-amber-700 dark:text-amber-400">
+          {t('diagnosticsPage.disabledNotice', { envVar: 'DIAGNOSTICS_ENABLED=true' })}
+        </AlertDescription>
+      </Alert>
     );
   }
 
   if (error || !data) {
-    return <div className="rounded-md bg-red-50 p-4 text-sm text-red-600">{error ?? 'Failed to load diagnostics'}</div>;
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>{error ?? t('diagnosticsPage.loadFailed')}</AlertDescription>
+      </Alert>
+    );
   }
 
   const latestRun = data.runs[0];
@@ -108,98 +129,142 @@ export function DiagnosticsDashboard() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <Card>
           <CardContent className="py-4 text-center">
-            <div className="text-2xl font-bold text-gray-900">{data.queue.waiting}</div>
-            <div className="text-sm text-gray-500">Queue waiting</div>
+            <div className="text-2xl font-bold text-foreground">{data.queue.waiting}</div>
+            <div className="text-sm text-muted-foreground">{t('diagnosticsPage.queueWaiting')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="py-4 text-center">
-            <div className="text-2xl font-bold text-gray-900">{data.queue.active}</div>
-            <div className="text-sm text-gray-500">Queue active</div>
+            <div className="text-2xl font-bold text-foreground">{data.queue.active}</div>
+            <div className="text-sm text-muted-foreground">{t('diagnosticsPage.queueActive')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="py-4 text-center">
-            <div className="text-2xl font-bold text-gray-900">{data.queue.completed}</div>
-            <div className="text-sm text-gray-500">Queue completed</div>
+            <div className="text-2xl font-bold text-foreground">{data.queue.completed}</div>
+            <div className="text-sm text-muted-foreground">{t('diagnosticsPage.queueCompleted')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="py-4 text-center">
-            <div className="text-2xl font-bold text-gray-900">{data.queue.failed}</div>
-            <div className="text-sm text-gray-500">Queue failed</div>
+            <div className="text-2xl font-bold text-foreground">{data.queue.failed}</div>
+            <div className="text-sm text-muted-foreground">{t('diagnosticsPage.queueFailed')}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="py-4 text-center">
-            <div className="text-2xl font-bold text-gray-900">{data.aiMetrics.cacheReused}</div>
-            <div className="text-sm text-gray-500">AI cache hits</div>
+            <div className="text-2xl font-bold text-foreground">{data.aiMetrics.cacheReused}</div>
+            <div className="text-sm text-muted-foreground">{t('diagnosticsPage.aiCacheHits')}</div>
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Providers</CardTitle>
+          <CardTitle>{t('diagnosticsPage.providersTitle')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-gray-500">
-                  <th className="py-2 pr-4">Provider</th>
-                  <th className="py-2 pr-4">Registered</th>
-                  <th className="py-2 pr-4">Configured</th>
-                  <th className="py-2 pr-4">Auth</th>
-                  <th className="py-2 pr-4">Health</th>
-                  <th className="py-2 pr-4">Last fetch</th>
-                  <th className="py-2 pr-4">Fetched</th>
-                  <th className="py-2 pr-4">Persisted</th>
-                  <th className="py-2 pr-4">Parse failures</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.providers.map((provider) => (
-                  <tr key={provider.providerId} className="border-b border-gray-100">
-                    <td className="py-2 pr-4 font-medium text-gray-900">{provider.providerId}</td>
-                    <td className="py-2 pr-4">
-                      <Badge variant={boolVariant(provider.registered)}>{provider.registered ? 'yes' : 'no'}</Badge>
-                    </td>
-                    <td className="py-2 pr-4">
-                      <Badge variant={boolVariant(provider.configured)}>{provider.configured ? 'yes' : 'no'}</Badge>
-                    </td>
-                    <td className="py-2 pr-4 text-gray-600">{provider.authenticated}</td>
-                    <td className="py-2 pr-4">
-                      <Badge variant={healthVariant(provider.health)}>{provider.health}</Badge>
-                    </td>
-                    <td className="py-2 pr-4 text-gray-600">
-                      {provider.lastFetch ? (
-                        <Badge variant={boolVariant(provider.lastFetch.ok)}>{provider.lastFetch.ok ? 'ok' : 'failed'}</Badge>
-                      ) : (
-                        <span className="text-gray-400">never</span>
-                      )}
-                    </td>
-                    <td className="py-2 pr-4 text-gray-600">{provider.lastFetch?.fetchedCount ?? '-'}</td>
-                    <td className="py-2 pr-4 text-gray-600">{provider.lastFetch?.persistedCount ?? '-'}</td>
-                    <td className="py-2 pr-4 text-gray-600">{provider.lastFetch?.parseFailureCount ?? '-'}</td>
-                  </tr>
-                ))}
-                {data.providers.length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="py-4 text-center text-gray-400">
-                      No providers registered.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('diagnosticsPage.colProvider')}</TableHead>
+                <TableHead>{t('diagnosticsPage.colStatus')}</TableHead>
+                <TableHead>{t('diagnosticsPage.colDetails')}</TableHead>
+                <TableHead>{t('diagnosticsPage.colRegistered')}</TableHead>
+                <TableHead>{t('diagnosticsPage.colConfigured')}</TableHead>
+                <TableHead>{t('diagnosticsPage.colAuth')}</TableHead>
+                <TableHead>{t('diagnosticsPage.colHealth')}</TableHead>
+                <TableHead>{t('diagnosticsPage.colLastFetch')}</TableHead>
+                <TableHead>{t('diagnosticsPage.colFetched')}</TableHead>
+                <TableHead>{t('diagnosticsPage.colPersisted')}</TableHead>
+                <TableHead>{t('diagnosticsPage.colParseFailures')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginate(data.providers, providersPage).map((provider) => (
+                <TableRow key={provider.providerId}>
+                  <TableCell className="font-medium text-foreground">{provider.providerId}</TableCell>
+                  <TableCell>
+                    <Badge variant={statusVariant(provider.status)}>
+                      {t(`diagnosticsPage.status.${provider.status}`)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-xs text-xs text-muted-foreground">
+                    {provider.status === 'BLOCKED' && provider.statusReason}
+                    {provider.status === 'NEEDS_CONFIGURATION' && provider.requiredConfig && provider.requiredConfig.length > 0 && (
+                      <span>
+                        {t('diagnosticsPage.requiredConfigLabel')} {provider.requiredConfig.join(', ')}
+                      </span>
+                    )}
+                    {provider.status === 'READY' && provider.ingestionMode && (
+                      <div className="space-y-0.5">
+                        <div>
+                          {t('diagnosticsPage.modeLabel')} {provider.ingestionMode}
+                        </div>
+                        {provider.bulkSyncStatus === 'NOT_SUPPORTED_FOR_BULK_SYNC' && (
+                          <div>
+                            {t('diagnosticsPage.bulkSyncLabel')} {t('diagnosticsPage.bulkSyncNotSupported')}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={boolVariant(provider.registered)}>
+                      {provider.registered ? t('diagnosticsPage.yes') : t('diagnosticsPage.no')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={boolVariant(provider.configured)}>
+                      {provider.configured ? t('diagnosticsPage.yes') : t('diagnosticsPage.no')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{provider.authenticated}</TableCell>
+                  <TableCell>
+                    <Badge variant={healthVariant(provider.health)}>{provider.health}</Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {provider.lastFetch ? (
+                      <Badge variant={boolVariant(provider.lastFetch.ok)}>
+                        {provider.lastFetch.ok ? t('diagnosticsPage.ok') : t('diagnosticsPage.failed')}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">{t('diagnosticsPage.never')}</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{provider.lastFetch?.fetchedCount ?? '-'}</TableCell>
+                  <TableCell className="text-muted-foreground">{provider.lastFetch?.persistedCount ?? '-'}</TableCell>
+                  <TableCell className="text-muted-foreground">{provider.lastFetch?.parseFailureCount ?? '-'}</TableCell>
+                </TableRow>
+              ))}
+              {data.providers.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={11} className="py-4 text-center text-muted-foreground">
+                    {t('diagnosticsPage.noProviders')}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+          <Pagination
+            page={providersPage}
+            pageSize={PAGE_SIZE}
+            total={data.providers.length}
+            onPageChange={setProvidersPage}
+            previousLabel={t('common.previous')}
+            nextLabel={t('common.next')}
+            rangeLabel={t('common.rangeOf', {
+              from: Math.min((providersPage - 1) * PAGE_SIZE + 1, data.providers.length),
+              to: Math.min(providersPage * PAGE_SIZE, data.providers.length),
+              total: data.providers.length,
+            })}
+          />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>AI Providers</CardTitle>
+          <CardTitle>{t('diagnosticsPage.aiProvidersTitle')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3">
@@ -211,16 +276,17 @@ export function DiagnosticsDashboard() {
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
             <div>
-              <span className="text-gray-500">Triage passed:</span> {data.aiMetrics.triagePassed}
+              <span className="text-muted-foreground">{t('diagnosticsPage.triagePassed')}</span> {data.aiMetrics.triagePassed}
             </div>
             <div>
-              <span className="text-gray-500">Triage rejected:</span> {data.aiMetrics.triageRejected}
+              <span className="text-muted-foreground">{t('diagnosticsPage.triageRejected')}</span> {data.aiMetrics.triageRejected}
             </div>
             <div>
-              <span className="text-gray-500">AI failed:</span> {data.aiMetrics.failed}
+              <span className="text-muted-foreground">{t('diagnosticsPage.aiFailed')}</span> {data.aiMetrics.failed}
             </div>
             <div>
-              <span className="text-gray-500">Avg batch duration:</span> {Math.round(data.aiMetrics.avgBatchDurationMs)}ms
+              <span className="text-muted-foreground">{t('diagnosticsPage.avgBatchDuration')}</span>{' '}
+              {Math.round(data.aiMetrics.avgBatchDurationMs)}ms
             </div>
           </div>
         </CardContent>
@@ -228,20 +294,22 @@ export function DiagnosticsDashboard() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Latest search run pipeline</CardTitle>
+          <CardTitle>{t('diagnosticsPage.pipelineTitle')}</CardTitle>
         </CardHeader>
         <CardContent>
           {!latestRun ? (
-            <p className="text-sm text-gray-400">No searches have run yet.</p>
+            <p className="text-sm text-muted-foreground">{t('diagnosticsPage.noSearches')}</p>
           ) : (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
-                <span>Search profile: {latestRun.searchProfileId}</span>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <span>
+                  {t('diagnosticsPage.searchProfile')} {latestRun.searchProfileId}
+                </span>
                 <span>&middot;</span>
-                <span>{latestRun.totalDurationMs}ms total</span>
+                <span>{t('diagnosticsPage.totalDuration', { ms: latestRun.totalDurationMs })}</span>
                 <span>&middot;</span>
                 <Badge variant={latestRun.aiEnabled ? 'success' : 'secondary'}>
-                  {latestRun.aiEnabled ? 'AI enabled' : 'AI disabled'}
+                  {latestRun.aiEnabled ? t('diagnosticsPage.aiEnabled') : t('diagnosticsPage.aiDisabled')}
                 </Badge>
               </div>
 
@@ -249,43 +317,54 @@ export function DiagnosticsDashboard() {
                 {latestRun.stages.map((stage) => (
                   <div
                     key={stage.name}
-                    className={`rounded-md border p-3 text-sm ${stage.success ? 'border-gray-200' : 'border-red-300 bg-red-50'}`}
+                    className={`rounded-md border p-3 text-sm ${stage.success ? 'border-border' : 'border-destructive/30 bg-destructive/10 text-destructive'}`}
                   >
-                    <div className="font-medium text-gray-900">{stage.name}</div>
-                    <div className="text-gray-500">
+                    <div className="font-medium text-foreground">{stage.name}</div>
+                    <div className="text-muted-foreground">
                       {stage.input} &rarr; {stage.output}
                     </div>
-                    <div className="text-xs text-gray-400">{stage.durationMs}ms</div>
+                    <div className="text-xs text-muted-foreground">{stage.durationMs}ms</div>
                   </div>
                 ))}
               </div>
 
               <div>
-                <h4 className="mb-2 text-sm font-medium text-gray-900">Excluded vacancies (why they never reached AI)</h4>
+                <h4 className="mb-2 text-sm font-medium text-foreground">{t('diagnosticsPage.excludedTitle')}</h4>
                 {latestRun.exclusions.length === 0 ? (
-                  <p className="text-sm text-gray-400">Nothing excluded — every vacancy is included or already handled.</p>
+                  <p className="text-sm text-muted-foreground">{t('diagnosticsPage.noExclusions')}</p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-200 text-gray-500">
-                          <th className="py-2 pr-4">Vacancy</th>
-                          <th className="py-2 pr-4">Reason</th>
-                          <th className="py-2 pr-4">Stage</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {latestRun.exclusions.map((exclusion, index) => (
-                          <tr key={`${exclusion.vacancyId}-${index}`} className="border-b border-gray-100">
-                            <td className="py-2 pr-4 font-mono text-xs text-gray-600">{exclusion.vacancyId}</td>
-                            <td className="py-2 pr-4">{EXCLUSION_LABELS[exclusion.reason]}</td>
-                            <td className="py-2 pr-4 text-gray-500">{exclusion.stage}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('diagnosticsPage.colVacancy')}</TableHead>
+                        <TableHead>{t('diagnosticsPage.colReason')}</TableHead>
+                        <TableHead>{t('diagnosticsPage.colStage')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {paginate(latestRun.exclusions, exclusionsPage).map((exclusion, index) => (
+                        <TableRow key={`${exclusion.vacancyId}-${index}`}>
+                          <TableCell className="font-mono text-xs text-muted-foreground">{exclusion.vacancyId}</TableCell>
+                          <TableCell>{t(`diagnosticsPage.exclusionReasons.${exclusion.reason}`)}</TableCell>
+                          <TableCell className="text-muted-foreground">{exclusion.stage}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 )}
+                <Pagination
+                  page={exclusionsPage}
+                  pageSize={PAGE_SIZE}
+                  total={latestRun.exclusions.length}
+                  onPageChange={setExclusionsPage}
+                  previousLabel={t('common.previous')}
+                  nextLabel={t('common.next')}
+                  rangeLabel={t('common.rangeOf', {
+                    from: Math.min((exclusionsPage - 1) * PAGE_SIZE + 1, latestRun.exclusions.length),
+                    to: Math.min(exclusionsPage * PAGE_SIZE, latestRun.exclusions.length),
+                    total: latestRun.exclusions.length,
+                  })}
+                />
               </div>
             </div>
           )}
@@ -294,40 +373,53 @@ export function DiagnosticsDashboard() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Recent search runs</CardTitle>
+          <CardTitle>{t('diagnosticsPage.recentRunsTitle')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-gray-500">
-                  <th className="py-2 pr-4">Run</th>
-                  <th className="py-2 pr-4">Search profile</th>
-                  <th className="py-2 pr-4">Started</th>
-                  <th className="py-2 pr-4">Duration</th>
-                  <th className="py-2 pr-4">Mode</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.runs.map((run) => (
-                  <tr key={run.runId} className="border-b border-gray-100">
-                    <td className="py-2 pr-4 font-mono text-xs text-gray-600">{run.runId.slice(0, 8)}</td>
-                    <td className="py-2 pr-4">{run.searchProfileId}</td>
-                    <td className="py-2 pr-4 text-gray-500">{new Date(run.startedAt).toLocaleString()}</td>
-                    <td className="py-2 pr-4 text-gray-500">{run.totalDurationMs}ms</td>
-                    <td className="py-2 pr-4 text-gray-500">{run.awaitedAiMatching ? 'synchronous' : 'async'}</td>
-                  </tr>
-                ))}
-                {data.runs.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="py-4 text-center text-gray-400">
-                      No searches recorded yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('diagnosticsPage.colRun')}</TableHead>
+                <TableHead>{t('diagnosticsPage.searchProfile')}</TableHead>
+                <TableHead>{t('diagnosticsPage.colStarted')}</TableHead>
+                <TableHead>{t('diagnosticsPage.colDuration')}</TableHead>
+                <TableHead>{t('diagnosticsPage.colMode')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginate(data.runs, runsPage).map((run) => (
+                <TableRow key={run.runId}>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{run.runId.slice(0, 8)}</TableCell>
+                  <TableCell>{run.searchProfileId}</TableCell>
+                  <TableCell className="text-muted-foreground">{formatDateTime(run.startedAt, locale)}</TableCell>
+                  <TableCell className="text-muted-foreground">{run.totalDurationMs}ms</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {run.awaitedAiMatching ? t('diagnosticsPage.modeSync') : t('diagnosticsPage.modeAsync')}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {data.runs.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-4 text-center text-muted-foreground">
+                    {t('diagnosticsPage.noRuns')}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+          <Pagination
+            page={runsPage}
+            pageSize={PAGE_SIZE}
+            total={data.runs.length}
+            onPageChange={setRunsPage}
+            previousLabel={t('common.previous')}
+            nextLabel={t('common.next')}
+            rangeLabel={t('common.rangeOf', {
+              from: Math.min((runsPage - 1) * PAGE_SIZE + 1, data.runs.length),
+              to: Math.min(runsPage * PAGE_SIZE, data.runs.length),
+              total: data.runs.length,
+            })}
+          />
         </CardContent>
       </Card>
     </div>

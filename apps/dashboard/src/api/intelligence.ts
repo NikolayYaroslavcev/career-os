@@ -4,8 +4,9 @@ export interface VacancySummary {
   id: string;
   title: string;
   companyId: string;
-  source: string;
+  source: string | null;
   sourceUrl: string | null;
+  applyUrl: string | null;
   location: string;
   remote: string;
   salaryMin: number | null;
