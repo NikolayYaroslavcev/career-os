@@ -1,0 +1,953 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== AUTH ====================
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  firstName    String?
+  lastName     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workspaces            WorkspaceMember[]
+  refreshTokens         RefreshToken[]
+  searchProfiles        SearchProfile[]
+  resumes               Resume[]
+  applications          Application[]
+  notifications         Notification[]
+  notificationPrefs     NotificationPreference?
+  matchResults          MatchResult[]
+  telegramConnection    TelegramConnection?
+  telegramLinkingTokens TelegramLinkingToken[]
+  aiJobs                AIJob[]
+  aiUsages              AIUsage[]
+  analyticsEvents       AnalyticsEvent[]
+  careerInsights        CareerInsight[]
+  vacancyRankings       VacancyRankingResult[]
+  vacancyInteractions   UserVacancyInteraction[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==================== WORKSPACE (Multi-tenancy) ====================
+
+model Workspace {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members          WorkspaceMember[]
+  jobs             Vacancy[]
+  companies        Company[]
+  applications     Application[]
+  resumes          Resume[]
+  searchProfiles   SearchProfile[]
+  recruiters       Recruiter[]
+  watchedCompanies CompanyWatch[]
+}
+
+model WorkspaceMember {
+  id          String        @id @default(uuid())
+  userId      String
+  workspaceId String
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+// ==================== JOB DISCOVERY ====================
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  website   String?
+  industry  String?
+  size      String?
+  logoUrl   String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspaceId  String
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  jobs         Vacancy[]
+  applications Application[]
+  recruiters   Recruiter[]
+}
+
+model Vacancy {
+  id              String     @id @default(uuid())
+  title           String
+  description     String
+  requirements    String[]
+  technologies    String[]   @default([])
+  experienceLevel String?
+  employmentType  String?
+  salaryMin       Int?
+  salaryMax       Int?
+  currency        String     @default("USD")
+  location        String?
+  remote          RemoteType @default(UNKNOWN)
+  publishedAt     DateTime?
+  fetchedAt       DateTime   @default(now())
+  metadata        Json?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  workspaceId  String
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  companyId    String
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  matches      MatchResult[]
+  applications Application[]
+  sources      VacancySource[]
+  mergeAudits  VacancyMergeAudit[]
+  rankings     VacancyRankingResult[]
+  interactions UserVacancyInteraction[]
+
+  @@index([workspaceId])
+  @@index([companyId])
+  @@index([publishedAt])
+  @@index([remote])
+  @@index([salaryMin])
+  @@index([salaryMax])
+  @@index([title])
+  @@index([experienceLevel])
+  @@index([employmentType])
+}
+
+model VacancyMergeAudit {
+  id          String   @id @default(uuid())
+  vacancyId   String
+  field       String
+  oldValue    Json?
+  newValue    Json?
+  sourceId    String
+  sourceName  String
+  providerType ProviderType
+  reason      String?
+  mergedAt    DateTime @default(now())
+
+  vacancy Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+
+  @@index([vacancyId])
+  @@index([sourceId])
+  @@index([mergedAt])
+}
+
+model VacancySource {
+  id           String       @id @default(uuid())
+  providerType ProviderType
+  providerId   String
+  externalId   String
+  sourceUrl    String?
+  applyUrl     String?
+  status       SourceStatus @default(ACTIVE)
+  discoveredAt DateTime     @default(now())
+  lastSeenAt   DateTime     @default(now())
+  isPrimary    Boolean      @default(false)
+  metadata     Json?
+
+  lastSuccessfulSync DateTime?
+  lastFailedSync     DateTime?
+  failureCount       Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vacancyId String
+  vacancy   Vacancy  @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+
+  @@unique([vacancyId, providerId, externalId])
+  @@index([vacancyId])
+  @@index([providerId])
+  @@index([externalId])
+  @@index([providerType])
+  @@index([status])
+}
+
+enum SourceStatus {
+  ACTIVE
+  EXPIRED
+  REMOVED
+  BROKEN
+}
+
+enum ProviderType {
+  ATS
+  JOB_BOARD
+  COMMUNITY
+  MANUAL
+}
+
+enum SourcePriority {
+  ATS
+  JOB_BOARD
+  COMMUNITY
+  MANUAL
+}
+
+enum RemoteType {
+  ONSITE
+  REMOTE
+  HYBRID
+  UNKNOWN
+}
+
+// ==================== AI MATCHING ====================
+
+// Aligned field-for-field with @careeros/ai's MatchResult domain type (ADR-009).
+// FitAssessment sub-objects (salaryFit/locationFit/experienceFit/careerGrowthFit) are
+// flattened into <name>Score/<name>Confidence/<name>Reasoning columns; TokenUsage is
+// flattened into promptTokens/completionTokens/totalTokens.
+model MatchResult {
+  id                        String   @id @default(uuid())
+  overallScore              Int
+  confidence                Float
+  recommendation            String
+  summary                   String   @default("")
+  strengths                 String[]
+  weaknesses                String[]
+  requiredSkills            String[]
+  missingSkills             String[]
+  seniorityEstimation       String   @default("")
+  remotePolicy              String   @default("")
+  salaryObservations        String?
+  inputHash                 String   @default("")
+  salaryFitScore            Int
+  salaryFitConfidence       Float
+  salaryFitReasoning        String
+  locationFitScore          Int
+  locationFitConfidence     Float
+  locationFitReasoning      String
+  experienceFitScore        Int
+  experienceFitConfidence   Float
+  experienceFitReasoning    String
+  careerGrowthFitScore      Int
+  careerGrowthFitConfidence Float
+  careerGrowthFitReasoning  String
+  reasoning                 String
+  categoryScores            Json     @default("[]")
+  actionableItems           Json     @default("[]")
+  explanation               Json?
+  model                     String
+  provider                  String
+  promptVersion             String
+  promptId                  String
+  matchingAlgorithmVersion  String
+  promptTokens              Int
+  completionTokens          Int
+  totalTokens               Int
+  latencyMs                 Int
+  estimatedCostUsd          Float
+  generatedAt               DateTime @default(now())
+  createdAt                 DateTime @default(now())
+
+  userId          String
+  vacancyId       String
+  resumeId        String?
+  searchProfileId String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vacancy         Vacancy       @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  resume          Resume?       @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  searchProfile   SearchProfile @relation(fields: [searchProfileId], references: [id], onDelete: Cascade)
+  applications    Application[]
+
+  // The canonical reuse/cache key: one analysis per (searchProfile, vacancy) pair.
+  // resumeId is informational only — see ADR for AI Vacancy Analysis.
+  @@unique([searchProfileId, vacancyId])
+  @@index([vacancyId])
+  @@index([userId])
+}
+
+// ==================== CAREER CRM ====================
+
+model Application {
+  id        String            @id @default(uuid())
+  status    ApplicationStatus @default(SAVED)
+  notes     String?
+  appliedAt   DateTime?
+  startedAt  DateTime?
+  submittedAt DateTime?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  workspaceId    String
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vacancyId      String
+  vacancy        Vacancy         @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  companyId      String?
+  company        Company?        @relation(fields: [companyId], references: [id])
+  recruiterId    String?
+  recruiter      Recruiter?      @relation(fields: [recruiterId], references: [id])
+  matchResultId  String?
+  matchResult    MatchResult?    @relation(fields: [matchResultId], references: [id])
+  resumeId       String?
+  resume         Resume?         @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  followUps      FollowUp[]
+  communications Communication[]
+  interviews     Interview[]
+
+  @@unique([userId, vacancyId])
+  @@index([resumeId])
+}
+
+enum ApplicationStatus {
+  SAVED
+  STARTED
+  SUBMITTED
+  WAITING
+  HR_INTERVIEW
+  TECHNICAL_INTERVIEW
+  FINAL_INTERVIEW
+  OFFER
+  REJECTED
+  ARCHIVED
+}
+
+model Recruiter {
+  id          String   @id @default(uuid())
+  name        String
+  email       String?
+  phone       String?
+  linkedinUrl String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspaceId  String
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  companyId    String?
+  company      Company?      @relation(fields: [companyId], references: [id])
+  applications Application[]
+}
+
+model Communication {
+  id        String                 @id @default(uuid())
+  type      CommunicationType
+  direction CommunicationDirection
+  content   String?
+  subject   String?
+  sentAt    DateTime               @default(now())
+
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+enum CommunicationType {
+  EMAIL
+  PHONE
+  LINKEDIN
+  TELEGRAM
+  OTHER
+}
+
+enum CommunicationDirection {
+  INBOUND
+  OUTBOUND
+}
+
+// ==================== FOLLOW-UP ENGINE ====================
+
+model FollowUp {
+  id           String         @id @default(uuid())
+  scheduledAt  DateTime
+  status       FollowUpStatus @default(PENDING)
+  message      String?
+  sentAt       DateTime?
+  snoozedUntil DateTime?
+  // Null for follow-ups scheduled manually; set by the automatic scheduler (EPIC application
+  // lifecycle hooks) so it can tell its own tasks apart per-application and avoid duplicates.
+  type         FollowUpType?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+}
+
+enum FollowUpStatus {
+  PENDING
+  SENT
+  COMPLETED
+  SNOOZED
+  CANCELLED
+}
+
+enum FollowUpType {
+  FOLLOW_UP
+  INTERVIEW
+  REPLY_EXPECTED
+  CUSTOM
+}
+
+model Interview {
+  id               String        @id @default(uuid())
+  type             InterviewType
+  scheduledAt      DateTime
+  durationMinutes  Int
+  interviewerName  String?
+  interviewerEmail String?
+  location         String?
+  notes            String?
+  isCompleted      Boolean       @default(false)
+  feedback         Json?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+enum InterviewType {
+  HR
+  TECHNICAL
+  SYSTEM_DESIGN
+  BEHAVIORAL
+  CODING
+  CULTURAL
+  FINAL
+}
+
+// ==================== RESUME ====================
+
+model Resume {
+  id           String              @id @default(uuid())
+  title        String              @default("Untitled Resume")
+  description  String?
+  language     String?
+  tags         String[]            @default([])
+  status       ResumeVersionStatus @default(ACTIVE)
+  originalFile String?
+  fileName     String?
+  fileType     String?
+  fileSize     Int?
+  parsedData   Json
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  workspaceId      String
+  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matchResults     MatchResult[]
+  structuredResume StructuredResume?
+  applications     Application[]
+
+  @@index([userId, status])
+  @@index([userId, tags])
+}
+
+enum ResumeVersionStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+// ==================== STRUCTURED RESUME ====================
+
+model StructuredResume {
+  id       String @id @default(uuid())
+  resumeId String @unique
+  resume   Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  sourceHash        String
+  extractionVersion String
+  extractionModel   String?
+  extractionStatus  String // 'pending' | 'completed' | 'failed'
+  failureReason     String?
+  extractedAt       DateTime?
+
+  summary                String?
+  seniorityLevel         String?
+  totalYearsOfExperience Int?
+  skills                 Json // string[]
+  technologies           Json // string[]
+  experience             Json // StructuredResumeExperience[]
+  education              Json // StructuredResumeEducation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([extractionStatus])
+}
+
+// ==================== SEARCH PROFILES ====================
+
+// Aligned field-for-field with @careeros/career's SearchProfile domain entity.
+// `locations` stores Location value objects ({city?, country?, workMode, isRelocationPossible})
+// as JSON since the domain model carries richer structure than a flat string list.
+model SearchProfile {
+  id                  String   @id @default(uuid())
+  name                String
+  desiredPositions    String[]
+  desiredTechnologies String[]
+  experienceLevel     String
+  salaryMin           Int?
+  salaryMax           Int?
+  salaryCurrency      String?
+  salaryPeriod        String?
+  locations           Json     @default("[]")
+  isRemoteOnly        Boolean  @default(false)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  workspaceId  String
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matchResults MatchResult[]
+}
+
+// ==================== NOTIFICATIONS ====================
+
+model Notification {
+  id       String              @id @default(uuid())
+  channel  NotificationChannel
+  type     String
+  title    String
+  body     String
+  sentAt   DateTime            @default(now())
+  readAt   DateTime?
+  metadata Json?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum NotificationChannel {
+  TELEGRAM
+  EMAIL
+  DISCORD
+  SLACK
+}
+
+model NotificationPreference {
+  id       String  @id @default(uuid())
+  telegram Boolean @default(true)
+  email    Boolean @default(false)
+  discord  Boolean @default(false)
+  slack    Boolean @default(false)
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==================== TELEGRAM ACCOUNT LINKING (FEATURE-002) ====================
+
+// One CareerOS user <-> one Telegram chat. Kept as its own table (not fields
+// on User) so Telegram remains an optional, revocable notification channel.
+model TelegramConnection {
+  id               String                   @id @default(uuid())
+  telegramChatId   String                   @unique
+  telegramUsername String?
+  status           TelegramConnectionStatus @default(ACTIVE)
+  verifiedAt       DateTime
+  createdAt        DateTime                 @default(now())
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum TelegramConnectionStatus {
+  ACTIVE
+  REVOKED
+}
+
+// One-time code generated on the dashboard and redeemed via the Telegram
+// bot's `/start <code>`. Only tokenHash is stored — see ADR-016.
+model TelegramLinkingToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==================== COMPANY WATCH ====================
+
+model CompanyWatch {
+  id              String    @id @default(uuid())
+  name            String
+  aliases         String[] // alternative names for matching
+  country         String?
+  languages       String[] // ["en", "ru", "de"]
+  tags            String[] // ["fintech", "ai", "remote-first"]
+  atsType         AtsType
+  careerUrl       String // careers page URL
+  atsEndpoint     String? // API endpoint for ATS
+  pollingInterval Int       @default(3600) // seconds, default 1 hour
+  active          Boolean   @default(true)
+  lastSyncAt      DateTime?
+  lastSyncStatus  String? // "success", "failed", "pending"
+  lastSyncError   String?
+  metadata        Json? // ATS-specific config (boardToken, etc.)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspaceId String
+  workspace   Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  events      CompanyWatchEvent[]
+  syncLogs    CompanyWatchSyncLog[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@index([atsType])
+  @@index([active])
+}
+
+enum AtsType {
+  GREENHOUSE
+  LEVER
+  ASHBY
+  WORKDAY
+  TEAMTAILOR
+  SMARTRECRUITERS
+  RECRUITEE
+  PERSONIO
+  BAMBOOHR
+  CUSTOM_HTML
+  JSON_LD
+}
+
+model CompanyWatchEvent {
+  id           String                @id @default(uuid())
+  type         CompanyWatchEventType
+  externalId   String? // external vacancy ID from ATS
+  title        String?
+  description  String?
+  url          String?
+  location     String?
+  salary       Json? // { min, max, currency }
+  technologies String[]
+  publishedAt  DateTime?
+  detectedAt   DateTime              @default(now())
+  processed    Boolean               @default(false)
+  notifiedAt   DateTime?
+  metadata     Json? // raw ATS data
+
+  companyWatchId String
+  companyWatch   CompanyWatch @relation(fields: [companyWatchId], references: [id], onDelete: Cascade)
+
+  @@index([companyWatchId])
+  @@index([detectedAt])
+  @@index([processed])
+}
+
+enum CompanyWatchEventType {
+  NEW_JOB
+  REMOVED_JOB
+  CHANGED_JOB
+}
+
+model CompanyWatchSyncLog {
+  id          String     @id @default(uuid())
+  status      SyncStatus
+  jobsFound   Int        @default(0)
+  newJobs     Int        @default(0)
+  removedJobs Int        @default(0)
+  changedJobs Int        @default(0)
+  durationMs  Int?
+  error       String?
+  startedAt   DateTime   @default(now())
+  completedAt DateTime?
+
+  companyWatchId String
+  companyWatch   CompanyWatch @relation(fields: [companyWatchId], references: [id], onDelete: Cascade)
+
+  @@index([companyWatchId])
+  @@index([startedAt])
+}
+
+enum SyncStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+// ==================== AI ORCHESTRATOR ====================
+
+model AIJob {
+  id              String      @id @default(uuid())
+  userId          String
+  feature         String      // "analyze_vacancy", "tailor_resume", "cover_letter", etc.
+  status          AIJobStatus @default(PENDING)
+  priority        Int         @default(0)
+  inputHash       String      // cache key component
+  cacheKey        String?     // full cache key if cached
+  provider        String?
+  model           String?
+  input           Json?       // feature-specific input data
+  result          Json?       // feature-specific output data
+  error           String?
+  tokensIn        Int         @default(0)
+  tokensOut       Int         @default(0)
+  totalTokens     Int         @default(0)
+  estimatedCost   Float       @default(0)
+  latencyMs       Int?
+  retryCount      Int         @default(0)
+  maxRetries      Int         @default(3)
+  createdAt       DateTime    @default(now())
+  startedAt       DateTime?
+  completedAt     DateTime?
+
+  // Optional relation to the vacancy/application this result was generated for.
+  // Not all features have one (e.g. salary_analysis, career_advice), so plain
+  // nullable ids rather than enforced FKs.
+  vacancyId     String?
+  applicationId String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([feature])
+  @@index([status])
+  @@index([inputHash])
+  @@index([createdAt])
+  @@index([vacancyId])
+  @@index([applicationId])
+}
+
+enum AIJobStatus {
+  PENDING
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model AICache {
+  id              String   @id @default(uuid())
+  cacheKey        String   @unique
+  provider        String
+  model           String
+  promptVersion   String
+  feature         String
+  response        Json
+  tokensIn        Int      @default(0)
+  tokensOut       Int      @default(0)
+  estimatedCost   Float    @default(0)
+  hitCount        Int      @default(0)
+  createdAt       DateTime @default(now())
+  lastAccessedAt  DateTime @default(now())
+  expiresAt       DateTime
+
+  @@index([cacheKey])
+  @@index([feature])
+  @@index([expiresAt])
+}
+
+model AIUsage {
+  id              String   @id @default(uuid())
+  userId          String
+  jobId           String?
+  provider        String
+  model           String
+  feature         String
+  tokensIn        Int      @default(0)
+  tokensOut       Int      @default(0)
+  totalTokens     Int      @default(0)
+  estimatedCost   Float    @default(0)
+  latencyMs       Int      @default(0)
+  cacheHit        Boolean  @default(false)
+  cacheMiss       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([feature])
+  @@index([provider])
+  @@index([createdAt])
+}
+
+model AIProviderConfiguration {
+  id              String   @id @default(uuid())
+  userId          String?  // null = global config
+  provider        String   // "openai", "anthropic", "gemini", etc.
+  apiKey          String?  // encrypted in production
+  baseUrl         String?  // custom endpoint for Ollama/LM Studio
+  model           String?  // per-feature model override
+  isActive        Boolean  @default(true)
+  priority        Int      @default(0) // fallback order
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
+
+model AIBudget {
+  id                    String           @id @default(uuid())
+  userId                String?          // null = global
+  period                AIBudgetPeriod
+  maxTokens             Int?
+  maxCost               Float?
+  maxRequestsPerFeature Json?            // { "cover_letter": 10, "tailor_resume": 5 }
+  isEnabled             Boolean          @default(true)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@unique([userId, period])
+}
+
+enum AIBudgetPeriod {
+  DAILY
+  MONTHLY
+}
+
+// ==================== PROVIDER MANAGEMENT (Global) ====================
+
+enum ProviderStatus {
+  READY
+  BLOCKED
+  NEEDS_CONFIGURATION
+  DISABLED
+}
+
+model ProviderConfig {
+  id           String         @id @default(uuid())
+  providerId   String         @unique
+  enabled      Boolean        @default(true)
+  syncEnabled  Boolean        @default(true)
+  status       ProviderStatus @default(READY)
+  settings     Json?
+  qualityScore Int?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([providerId])
+  @@index([enabled])
+}
+
+model TelegramChannel {
+  id           String    @id @default(uuid())
+  username     String    @unique
+  enabled      Boolean   @default(true)
+  category     String?
+  description  String?
+  lastSyncAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([enabled])
+  @@index([username])
+}
+
+// ==================== VACANCY RANKING ====================
+
+model VacancyRankingResult {
+  id           String   @id @default(uuid())
+  score        Int
+  matchedSkills Json   @default("[]")
+  missingSkills Json   @default("[]")
+  reasons      Json    @default("[]")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vacancyId String
+  vacancy   Vacancy  @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, vacancyId])
+  @@index([userId])
+  @@index([vacancyId])
+  @@index([score])
+}
+
+// ==================== USER-VACANCY INTERACTIONS ====================
+
+model UserVacancyInteraction {
+  id        String   @id @default(uuid())
+  userId    String
+  vacancyId String
+  action    InteractionAction
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vacancy Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, vacancyId, action])
+  @@index([userId])
+  @@index([vacancyId])
+  @@index([userId, action])
+  @@index([createdAt])
+}
+
+enum InteractionAction {
+  VIEW
+  SAVE
+  APPLY
+  HIDE
+  IGNORE
+}
+
+// ==================== CAREER INTELLIGENCE ====================
+
+model AnalyticsEvent {
+  id         String   @id @default(uuid())
+  userId     String
+  eventType  String   // 'application_created', 'status_changed', 'match_computed', 'vacancy_found', 'vacancy_saved'
+  entityType String   // 'application', 'match_result', 'vacancy', 'resume_version'
+  entityId   String
+  metadata   Json     @default("{}")
+  occurredAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, eventType])
+  @@index([userId, occurredAt])
+  @@index([entityType, entityId])
+}
+
+model CareerInsight {
+  id          String    @id @default(uuid())
+  userId      String
+  insightType String    // 'funnel', 'failure_pattern', 'career_health', 'success_pattern', 'time_analytics', 'match_analytics', 'trend'
+  data        Json
+  computedAt  DateTime  @default(now())
+  validUntil  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, insightType])
+  @@index([computedAt])
+}

@@ -1,0 +1,45 @@
+{
+  "name": "@careeros/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "clean": "rm -rf dist",
+    "db:migrate": "prisma migrate deploy",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:seed": "tsx src/seed.ts",
+    "db:validate": "prisma validate",
+    "db:check-drift": "tsx scripts/verify-schema-integrity.ts",
+    "provider-keys:encrypt": "tsx scripts/migrate-provider-keys.ts"
+  },
+  "dependencies": {
+    "@careeros/ai": "workspace:*",
+    "@careeros/career": "workspace:*",
+    "@careeros/company-watch": "workspace:*",
+    "@careeros/shared": "workspace:*",
+    "@prisma/client": "^6.2.0"
+  },
+  "devDependencies": {
+    "@careeros/test-utils": "workspace:*",
+    "@types/node": "^22.10.0",
+    "prisma": "^6.2.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0",
+    "tsx": "^4.19.0",
+    "eslint": "^9.0.0"
+  }
+}

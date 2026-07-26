@@ -18,5 +18,9 @@ export {
   FOLLOW_UP_REMINDER_SWEEP_INTERVAL_MS,
 } from './queues/follow-up-reminder.js';
 
+export { COMPANY_WATCH_QUEUE, COMPANY_WATCH_SYNC_JOB } from './queues/company-watch.js';
+
 export { RedisAiBatchBacklog, InMemoryAiBatchBacklog } from './queues/ai-batch-backlog.js';
 export type { AiBatchBacklog } from './queues/ai-batch-backlog.js';
+
+export { EncryptionService, getEncryptionService, resetEncryptionService, validateEncryptionConfig } from './encryption.js';

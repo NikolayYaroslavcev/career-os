@@ -1,0 +1,41 @@
+export { Entity } from './entity.js';
+export { AggregateRoot } from './aggregate-root.js';
+export { ValueObject } from './value-object.js';
+export { BaseDomainEvent } from './domain-event.js';
+export type { DomainEvent } from './domain-event.js';
+export {
+  type UserId,
+  type WorkspaceId,
+  type ResumeId,
+  type VacancyId,
+  type CompanyId,
+  type ApplicationId,
+  type RecruiterId,
+  type CommunicationId,
+  type InterviewId,
+  type FollowUpId,
+  type NotificationId,
+  type FeedbackId,
+  type StructuredResumeId,
+  type SearchProfileId,
+  type TelegramConnectionId,
+  type TelegramLinkingTokenId,
+  type VacancySourceId,
+  createUserId,
+  createWorkspaceId,
+  createResumeId,
+  createVacancyId,
+  createCompanyId,
+  createApplicationId,
+  createRecruiterId,
+  createCommunicationId,
+  createInterviewId,
+  createFollowUpId,
+  createNotificationId,
+  createFeedbackId,
+  createStructuredResumeId,
+  createSearchProfileId,
+  createTelegramConnectionId,
+  createTelegramLinkingTokenId,
+  createVacancySourceId,
+} from './identifier.js';

@@ -30,6 +30,47 @@ describe('Config', () => {
     expect(() => loadConfig()).toThrow();
   });
 
+  describe('production secret validation', () => {
+    it('rejects a well-known placeholder JWT_SECRET in production even if it is 32+ chars', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.JWT_SECRET = 'changeme'.repeat(4);
+      resetConfig();
+      expect(() => loadConfig()).toThrow(/JWT_SECRET/);
+    });
+
+    it('rejects a low-entropy JWT_SECRET (e.g. a repeated character) in production', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.JWT_SECRET = 'a'.repeat(40);
+      resetConfig();
+      expect(() => loadConfig()).toThrow(/JWT_SECRET/);
+    });
+
+    it('accepts a strong random JWT_SECRET and non-default MinIO credentials in production', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.JWT_SECRET = 'K7x!pQ9zR2mN8vT5wL1cB6yH4jF3sD0g';
+      process.env.MINIO_ACCESS_KEY = 'prod-access-key';
+      process.env.MINIO_SECRET_KEY = 'prod-secret-key';
+      resetConfig();
+      expect(() => loadConfig()).not.toThrow();
+    });
+
+    it('rejects the default "minioadmin" MinIO credentials in production', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.JWT_SECRET = 'K7x!pQ9zR2mN8vT5wL1cB6yH4jF3sD0g';
+      process.env.MINIO_ACCESS_KEY = 'minioadmin';
+      process.env.MINIO_SECRET_KEY = 'minioadmin';
+      resetConfig();
+      expect(() => loadConfig()).toThrow(/MINIO/);
+    });
+
+    it('does not enforce placeholder rejection outside production', () => {
+      process.env.NODE_ENV = 'development';
+      process.env.JWT_SECRET = 'test-secret-key-at-least-32-characters-long';
+      resetConfig();
+      expect(() => loadConfig()).not.toThrow();
+    });
+  });
+
   describe('AI_ENABLED', () => {
     it('defaults to true when unset', () => {
       delete process.env.AI_ENABLED;
@@ -66,7 +107,7 @@ describe('Config', () => {
       expect(config.AI_BATCH_SIZE).toBe(15);
       expect(config.PROVIDER_SEARCH_LIMIT).toBe(50);
       expect(config.PROVIDER_TIMEOUT_MS).toBe(15_000);
-      expect(config.MIN_RELEVANCE_SCORE).toBe(1);
+      expect(config.MIN_RELEVANCE_SCORE).toBe(2);
       expect(config.WORKER_CONCURRENCY).toBe(5);
       expect(config.DIAGNOSTICS_ENABLED).toBe(false);
     });

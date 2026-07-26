@@ -90,6 +90,11 @@ const configSchema = z.object({
   // batch. Also used as TriageMatchingService's topN (the two were always the
   // same number, just hardcoded in two places).
   AI_MAX_CANDIDATES: numberField(15),
+  // Local triage-score floor (resume/profile keyword & technology overlap,
+  // see relevance-filter.ts) a vacancy must clear to be considered for an AI
+  // call at all — independent of the topN cut above. A vacancy with zero
+  // overlap scores 0 and is rejected as 'low_relevance' regardless of topN.
+  AI_MIN_TRIAGE_SCORE: numberField(2),
   // Fan-out for AiMatchingService's concurrent AI calls within a batch.
   AI_MATCHING_CONCURRENCY: numberField(5),
   // Size of each auto-continuation batch drawn from the backlog once a batch
@@ -115,7 +120,18 @@ const configSchema = z.object({
   // skipped rather than failing backend startup.
   // HH (HeadHunter) is the exception: it needs no key to search, so it's
   // always registered. An access token is optional and only raises rate limits.
+  // HH_AREAS is a comma-separated list of HH area IDs to sync, sent as
+  // repeated `area` query params that api.hh.ru ORs together. Defaults to
+  // the CIS area IDs verified against https://api.hh.ru/areas/countries:
+  // 113 Russia, 16 Belarus, 40 Kazakhstan, 97 Uzbekistan, 48 Kyrgyzstan,
+  // 9 Azerbaijan. See HH_CIS_AREA_IDS in packages/providers for the same
+  // mapping. NOTE: rabota.by has NO API — Belarus jobs are accessed via
+  // api.hh.ru area 16.
+  HH_AREAS: z.string().default('113,16,40,97,48,9'),
   HH_ACCESS_TOKEN: z.string().optional(),
+  ADZUNA_APP_ID: z.string().optional(),
+  ADZUNA_APP_KEY: z.string().optional(),
+  ADZUNA_COUNTRY: z.string().default('gb'),
   GREENHOUSE_BOARD_TOKEN: z.string().optional(),
   GREENHOUSE_COMPANY_NAME: z.string().optional(),
   LEVER_COMPANY: z.string().optional(),
@@ -128,6 +144,27 @@ const configSchema = z.object({
   WORKDAY_HOST: z.string().optional(),
   TEAMTAILOR_API_KEY: z.string().optional(),
   TEAMTAILOR_COMPANY_NAME: z.string().optional(),
+  SMARTRECRUITERS_COMPANY: z.string().optional(),
+  SMARTRECRUITERS_COMPANY_NAME: z.string().optional(),
+  RECRUITEE_COMPANY: z.string().optional(),
+  RECRUITEE_COMPANY_NAME: z.string().optional(),
+  COMEET_TOKEN: z.string().optional(),
+  COMEET_COMPANY_UID: z.string().optional(),
+  COMEET_COMPANY_NAME: z.string().optional(),
+  LINKEDIN_ENABLED: z.string().optional(),
+  // SuperJob — requires an X-Api-App-Id secret key for every endpoint
+  // (including plain vacancy search), obtained via free self-service signup
+  // at https://api.superjob.ru/register/ (create account, create app, no
+  // OAuth needed for read-only search). See ADR/backend notes: the
+  // registration page itself is blocked by SuperJob's WAF from some
+  // datacenter IPs, so provisioning this key may require a residential/RU IP.
+  SUPERJOB_API_KEY: z.string().optional(),
+  // Telegram public vacancy channels — comma-separated bare usernames, no
+  // `@`/`t.me/` prefix (e.g. "remoteit,frontend_jobs,it_vacancy"). Scraped via
+  // each channel's public `/s/` preview page (no bot token or login needed);
+  // a provider with no channels configured is skipped, same as the other
+  // conditionally-registered providers above.
+  TELEGRAM_CHANNELS: z.string().optional(),
 
   // Vacancy search / matching pipeline
   // Max vacancies requested per provider per search.
@@ -135,19 +172,62 @@ const configSchema = z.object({
   // Per-provider search timeout — one slow/hung provider can't block the rest.
   PROVIDER_TIMEOUT_MS: numberField(15_000),
   // Local keyword-relevance floor a vacancy must clear to survive rule
-  // filtering (before triage/AI ever sees it).
-  MIN_RELEVANCE_SCORE: numberField(1),
+  // filtering (before triage/AI ever sees it). A single incidental keyword
+  // hit in the description alone scores 1 — kept at 2 so that lone hit isn't
+  // enough on its own, while a single title or technology match still is.
+  MIN_RELEVANCE_SCORE: numberField(2),
   // BullMQ vacancy-analysis worker concurrency (apps/worker).
   WORKER_CONCURRENCY: numberField(5),
   // Gates the /api/v1/diagnostics/* routes and the dashboard diagnostics page.
   // Default off so a misconfigured production deploy never exposes pipeline
   // internals by accident.
   DIAGNOSTICS_ENABLED: booleanField(false),
+
+  // AI Orchestrator
+  AI_ORCHESTRATOR_MODE: z.enum(['manual', 'smart', 'automatic']).default('manual'),
+  AI_CACHE_TTL_MS: numberField(86400000), // 24h default
+  AI_BUDGET_CHECK_ENABLED: booleanField(true),
+  AI_FEATURE_PROVIDER_MAP: z.string().optional(), // JSON: { "cover_letter": "openai", ... }
 });
 
 export type Config = z.infer<typeof configSchema>;
 
 let config: Config | null = null;
+
+// Values that satisfy the schema's format/length rules but are well-known
+// placeholders — safe for local dev (docker-compose seeds exactly these), but
+// never acceptable in production. Checked only when NODE_ENV === 'production'
+// so local/test setups are unaffected.
+const WEAK_JWT_SECRETS = new Set([
+  'changeme',
+  'change-me',
+  'changeme'.repeat(4),
+  'secret',
+  'password',
+  'test-secret-key-at-least-32-characters-long',
+  'your-secret-key-here-min-32-characters',
+]);
+const WEAK_MINIO_VALUE = 'minioadmin';
+
+function assertProductionSecretsAreStrong(cfg: Config): void {
+  if (cfg.NODE_ENV !== 'production') return;
+
+  const errors: string[] = [];
+
+  const normalizedJwtSecret = cfg.JWT_SECRET.toLowerCase();
+  const distinctChars = new Set(cfg.JWT_SECRET).size;
+  if (WEAK_JWT_SECRETS.has(normalizedJwtSecret) || distinctChars < 8) {
+    errors.push('JWT_SECRET appears to be a placeholder/low-entropy value; set a strong random secret in production.');
+  }
+
+  if (cfg.MINIO_ACCESS_KEY === WEAK_MINIO_VALUE || cfg.MINIO_SECRET_KEY === WEAK_MINIO_VALUE) {
+    errors.push('MINIO_ACCESS_KEY/MINIO_SECRET_KEY are still the default "minioadmin"; set real credentials in production.');
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`Refusing to start in production with insecure config:\n${errors.join('\n')}`);
+  }
+}
 
 export function loadConfig(): Config {
   if (config) return config;
@@ -158,6 +238,8 @@ export function loadConfig(): Config {
     console.error('Invalid environment variables:', result.error.format());
     throw new Error('Invalid environment variables');
   }
+
+  assertProductionSecretsAreStrong(result.data);
 
   config = result.data;
   return config;
