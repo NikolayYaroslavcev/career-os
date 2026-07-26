@@ -3,7 +3,7 @@ import Fastify from 'fastify';
 import { errorHandler } from '../../../middleware/error-handler.js';
 import { diagnosticsRoutes } from '../diagnostics-routes.js';
 
-function buildTestApp(diagnosticsEnabled: boolean) {
+function buildTestApp(diagnosticsEnabled: boolean): ReturnType<typeof Fastify> {
   const app = Fastify();
   app.setErrorHandler(errorHandler);
   app.decorate('config', { DIAGNOSTICS_ENABLED: diagnosticsEnabled, AI_PROVIDER: 'openai', AI_FALLBACK_PROVIDERS: 'anthropic' } as never);

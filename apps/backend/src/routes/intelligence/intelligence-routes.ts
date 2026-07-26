@@ -1,11 +1,46 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { Vacancy } from '@careeros/career';
-import { createUserId } from '@careeros/career';
+import type { Vacancy, VacancySourceRepository } from '@careeros/career';
+import { createUserId, SourceLifecycleServiceImpl } from '@careeros/career';
 import type { Recommendation } from '../../services/recommendation-service.js';
 import type { IntelligenceWorkflowResult } from '../../services/intelligence-workflow-service.js';
 import { NotFoundError, UnauthorizedError, AppError } from '../../middleware/error-handler.js';
 import { NoActiveSearchProfileError, NoResumeFoundError } from '../../services/intelligence-workflow-service.js';
+
+const sourceLifecycleService = new SourceLifecycleServiceImpl();
+
+interface PrimarySourceInfo {
+  source: string | null;
+  sourceUrl: string | null;
+  applyUrl: string | null;
+}
+
+const EMPTY_SOURCE_INFO: PrimarySourceInfo = { source: null, sourceUrl: null, applyUrl: null };
+
+/**
+ * Sources aren't part of the Vacancy aggregate, so provider/sourceUrl/applyUrl
+ * (ADR-030) have to be batch-fetched per search response. Bounded by page size
+ * (~10-20 vacancies), mirroring the accepted per-id Promise.all fallback pattern
+ * already used in vacancy-routes.ts's batchFindCompanies.
+ */
+async function batchFetchPrimarySourceInfo(
+  repo: VacancySourceRepository,
+  vacancies: readonly Vacancy[]
+): Promise<Map<string, PrimarySourceInfo>> {
+  const entries = await Promise.all(
+    vacancies.map(async (vacancy) => {
+      const sources = await repo.findByVacancyId(vacancy.id);
+      const primarySource = sources.find((s) => s.isPrimary) ?? sources[0];
+      const info: PrimarySourceInfo = {
+        source: primarySource?.providerId ?? null,
+        sourceUrl: primarySource?.sourceUrl ?? null,
+        applyUrl: sourceLifecycleService.computePrimaryApplyUrl(sources) ?? null,
+      };
+      return [vacancy.id, info] as const;
+    })
+  );
+  return new Map(entries);
+}
 
 const runWorkflowSchema = z.object({
   searchProfileId: z.string().uuid().optional(),
@@ -42,26 +77,57 @@ async function getWorkspaceId(fastify: FastifyInstance, userId: string): Promise
   return workspaceId;
 }
 
-function serializeVacancySummary(vacancy: Vacancy) {
+function serializeVacancySummary(vacancy: Vacancy, sourceInfo: PrimarySourceInfo): {
+  id: string;
+  title: string;
+  companyId: string;
+  location: string;
+  remote: string;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  currency: string | null;
+  publishedAt: string | null;
+  source: string | null;
+  sourceUrl: string | null;
+  applyUrl: string | null;
+} {
   return {
     id: vacancy.id,
     title: vacancy.title,
     companyId: vacancy.companyId,
-    source: vacancy.source,
-    sourceUrl: vacancy.sourceUrl?.value ?? null,
     location: vacancy.location.toString(),
     remote: vacancy.location.workMode.toUpperCase(),
     salaryMin: vacancy.salary?.min ?? null,
     salaryMax: vacancy.salary?.max ?? null,
     currency: vacancy.salary?.currency ?? null,
     publishedAt: vacancy.publishedAt ? vacancy.publishedAt.toISOString() : null,
+    source: sourceInfo.source,
+    sourceUrl: sourceInfo.sourceUrl,
+    applyUrl: sourceInfo.applyUrl,
   };
 }
 
-function serializeRecommendation(recommendation: Recommendation) {
+function serializeRecommendation(recommendation: Recommendation, sourceInfo: PrimarySourceInfo): {
+  matchResultId: Recommendation['matchResultId'];
+  vacancy: ReturnType<typeof serializeVacancySummary>;
+  score: number;
+  confidence: Recommendation['confidence'];
+  recommendation: Recommendation['recommendation'];
+  summary: Recommendation['summary'];
+  strengths: Recommendation['strengths'];
+  weaknesses: Recommendation['weaknesses'];
+  requiredSkills: Recommendation['requiredSkills'];
+  missingSkills: Recommendation['missingSkills'];
+  seniorityEstimation: Recommendation['seniorityEstimation'];
+  remotePolicy: Recommendation['remotePolicy'];
+  salaryObservations: Recommendation['salaryObservations'];
+  reasoning: Recommendation['reasoning'];
+  generatedAt: string;
+  matchingAlgorithmVersion: Recommendation['matchingAlgorithmVersion'];
+} {
   return {
     matchResultId: recommendation.matchResultId,
-    vacancy: serializeVacancySummary(recommendation.vacancy),
+    vacancy: serializeVacancySummary(recommendation.vacancy, sourceInfo),
     // overallScore is 0-100 internally; the dashboard displays score * 100 as a percentage.
     score: recommendation.score / 100,
     confidence: recommendation.confidence,
@@ -87,17 +153,32 @@ function serializeRecommendation(recommendation: Recommendation) {
  * analysis), or 'skipped' (triage-rejected, or AI disabled — will never get
  * a score for this snapshot).
  */
-function serializeSearchResult(result: IntelligenceWorkflowResult) {
+function serializeSearchResult(result: IntelligenceWorkflowResult, sourceInfoByVacancyId: Map<string, PrimarySourceInfo>): {
+  searchProfileId: IntelligenceWorkflowResult['searchProfileId'];
+  vacancies: {
+    status: 'matched' | 'pending' | 'skipped';
+    vacancy: ReturnType<typeof serializeVacancySummary>;
+    recommendation: ReturnType<typeof serializeRecommendation> | null;
+  }[];
+  stats: {
+    totalVacancies: number;
+    matchedVacancies: number;
+    pendingVacancies: number;
+    averageScore: number;
+  };
+  aiEnabled: IntelligenceWorkflowResult['aiEnabled'];
+} {
   const recommendationByVacancyId = new Map(result.recommendations.map((rec) => [rec.vacancy.id, rec]));
   const pendingIds = new Set(result.pendingVacancyIds);
 
   const vacancies = result.vacancies.map((vacancy) => {
     const recommendation = recommendationByVacancyId.get(vacancy.id);
-    const status = recommendation ? 'matched' : pendingIds.has(vacancy.id) ? 'pending' : 'skipped';
+    const status: 'matched' | 'pending' | 'skipped' = recommendation ? 'matched' : pendingIds.has(vacancy.id) ? 'pending' : 'skipped';
+    const sourceInfo = sourceInfoByVacancyId.get(vacancy.id) ?? EMPTY_SOURCE_INFO;
     return {
       status,
-      vacancy: serializeVacancySummary(vacancy),
-      recommendation: recommendation ? serializeRecommendation(recommendation) : null,
+      vacancy: serializeVacancySummary(vacancy, sourceInfo),
+      recommendation: recommendation ? serializeRecommendation(recommendation, sourceInfo) : null,
     };
   });
 
@@ -119,7 +200,7 @@ function serializeSearchResult(result: IntelligenceWorkflowResult) {
   };
 }
 
-export async function intelligenceRoutes(fastify: FastifyInstance) {
+export async function intelligenceRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post('/search', async (request, reply) => {
     const userId = requireUserId(request);
     const body = runWorkflowSchema.parse(request.body ?? {});
@@ -132,7 +213,8 @@ export async function intelligenceRoutes(fastify: FastifyInstance) {
         providerId: body.providerId,
       });
 
-      const response = serializeSearchResult(result);
+      const sourceInfoByVacancyId = await batchFetchPrimarySourceInfo(fastify.container.repositories.vacancySource, result.vacancies);
+      const response = serializeSearchResult(result, sourceInfoByVacancyId);
       fastify.log.info(
         { userId, searchProfileId: body.searchProfileId, durationMs: Date.now() - startedAt, status: 200 },
         'HTTP response returned'
@@ -175,6 +257,10 @@ export async function intelligenceRoutes(fastify: FastifyInstance) {
         result.recommendations.map((rec) => [rec.vacancy.id, rec])
       );
       const pendingIds = new Set(result.pendingVacancyIds);
+      const sourceInfoByVacancyId = await batchFetchPrimarySourceInfo(
+        fastify.container.repositories.vacancySource,
+        result.recommendations.map((rec) => rec.vacancy)
+      );
 
       return reply.send({
         vacancies: body.vacancyIds.map((vacancyId) => {
@@ -183,7 +269,9 @@ export async function intelligenceRoutes(fastify: FastifyInstance) {
           return {
             vacancyId,
             status,
-            recommendation: recommendation ? serializeRecommendation(recommendation) : null,
+            recommendation: recommendation
+              ? serializeRecommendation(recommendation, sourceInfoByVacancyId.get(vacancyId) ?? EMPTY_SOURCE_INFO)
+              : null,
           };
         }),
       });

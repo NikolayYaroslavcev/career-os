@@ -29,6 +29,7 @@ vi.mock('@careeros/database', () => ({
   PrismaUserRepository: vi.fn(),
   PrismaResumeRepository: vi.fn(),
   PrismaVacancyRepository: vi.fn(),
+  PrismaVacancySourceRepository: vi.fn(),
   PrismaCompanyRepository: vi.fn(),
   PrismaApplicationRepository: vi.fn(),
   PrismaRecruiterRepository: vi.fn(),
@@ -43,24 +44,46 @@ vi.mock('@careeros/database', () => ({
   PrismaWorkspaceRepository: vi.fn(),
   PrismaRefreshTokenRepository: vi.fn(),
   PrismaStructuredResumeRepository: vi.fn(),
+  PrismaCompanyWatchRepository: vi.fn(),
+  PrismaCompanyWatchEventRepository: vi.fn(),
+  PrismaCompanyWatchSyncLogRepository: vi.fn(),
+  PrismaAIJobRepository: vi.fn(),
+  PrismaAICacheRepository: vi.fn(),
+  PrismaAIUsageRepository: vi.fn(),
+  PrismaAIProviderConfigRepository: vi.fn(),
+  PrismaAIBudgetRepository: vi.fn(),
+  PrismaAnalyticsEventRepository: vi.fn(),
+  PrismaCareerInsightRepository: vi.fn(),
+  PrismaProviderConfigRepository: vi.fn(),
+  PrismaTelegramChannelRepository: vi.fn(),
+  PrismaQualityDataRepository: vi.fn(),
+  PrismaUserVacancyInteractionRepository: vi.fn(),
 }));
 
 vi.mock('@careeros/auth', () => ({
   createAuthProvider: vi.fn().mockReturnValue({}),
 }));
 
-vi.mock('@careeros/career', () => ({
-  ApplicationServiceImpl: vi.fn(),
-  ExperienceLevel: {
-    INTERN: 'intern',
-    JUNIOR: 'junior',
-    MIDDLE: 'middle',
-    SENIOR: 'senior',
-    LEAD: 'lead',
-    PRINCIPAL: 'principal',
-    EXECUTIVE: 'executive',
-  },
+vi.mock('@careeros/career', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@careeros/career')>();
+  return {
+    ...actual,
+    ApplicationServiceImpl: vi.fn(),
+  };
+});
+
+vi.mock('@careeros/company-watch', () => ({
+  CompanyWatchService: vi.fn(),
+  AtsAdapterRegistry: vi.fn(),
 }));
+
+vi.mock('@careeros/ai-orchestrator', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@careeros/ai-orchestrator')>();
+  return {
+    ...actual,
+    AIOrchestrator: vi.fn(),
+  };
+});
 
 vi.mock('bullmq', () => ({
   Queue: vi.fn().mockImplementation(() => ({ addBulk: vi.fn(), close: vi.fn() })),
@@ -82,6 +105,22 @@ vi.mock('@careeros/providers', () => ({
   createAshbyProvider: vi.fn(),
   createWorkdayProvider: vi.fn(),
   createTeamtailorProvider: vi.fn(),
+  createRemotiveProvider: vi.fn(),
+  createHimalayasProvider: vi.fn(),
+  createArbeitnowProvider: vi.fn(),
+  createJobicyProvider: vi.fn(),
+  createWWRProvider: vi.fn(),
+  createWorkingNomadsProvider: vi.fn(),
+  createNoDeskProvider: vi.fn(),
+  createHNHiringProvider: vi.fn(),
+  createLinkedInProvider: vi.fn(),
+  createHabrCareerProvider: vi.fn(),
+  createAdzunaProvider: vi.fn(),
+  createSmartRecruitersProvider: vi.fn(),
+  createRecruiteeProvider: vi.fn(),
+  createComeetProvider: vi.fn(),
+  createSuperJobProvider: vi.fn(),
+  createTelegramProvider: vi.fn(),
   ConsoleLogger: vi.fn().mockImplementation(() => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -136,6 +175,12 @@ const mockConfig = {
   MIN_RELEVANCE_SCORE: 1,
   WORKER_CONCURRENCY: 5,
   DIAGNOSTICS_ENABLED: false,
+  AI_ORCHESTRATOR_MODE: 'manual' as const,
+  AI_CACHE_TTL_MS: 86_400_000,
+  AI_BUDGET_CHECK_ENABLED: true,
+  AI_MIN_TRIAGE_SCORE: 2,
+  HH_AREAS: '113',
+  ADZUNA_COUNTRY: 'gb',
 };
 
 describe('Container AI Provider Selection', () => {
@@ -144,6 +189,10 @@ describe('Container AI Provider Selection', () => {
   });
 
   it('delegates primary AI provider construction to the single shared factory, unmodified', async () => {
+    // Dynamic import of the full container/AI module graph is fast in
+    // isolation but can push past vitest's default 5s test timeout when the
+    // whole monorepo test suite runs in parallel and module transform is
+    // contended — this is about CI scheduling, not the assertion itself.
     const { createPrimaryAIProviderFromEnv } = await import('@careeros/ai');
     const { buildContainer } = await import('../container.js');
 
@@ -155,12 +204,12 @@ describe('Container AI Provider Selection', () => {
     // one place that owns that mapping (also used by apps/worker), plus a
     // logger/metrics collector for the resilience wrapper to report through.
     expect(createPrimaryAIProviderFromEnv).toHaveBeenCalledTimes(1);
-    const [calledConfig, deps] = (createPrimaryAIProviderFromEnv as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const [calledConfig, deps] = (createPrimaryAIProviderFromEnv as unknown as ReturnType<typeof vi.fn>).mock.calls[0] ?? [];
     expect(calledConfig).toBe(config);
     expect(deps).toEqual(
       expect.objectContaining({ logger: expect.anything(), metrics: expect.anything() })
     );
-  });
+  }, 15_000);
 
   it('pins a separate, cheaper Groq model for search profile suggestion, distinct from vacancy matching', async () => {
     const { createAIProviderFromConfig } = await import('@careeros/ai');

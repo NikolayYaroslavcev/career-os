@@ -8,7 +8,6 @@ import {
   createUserId,
   Location,
   ExperienceLevel,
-  VacancySource,
 } from '@careeros/career';
 import type { IntelligenceWorkflowResult } from '../intelligence-workflow-service.js';
 import { MorningDigestService, type WorkflowRunner } from '../morning-digest-service.js';
@@ -29,7 +28,6 @@ function buildVacancy(id: string, title: string, companyId: string): Vacancy {
     companyId: createCompanyId(companyId),
     location: Location.create({ workMode: 'remote' }),
     experienceLevel: ExperienceLevel.SENIOR,
-    source: VacancySource.REMOTE_OK,
   });
 }
 
@@ -227,5 +225,107 @@ describe('MorningDigestService', () => {
     const result = await service.generate({ userId: USER_ID });
 
     expect(result.digest.topRecommendations[0]?.companyName).toBe('Name of c-1');
+  });
+
+  it('includes due-soon follow-ups from FollowUpService when one is wired in, and omits them otherwise', async () => {
+    const companyRepository = new InMemoryCompanyRepository();
+    const notificationHistoryRepository = new InMemoryNotificationHistoryRepository();
+    const metrics = { incrementCounter: vi.fn(), recordHistogram: vi.fn(), setGauge: vi.fn() };
+    const followUpService = {
+      listEnrichedForUser: vi.fn().mockResolvedValue([
+        {
+          id: 'f-1',
+          applicationId: 'app-1',
+          type: undefined,
+          status: 'pending',
+          scheduledAt: new Date(),
+          message: undefined,
+          vacancyTitle: 'Frontend Engineer',
+          companyName: 'Google',
+          daysSinceApplied: 7,
+        },
+      ]),
+    };
+
+    const withFollowUps = new MorningDigestService(
+      buildWorkflowRunner([]),
+      notificationHistoryRepository,
+      companyRepository,
+      new DigestBuilder(),
+      metrics,
+      followUpService
+    );
+    const withoutFollowUps = new MorningDigestService(
+      buildWorkflowRunner([]),
+      notificationHistoryRepository,
+      companyRepository,
+      new DigestBuilder(),
+      metrics
+    );
+
+    const withResult = await withFollowUps.generate({ userId: USER_ID });
+    const withoutResult = await withoutFollowUps.generate({ userId: USER_ID });
+
+    expect(withResult.digest.followUps).toHaveLength(1);
+    expect(withResult.digest.followUps[0]).toMatchObject({ companyName: 'Google', vacancyTitle: 'Frontend Engineer' });
+    expect(withoutResult.digest.followUps).toEqual([]);
+  });
+
+  it('includes only pending/snoozed follow-ups scheduled today or earlier, excluding completed/cancelled and future-dated ones', async () => {
+    const companyRepository = new InMemoryCompanyRepository();
+    const notificationHistoryRepository = new InMemoryNotificationHistoryRepository();
+    const metrics = { incrementCounter: vi.fn(), recordHistogram: vi.fn(), setGauge: vi.fn() };
+
+    const now = new Date();
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const twoDaysFromNow = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+
+    function buildItem(id: string, status: string, scheduledAt: Date): {
+      id: string;
+      applicationId: string;
+      type: undefined;
+      status: string;
+      scheduledAt: Date;
+      message: undefined;
+      vacancyTitle: string;
+      companyName: string;
+      daysSinceApplied: number;
+    } {
+      return {
+        id,
+        applicationId: `app-${id}`,
+        type: undefined,
+        status,
+        scheduledAt,
+        message: undefined,
+        vacancyTitle: `Vacancy ${id}`,
+        companyName: `Company ${id}`,
+        daysSinceApplied: 1,
+      };
+    }
+
+    const followUpService = {
+      listEnrichedForUser: vi.fn().mockResolvedValue([
+        buildItem('overdue-pending', 'pending', yesterday),
+        buildItem('due-today-snoozed', 'snoozed', now),
+        buildItem('completed-today', 'completed', now),
+        buildItem('cancelled-overdue', 'cancelled', yesterday),
+        buildItem('future-pending', 'pending', twoDaysFromNow),
+      ]),
+    };
+
+    const service = new MorningDigestService(
+      buildWorkflowRunner([]),
+      notificationHistoryRepository,
+      companyRepository,
+      new DigestBuilder(),
+      metrics,
+      followUpService
+    );
+
+    const result = await service.generate({ userId: USER_ID });
+
+    const includedIds = result.digest.followUps.map((f) => f.id).sort();
+    expect(includedIds).toEqual(['due-today-snoozed', 'overdue-pending']);
   });
 });

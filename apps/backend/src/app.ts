@@ -5,9 +5,9 @@ import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
 import { Telegraf } from 'telegraf';
 import { registerTelegramLinkingBot } from '@careeros/telegram';
-import { loadConfig } from '@careeros/shared';
-import { checkDatabaseHealth } from '@careeros/database';
-import { checkRedisHealth } from '@careeros/shared';
+import { loadConfig, validateEncryptionConfig } from '@careeros/shared';
+import { checkDatabaseHealth, prisma } from '@careeros/database';
+import { checkRedisHealth, getRedis } from '@careeros/shared';
 import { runHealthChecks } from '@careeros/shared';
 import { apiRoutes } from './routes/index.js';
 import { errorHandler } from './middleware/error-handler.js';
@@ -30,8 +30,10 @@ function launchTelegramLinkingBot(botToken: string, container: Container): void 
   process.once('SIGTERM', () => bot.stop('SIGTERM'));
 }
 
-export async function buildApp() {
+export async function buildApp(): Promise<ReturnType<typeof Fastify>> {
   const config = loadConfig();
+
+  validateEncryptionConfig();
 
   const app = Fastify({
     logger: {
@@ -48,6 +50,16 @@ export async function buildApp() {
     launchTelegramLinkingBot(config.TELEGRAM_BOT_TOKEN, container);
   }
 
+  // AI is optional (see /health's ai sub-check below), but a missing/invalid
+  // key should be loud in boot logs — not something only discovered by
+  // polling /health or waiting for the first AI call to fail at request time.
+  if (!container.aiProvider.validateConfig()) {
+    app.log.warn(
+      'AI provider is not configured (missing/invalid API key for %s) — AI-powered features will fail at request time until this is fixed.',
+      config.AI_PROVIDER
+    );
+  }
+
   app.setErrorHandler(errorHandler);
 
   await app.register(cors, {
@@ -60,6 +72,11 @@ export async function buildApp() {
   await app.register(rateLimit, {
     max: 100,
     timeWindow: '1 minute',
+    // Backed by Redis (not the plugin's in-process default) so the limit is
+    // shared across backend replicas instead of being multiplied by replica
+    // count — see ADR-019.
+    redis: getRedis(config.REDIS_URL),
+    nameSpace: 'fastify-rate-limit:',
   });
 
   await app.register(multipart, {
@@ -78,8 +95,8 @@ export async function buildApp() {
   // set is still a correctly running backend — it should report 200 (and
   // satisfy `depends_on: condition: service_healthy`), just with those two
   // sub-checks visibly unhealthy so it's obvious what's misconfigured.
-  const checkProvidersReady = async () => container.providerRegistry.getAll().length > 0;
-  const checkAIReady = async () => container.aiProvider.validateConfig();
+  const checkProvidersReady = async (): Promise<boolean> => container.providerRegistry.getAll().length > 0;
+  const checkAIReady = async (): Promise<boolean> => container.aiProvider.validateConfig();
 
   app.get('/health', async (_request, reply) => {
     const [health, providersReady, aiReady] = await Promise.all([
@@ -119,6 +136,28 @@ export async function buildApp() {
   });
 
   await app.register(apiRoutes);
+
+  // Start the sync scheduler — registers periodic sync for every workspace.
+  // Non-blocking: runs in the background after the server starts accepting requests.
+  app.addHook('onReady', async () => {
+    try {
+      const workspaces = await prisma.workspace.findMany({ select: { id: true } });
+      for (const workspace of workspaces) {
+        try {
+          container.services.syncScheduler.startAll(workspace.id);
+        } catch (error: unknown) {
+          app.log.warn(
+            'Failed to start sync scheduler for workspace %s: %s',
+            workspace.id,
+            error instanceof Error ? error.message : String(error)
+          );
+        }
+      }
+      app.log.info('Sync scheduler started for %d workspace(s)', workspaces.length);
+    } catch (error: unknown) {
+      app.log.warn('Failed to start sync scheduler: %s', error instanceof Error ? error.message : String(error));
+    }
+  });
 
   return app;
 }

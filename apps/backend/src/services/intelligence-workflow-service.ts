@@ -2,6 +2,7 @@ import type { Resume, ResumeRepository, UserRepository, Vacancy, VacancyReposito
 import { createUserId, createVacancyId } from '@careeros/career';
 import type { AIErrorType, AILogger } from '@careeros/ai';
 import { NoopAILogger } from '@careeros/ai';
+import type { AnalyticsEventRepository } from '@careeros/database';
 import type { ProviderSearchService, ProviderSearchStats } from './provider-search-service.js';
 import type { AiMatchingService, AiMatchingStats, AiMatchAllParams } from './ai-matching-service.js';
 import type { RecommendationService, Recommendation } from './recommendation-service.js';
@@ -74,7 +75,8 @@ export class IntelligenceWorkflowService {
     private readonly logger: AILogger = new NoopAILogger(),
     private readonly aiEnabled: boolean = true,
     private readonly aiBatchBacklog: AiBatchBacklog = new InMemoryAiBatchBacklog(),
-    private readonly searchRunTraceRecorder: SearchRunTraceRecorder = new SearchRunTraceRecorder()
+    private readonly searchRunTraceRecorder: SearchRunTraceRecorder = new SearchRunTraceRecorder(),
+    private readonly analyticsEventRepository?: AnalyticsEventRepository
   ) {}
 
   /**
@@ -108,7 +110,7 @@ export class IntelligenceWorkflowService {
     });
 
     const profile = params.searchProfileId
-      ? await this.searchProfileService.getById(params.searchProfileId)
+      ? await this.searchProfileService.getOwnedById(params.searchProfileId, params.userId)
       : await this.searchProfileService.getActiveForUser(params.userId);
 
     if (!profile) {
@@ -133,6 +135,16 @@ export class IntelligenceWorkflowService {
       persisted: providerSearch.stats.persisted,
       durationMs: providerSearch.stats.durationMs,
     });
+
+    await this.analyticsEventRepository?.recordMany(
+      providerSearch.vacancies.map((vacancy) => ({
+        userId: params.userId,
+        eventType: 'vacancy_found',
+        entityType: 'vacancy',
+        entityId: vacancy.id,
+        metadata: { searchProfileId: profile.id },
+      })),
+    );
 
     const matchParams = this.buildMatchParams(profile, resume, params.userId, providerSearch.vacancies);
     const vacancyById = new Map(providerSearch.vacancies.map((vacancy) => [vacancy.id, vacancy]));
@@ -339,7 +351,7 @@ export class IntelligenceWorkflowService {
     searchProfileId: string;
     vacancyIds: readonly string[];
   }): Promise<MatchStatusResult> {
-    const profile = await this.searchProfileService.getById(params.searchProfileId);
+    const profile = await this.searchProfileService.getOwnedById(params.searchProfileId, params.userId);
     if (!profile) {
       throw new NoActiveSearchProfileError(params.userId);
     }

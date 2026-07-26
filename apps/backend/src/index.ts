@@ -12,7 +12,7 @@ import { connectDatabase, disconnectDatabase } from '@careeros/database';
 import { getRedis, disconnectRedis } from '@careeros/shared';
 import { loadConfig } from '@careeros/shared';
 
-const start = async () => {
+const start = async (): Promise<void> => {
   const config = loadConfig();
 
   // AI startup diagnostics — a throwaway health monitor is fine here since
@@ -32,7 +32,7 @@ const start = async () => {
 
   const app = await buildApp();
 
-  const shutdown = async () => {
+  const shutdown = async (): Promise<void> => {
     console.log('Shutting down...');
     await app.close();
     await disconnectDatabase();

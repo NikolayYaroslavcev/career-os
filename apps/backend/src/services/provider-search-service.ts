@@ -1,15 +1,17 @@
 import {
   Vacancy,
+  Source as VacancySourceEntity,
   Company,
   createVacancyId,
+  createVacancySourceId,
   createCompanyId,
   Location,
   Salary,
   Technology,
-  Url,
   ExperienceLevel,
 } from '@careeros/career';
-import type { SearchProfile, VacancyRepository, CompanyRepository, VacancySource } from '@careeros/career';
+import type { SearchProfile, VacancyRepository, VacancySourceRepository, CompanyRepository, VacancySource } from '@careeros/career';
+import { inferProviderType } from '../config/source-priority.js';
 import { DeduplicationEngine } from '@careeros/providers';
 import type {
   ProviderRegistry,
@@ -82,13 +84,15 @@ export class ProviderSearchService {
   constructor(
     private readonly registry: ProviderRegistry,
     private readonly vacancyRepository: VacancyRepository,
+    private readonly vacancySourceRepository: VacancySourceRepository,
     private readonly companyRepository: CompanyRepository,
     private readonly logger: Logger,
     private readonly metrics: MetricsCollector,
     private readonly providerTimeoutMs: number = DEFAULT_PROVIDER_TIMEOUT_MS,
     private readonly searchLimit: number = DEFAULT_SEARCH_LIMIT,
     private readonly minRelevanceScore: number = MIN_RELEVANCE_SCORE,
-    private readonly diagnostics?: ProviderDiagnosticsService
+    private readonly diagnostics?: ProviderDiagnosticsService,
+    private readonly enableFuzzyDedup: boolean = false,
   ) {}
 
   /**
@@ -123,8 +127,10 @@ export class ProviderSearchService {
     const perProvider: ProviderSearchProviderStats[] = [];
     const fetchedVacancies: NormalizedVacancy[] = [];
 
-    settled.forEach((outcome, index) => {
-      const currentProviderId = providers[index]!.info.id;
+    providers.forEach((provider, index) => {
+      const outcome = settled[index];
+      if (!outcome) return;
+      const currentProviderId = provider.info.id;
 
       if (outcome.status === 'fulfilled') {
         perProvider.push(outcome.value.stats);
@@ -166,12 +172,14 @@ export class ProviderSearchService {
 
     let reused = 0;
     const persisted: Vacancy[] = [];
+    const persistedSources: string[] = [];
 
     const persistStartedAt = Date.now();
     for (const normalized of filtered) {
       const { vacancy, wasReused } = await this.persistVacancy(normalized, workspaceId);
       if (wasReused) reused += 1;
       persisted.push(vacancy);
+      persistedSources.push(normalized.source);
     }
     const persistDurationMs = Date.now() - persistStartedAt;
 
@@ -190,7 +198,7 @@ export class ProviderSearchService {
       durationMs,
     });
 
-    this.recordProviderDiagnostics(perProvider, deduped, filtered, persisted);
+    this.recordProviderDiagnostics(perProvider, deduped, filtered, persistedSources);
 
     return {
       vacancies: persisted,
@@ -212,21 +220,24 @@ export class ProviderSearchService {
 
   /**
    * Records one ProviderFetchDiagnostics snapshot per provider by grouping
-   * each pipeline stage's output on NormalizedVacancy/Vacancy's `.source`
-   * field — no restructuring of the fetch/dedup/filter pipeline itself, just
-   * counting what's already there before it's discarded.
+   * each pipeline stage's output by source/providerId — no restructuring of
+   * the fetch/dedup/filter/persist pipeline itself, just counting what's
+   * already there before it's discarded. `persistedSources` is collected
+   * during the persist loop above because the persisted `Vacancy` domain
+   * aggregate itself has no `.source` field (provider identity lives on the
+   * separate `VacancySource` entity).
    */
   private recordProviderDiagnostics(
     perProvider: readonly ProviderSearchProviderStats[],
     deduped: readonly NormalizedVacancy[],
     filtered: readonly NormalizedVacancy[],
-    persisted: readonly Vacancy[]
+    persistedSources: readonly string[]
   ): void {
     if (!this.diagnostics) return;
 
     const dedupedCounts = countBySource(deduped, (v) => v.source);
     const filteredCounts = countBySource(filtered, (v) => v.source);
-    const persistedCounts = countBySource(persisted, (v) => v.source);
+    const persistedCounts = countBySource(persistedSources, (s) => s);
 
     for (const stats of perProvider) {
       this.diagnostics.recordFetch(stats.providerId, {
@@ -330,7 +341,7 @@ export class ProviderSearchService {
   private deduplicate(vacancies: readonly NormalizedVacancy[]): { unique: NormalizedVacancy[]; duplicateIds: string[] } {
     if (vacancies.length === 0) return { unique: [], duplicateIds: [] };
 
-    const engine = new DeduplicationEngine({ keyFields: ['contentHash'], similarityThreshold: 1, timeWindowMs: 0 });
+    const engine = new DeduplicationEngine({ keyFields: ['contentHash'], similarityThreshold: 0.75, timeWindowMs: 0, enableFuzzyMatching: this.enableFuzzyDedup });
     const result = engine.deduplicate([...vacancies]);
 
     if (result.stats.duplicatesFound > 0) {
@@ -365,9 +376,13 @@ export class ProviderSearchService {
     workspaceId: string
   ): Promise<{ vacancy: Vacancy; wasReused: boolean }> {
     const source = normalized.source as VacancySource;
-    const existing = await this.vacancyRepository.findBySourceAndSourceId(source, normalized.sourceId);
-    if (existing) {
-      return { vacancy: existing, wasReused: true };
+    const existingSource = await this.vacancySourceRepository.findByProviderAndExternalId(source, normalized.sourceId);
+
+    if (existingSource) {
+      const existing = await this.vacancyRepository.findById(existingSource.vacancyId);
+      if (existing) {
+        return { vacancy: existing, wasReused: true };
+      }
     }
 
     const company = await this.findOrCreateCompany(normalized.companyName, workspaceId);
@@ -384,11 +399,9 @@ export class ProviderSearchService {
         isRelocationPossible: false,
       }),
       experienceLevel: mapExperienceLevel(normalized.experienceLevel),
+      employmentType: normalized.employmentType,
       technologies: normalized.technologies.map((name) => Technology.create(name, 'other')),
       requirements: [],
-      source,
-      sourceId: normalized.sourceId,
-      sourceUrl: isValidUrl(normalized.url) ? Url.create(normalized.url) : undefined,
       salary: normalized.salary?.min !== undefined || normalized.salary?.max !== undefined
         ? Salary.create(
             normalized.salary.min ?? normalized.salary.max ?? 0,
@@ -400,6 +413,19 @@ export class ProviderSearchService {
     });
 
     await this.vacancyRepository.save(vacancy, { workspaceId });
+
+    const vacancySource = VacancySourceEntity.create({
+      id: createVacancySourceId(crypto.randomUUID()),
+      vacancyId: vacancy.id,
+      providerType: inferProviderType(source),
+      providerId: source,
+      externalId: normalized.sourceId,
+      sourceUrl: isValidUrl(normalized.url) ? normalized.url : undefined,
+      isPrimary: true,
+    });
+
+    await this.vacancySourceRepository.save(vacancySource, { workspaceId });
+
     return { vacancy, wasReused: false };
   }
 

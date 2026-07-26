@@ -1,0 +1,52 @@
+{
+  "name": "@careeros/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "demo:intelligence": "tsx src/scripts/demo-intelligence.ts",
+    "demo:digest": "tsx src/scripts/demo-digest.ts",
+    "demo:telegram-link": "tsx src/scripts/demo-telegram-link.ts",
+    "demo:follow-up-reminder": "tsx src/scripts/demo-follow-up-reminder.ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@careeros/ai": "workspace:*",
+    "@careeros/ai-orchestrator": "workspace:*",
+    "@careeros/analytics": "workspace:*",
+    "@careeros/auth": "workspace:*",
+    "@careeros/career": "workspace:*",
+    "@careeros/company-watch": "workspace:*",
+    "@careeros/database": "workspace:*",
+    "@careeros/notifications": "workspace:*",
+    "@careeros/providers": "workspace:*",
+    "@careeros/shared": "workspace:*",
+    "@careeros/telegram": "workspace:*",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/helmet": "^13.0.0",
+    "@fastify/multipart": "^10.1.0",
+    "@fastify/rate-limit": "^10.0.0",
+    "bullmq": "^5.30.0",
+    "fastify": "^5.2.0",
+    "ioredis": "^5.4.0",
+    "pdf-parse": "^1.1.1",
+    "telegraf": "^4.16.3",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "dotenv": "^17.4.2",
+    "eslint": "^9.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
+  }
+}

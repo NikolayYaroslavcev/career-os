@@ -36,6 +36,7 @@ import {
   InMemoryUserRepository,
   InMemoryResumeRepository,
   InMemoryVacancyRepository,
+  InMemoryVacancySourceRepository,
   InMemoryCompanyRepository,
   InMemoryApplicationRepository,
   InMemorySearchProfileRepository,
@@ -97,6 +98,7 @@ export function buildTestWorkflow(providerBehavior?: FakeProviderBehavior, optio
   const userRepository = new InMemoryUserRepository();
   const resumeRepository = new InMemoryResumeRepository();
   const vacancyRepository = new InMemoryVacancyRepository();
+  const vacancySourceRepository = new InMemoryVacancySourceRepository();
   const companyRepository = new InMemoryCompanyRepository();
   const applicationRepository = new InMemoryApplicationRepository();
   const searchProfileRepository = new InMemorySearchProfileRepository();
@@ -127,6 +129,7 @@ export function buildTestWorkflow(providerBehavior?: FakeProviderBehavior, optio
   const providerSearchService = new ProviderSearchService(
     providerRegistry,
     vacancyRepository,
+    vacancySourceRepository,
     companyRepository,
     new ProviderNoopLogger(),
     providerMetrics

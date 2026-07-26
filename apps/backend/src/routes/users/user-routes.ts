@@ -1,0 +1,58 @@
+import type { FastifyInstance } from 'fastify';
+
+export async function userRoutes(fastify: FastifyInstance): Promise<void> {
+  fastify.get('/me', {
+    schema: {
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            email: { type: 'string' },
+            firstName: { type: 'string' },
+            lastName: { type: 'string' },
+          },
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      const user = (request as unknown as { user: { id: string } }).user;
+      const container = (request.server as unknown as { container: { services: { auth: { getUserById: (id: string) => Promise<{ id: string; email: string; firstName: string; lastName: string }> } } } }).container;
+
+      const userData = await container.services.auth.getUserById(user.id);
+
+      return reply.send(userData);
+    },
+  });
+
+  fastify.put('/me', {
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          firstName: { type: 'string' },
+          lastName: { type: 'string' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            email: { type: 'string' },
+            firstName: { type: 'string' },
+            lastName: { type: 'string' },
+          },
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      const user = (request as unknown as { user: { id: string } }).user;
+      const container = (request.server as unknown as { container: { services: { auth: { getUserById: (id: string) => Promise<{ id: string; email: string; firstName: string; lastName: string }> } } } }).container;
+
+      const userData = await container.services.auth.getUserById(user.id);
+
+      return reply.send(userData);
+    },
+  });
+}

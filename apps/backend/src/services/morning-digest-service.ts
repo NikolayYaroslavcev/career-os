@@ -4,10 +4,14 @@ import { Recommendation as RecommendationLabel } from '@careeros/ai';
 import type { MetricsCollector } from '@careeros/providers';
 import type { IntelligenceWorkflowService, IntelligenceWorkflowStats } from './intelligence-workflow-service.js';
 import type { Recommendation } from './recommendation-service.js';
-import { DigestBuilder, type Digest } from './digest-builder.js';
+import { DigestBuilder, type Digest, type DigestBuilderFollowUpInput } from './digest-builder.js';
+import type { FollowUpService } from './follow-up-service.js';
 
 /** Only the slice of IntelligenceWorkflowService this feature needs — keeps tests decoupled from its full constructor and follows Interface Segregation. */
 export type WorkflowRunner = Pick<IntelligenceWorkflowService, 'run'>;
+
+/** Only the lookup the digest needs — keeps tests decoupled from FollowUpService's full constructor. */
+export type FollowUpDigestSource = Pick<FollowUpService, 'listEnrichedForUser'>;
 
 const DEFAULT_TOP_N = 5;
 const DEFAULT_VISIBLE_LABELS: readonly RecommendationLabel[] = [
@@ -55,7 +59,8 @@ export class MorningDigestService {
     private readonly notificationHistoryRepository: NotificationHistoryRepository,
     private readonly companyRepository: CompanyRepository,
     private readonly digestBuilder: DigestBuilder,
-    private readonly metrics: MetricsCollector
+    private readonly metrics: MetricsCollector,
+    private readonly followUpService?: FollowUpDigestSource
   ) {}
 
   async generate(params: MorningDigestParams): Promise<MorningDigestResult> {
@@ -93,12 +98,14 @@ export class MorningDigestService {
     const ranked = fresh.slice(0, topN);
 
     const companyNames = await this.resolveCompanyNames(ranked);
+    const followUps = await this.resolveDueSoonFollowUps(params.userId);
 
     const digest = this.digestBuilder.build({
       generatedAt: new Date(),
       newVacancyCount: workflowResult.stats.providerSearch.persisted,
       recommendations: ranked,
       companyNames,
+      followUps,
     });
 
     const digestDurationMs = Date.now() - startedAt;
@@ -117,6 +124,33 @@ export class MorningDigestService {
         digestDurationMs,
       },
     };
+  }
+
+  /**
+   * Overdue + due-today follow-ups for the digest's "Today you have N follow-ups" section (EPIC
+   * follow-up automation). Reuses FollowUpService's own enrichment rather than resolving vacancy
+   * and company names again here — no new Telegram or notification logic, just a data source.
+   */
+  private async resolveDueSoonFollowUps(userId: string): Promise<DigestBuilderFollowUpInput[]> {
+    if (!this.followUpService) {
+      return [];
+    }
+
+    const now = new Date();
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+
+    const items = await this.followUpService.listEnrichedForUser(userId);
+    return items
+      .filter((item) => (item.status === 'pending' || item.status === 'snoozed') && item.scheduledAt < endOfToday)
+      .map((item) => ({
+        id: item.id,
+        applicationId: item.applicationId,
+        type: item.type,
+        vacancyTitle: item.vacancyTitle,
+        companyName: item.companyName,
+        scheduledAt: item.scheduledAt,
+        daysSinceApplied: item.daysSinceApplied,
+      }));
   }
 
   private async resolveCompanyNames(recommendations: readonly Recommendation[]): Promise<ReadonlyMap<string, string>> {

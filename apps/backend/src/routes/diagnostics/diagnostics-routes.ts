@@ -17,7 +17,7 @@ import { NotFoundError } from '../../middleware/error-handler.js';
  * entirely from data ProviderSearchService/AiMatchingService/
  * TriageMatchingService already compute.
  */
-export async function diagnosticsRoutes(fastify: FastifyInstance) {
+export async function diagnosticsRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.addHook('onRequest', async (_request, reply: FastifyReply) => {
     if (!fastify.config.DIAGNOSTICS_ENABLED) {
       return reply.status(404).send({ error: 'Not Found' });

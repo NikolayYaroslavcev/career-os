@@ -9,7 +9,7 @@ import {
 import type { ProviderResult, SearchResult } from '@careeros/providers';
 import { ProviderSearchService } from '../provider-search-service.js';
 import { ProviderDiagnosticsService } from '../provider-diagnostics-service.js';
-import { InMemoryVacancyRepository, InMemoryCompanyRepository } from '../../testing/in-memory-repositories.js';
+import { InMemoryVacancyRepository, InMemoryVacancySourceRepository, InMemoryCompanyRepository } from '../../testing/in-memory-repositories.js';
 import { buildFixtureSearchProfile } from '../../testing/fixtures.js';
 
 /** A provider whose search() never resolves, to exercise the per-provider timeout. */
@@ -28,6 +28,7 @@ describe('ProviderSearchService — resilient multi-provider search', () => {
     const service = new ProviderSearchService(
       registry,
       new InMemoryVacancyRepository(),
+      new InMemoryVacancySourceRepository(),
       new InMemoryCompanyRepository(),
       new ProviderNoopLogger(),
       new ProviderInMemoryMetricsCollector()
@@ -52,6 +53,7 @@ describe('ProviderSearchService — resilient multi-provider search', () => {
     const service = new ProviderSearchService(
       registry,
       new InMemoryVacancyRepository(),
+      new InMemoryVacancySourceRepository(),
       new InMemoryCompanyRepository(),
       new ProviderNoopLogger(),
       new ProviderInMemoryMetricsCollector()
@@ -79,6 +81,7 @@ describe('ProviderSearchService — resilient multi-provider search', () => {
     const service = new ProviderSearchService(
       registry,
       new InMemoryVacancyRepository(),
+      new InMemoryVacancySourceRepository(),
       new InMemoryCompanyRepository(),
       new ProviderNoopLogger(),
       new ProviderInMemoryMetricsCollector()
@@ -101,6 +104,7 @@ describe('ProviderSearchService — resilient multi-provider search', () => {
     const service = new ProviderSearchService(
       registry,
       new InMemoryVacancyRepository(),
+      new InMemoryVacancySourceRepository(),
       new InMemoryCompanyRepository(),
       new ProviderNoopLogger(),
       new ProviderInMemoryMetricsCollector(),
@@ -125,6 +129,7 @@ describe('ProviderSearchService — resilient multi-provider search', () => {
     const service = new ProviderSearchService(
       registry,
       new InMemoryVacancyRepository(),
+      new InMemoryVacancySourceRepository(),
       new InMemoryCompanyRepository(),
       new ProviderNoopLogger(),
       new ProviderInMemoryMetricsCollector()
@@ -145,6 +150,7 @@ describe('ProviderSearchService — resilient multi-provider search', () => {
     const service = new ProviderSearchService(
       registry,
       new InMemoryVacancyRepository(),
+      new InMemoryVacancySourceRepository(),
       new InMemoryCompanyRepository(),
       new ProviderNoopLogger(),
       new ProviderInMemoryMetricsCollector()
@@ -178,6 +184,7 @@ describe('ProviderSearchService — resilient multi-provider search', () => {
     const service = new ProviderSearchService(
       registry,
       new InMemoryVacancyRepository(),
+      new InMemoryVacancySourceRepository(),
       new InMemoryCompanyRepository(),
       new ProviderNoopLogger(),
       new ProviderInMemoryMetricsCollector(),
@@ -201,5 +208,66 @@ describe('ProviderSearchService — resilient multi-provider search', () => {
     expect(lever?.lastFetch?.ok).toBe(false);
     expect(lever?.lastFetch?.error).toBeTruthy();
     expect(lever?.lastFetch?.persistedCount).toBe(0);
+  });
+
+  it('persists a VacancySource record for each newly-created vacancy, linking it back to the source provider', async () => {
+    const registry = new ProviderRegistry();
+    registry.register(new FakeProvider('greenhouse', { jobsToReturn: 2 }));
+
+    const vacancySourceRepository = new InMemoryVacancySourceRepository();
+    const service = new ProviderSearchService(
+      registry,
+      new InMemoryVacancyRepository(),
+      vacancySourceRepository,
+      new InMemoryCompanyRepository(),
+      new ProviderNoopLogger(),
+      new ProviderInMemoryMetricsCollector()
+    );
+
+    const outcome = await service.searchAndPersist(buildFixtureSearchProfile(), undefined, 'workspace-1');
+
+    expect(outcome.stats.persisted).toBe(2);
+    for (const vacancy of outcome.vacancies) {
+      const sources = await vacancySourceRepository.findByVacancyId(vacancy.id);
+      expect(sources).toHaveLength(1);
+      expect(sources[0]).toMatchObject({
+        vacancyId: vacancy.id,
+        providerId: 'greenhouse',
+        isPrimary: true,
+      });
+      expect(sources[0]?.externalId).toMatch(/^job-\d+$/);
+    }
+  });
+
+  it('reuses the existing vacancy on a second search instead of creating a duplicate, keyed by provider + externalId', async () => {
+    const registry = new ProviderRegistry();
+    registry.register(new FakeProvider('greenhouse', { jobsToReturn: 2 }));
+
+    const vacancyRepository = new InMemoryVacancyRepository();
+    const vacancySourceRepository = new InMemoryVacancySourceRepository();
+    const service = new ProviderSearchService(
+      registry,
+      vacancyRepository,
+      vacancySourceRepository,
+      new InMemoryCompanyRepository(),
+      new ProviderNoopLogger(),
+      new ProviderInMemoryMetricsCollector()
+    );
+
+    const first = await service.searchAndPersist(buildFixtureSearchProfile(), undefined, 'workspace-1');
+    expect(first.stats.persisted).toBe(2);
+    expect(first.stats.reused).toBe(0);
+
+    const second = await service.searchAndPersist(buildFixtureSearchProfile(), undefined, 'workspace-1');
+
+    // Same two jobs come back from the fake provider on the second call — both
+    // should resolve to the already-persisted vacancies via their VacancySource,
+    // not create new ones.
+    expect(second.stats.persisted).toBe(2);
+    expect(second.stats.reused).toBe(2);
+    expect(second.vacancies.map((v) => v.id).sort()).toEqual(first.vacancies.map((v) => v.id).sort());
+
+    const allSources = await Promise.all(second.vacancies.map((v) => vacancySourceRepository.findByVacancyId(v.id)));
+    expect(allSources.every((sources) => sources.length === 1)).toBe(true);
   });
 });

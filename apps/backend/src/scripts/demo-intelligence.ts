@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import { buildTestWorkflow } from '../testing/build-test-workflow.js';
 import { buildFixtureResume, buildFixtureSearchProfile, FIXTURE_USER_ID } from '../testing/fixtures.js';
 

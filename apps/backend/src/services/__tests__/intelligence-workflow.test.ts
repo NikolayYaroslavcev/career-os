@@ -1,8 +1,22 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { Resume, createResumeId } from '@careeros/career';
+import { Resume, createResumeId, SearchProfile, createSearchProfileId, createUserId, Technology, ExperienceLevel } from '@careeros/career';
 import { buildTestWorkflow, type TestWorkflow } from '../../testing/build-test-workflow.js';
 import { buildFixtureResume, buildFixtureSearchProfile, FIXTURE_USER_ID } from '../../testing/fixtures.js';
 import { NoActiveSearchProfileError, NoResumeFoundError } from '../intelligence-workflow-service.js';
+
+const OTHER_USER_ID = createUserId('99999999-9999-4999-8999-999999999999');
+
+function buildForeignSearchProfile(): SearchProfile {
+  return SearchProfile.create({
+    id: createSearchProfileId('88888888-8888-4888-8888-888888888888'),
+    userId: OTHER_USER_ID,
+    name: "Someone Else's Search",
+    desiredPositions: ['Staff Engineer'],
+    desiredTechnologies: [Technology.create('rust', 'language')],
+    experienceLevel: ExperienceLevel.SENIOR,
+    isRemoteOnly: false,
+  });
+}
 
 describe('IntelligenceWorkflowService (Search Profile -> Provider -> AI Matching -> Recommendations)', () => {
   let workflow: TestWorkflow;
@@ -99,7 +113,8 @@ describe('IntelligenceWorkflowService (Search Profile -> Provider -> AI Matching
 
       const traces = workflow.searchRunTraces.getAll();
       expect(traces).toHaveLength(1);
-      const trace = traces[0]!;
+      const [trace] = traces;
+      if (!trace) throw new Error('expected a search run trace');
 
       expect(trace.searchProfileId).toBe(profile.id);
       expect(trace.awaitedAiMatching).toBe(false);
@@ -115,7 +130,8 @@ describe('IntelligenceWorkflowService (Search Profile -> Provider -> AI Matching
         'Queue',
       ]);
 
-      const queueStage = trace.stages.find((s) => s.name === 'Queue')!;
+      const queueStage = trace.stages.find((s) => s.name === 'Queue');
+      if (!queueStage) throw new Error('expected a Queue stage');
       expect(queueStage.output).toBe(15);
       expect(queueStage.success).toBe(true);
 
@@ -191,7 +207,10 @@ describe('IntelligenceWorkflowService (Search Profile -> Provider -> AI Matching
       expect(result.stats.recommendationCount).toBe(4);
 
       for (let i = 1; i < result.recommendations.length; i++) {
-        expect(result.recommendations[i - 1]!.score).toBeGreaterThanOrEqual(result.recommendations[i]!.score);
+        const prev = result.recommendations[i - 1];
+        const curr = result.recommendations[i];
+        if (!prev || !curr) throw new Error('expected a recommendation');
+        expect(prev.score).toBeGreaterThanOrEqual(curr.score);
       }
 
       // MatchResults must be persisted for future analytics.
@@ -218,8 +237,8 @@ describe('IntelligenceWorkflowService (Search Profile -> Provider -> AI Matching
 
       expect(pdfResume.summary).toBe('');
       expect(matchAllSpy).toHaveBeenCalledTimes(1);
-      const params = matchAllSpy.mock.calls[0]![0];
-      expect(params.resumeText).toBe(pdfResume.rawText);
+      const [params] = matchAllSpy.mock.calls[0] ?? [];
+      expect(params?.resumeText).toBe(pdfResume.rawText);
     });
 
     it('reuses persisted MatchResults on a second run instead of recomputing (avoids duplicate AI requests)', async () => {
@@ -245,7 +264,8 @@ describe('IntelligenceWorkflowService (Search Profile -> Provider -> AI Matching
         userId: FIXTURE_USER_ID,
         awaitAiMatching: true,
       });
-      const top = result.recommendations[0]!;
+      const [top] = result.recommendations;
+      if (!top) throw new Error('expected a recommendation');
 
       const application = await workflow.services.applicationCreation.createFromRecommendation({
         userId: FIXTURE_USER_ID,
@@ -277,7 +297,7 @@ describe('IntelligenceWorkflowService (Search Profile -> Provider -> AI Matching
     const profile = buildFixtureSearchProfile();
     await workflow.repositories.searchProfile.save(profile, {});
 
-    await workflow.services.searchProfile.disable(profile.id);
+    await workflow.services.searchProfile.disable(profile.id, FIXTURE_USER_ID);
 
     await expect(workflow.services.intelligenceWorkflow.run({ userId: FIXTURE_USER_ID })).rejects.toThrow(
       NoActiveSearchProfileError
@@ -291,5 +311,20 @@ describe('IntelligenceWorkflowService (Search Profile -> Provider -> AI Matching
     await expect(workflow.services.intelligenceWorkflow.run({ userId: FIXTURE_USER_ID })).rejects.toThrow(
       NoResumeFoundError
     );
+  });
+
+  it('rejects a searchProfileId that belongs to a different user, instead of running the search against their profile', async () => {
+    const resume = buildFixtureResume();
+    await workflow.repositories.resume.save(resume);
+    const foreignProfile = buildForeignSearchProfile();
+    await workflow.repositories.searchProfile.save(foreignProfile, {});
+
+    // FIXTURE_USER_ID passes OTHER_USER_ID's searchProfileId explicitly (e.g. a
+    // guessed/leaked ID) — getOwnedById must return null (not the foreign
+    // profile), surfacing the same "no profile" error as if it didn't exist,
+    // never the foreign profile's data.
+    await expect(
+      workflow.services.intelligenceWorkflow.run({ userId: FIXTURE_USER_ID, searchProfileId: foreignProfile.id })
+    ).rejects.toThrow(NoActiveSearchProfileError);
   });
 });

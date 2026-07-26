@@ -4,6 +4,7 @@ import {
   PrismaUserRepository,
   PrismaResumeRepository,
   PrismaVacancyRepository,
+  PrismaVacancySourceRepository,
   PrismaCompanyRepository,
   PrismaApplicationRepository,
   PrismaRecruiterRepository,
@@ -18,10 +19,38 @@ import {
   PrismaWorkspaceRepository,
   PrismaRefreshTokenRepository,
   PrismaStructuredResumeRepository,
+  PrismaCompanyWatchRepository,
+  PrismaCompanyWatchEventRepository,
+  PrismaCompanyWatchSyncLogRepository,
+  PrismaAIJobRepository,
+  PrismaAICacheRepository,
+  PrismaAIUsageRepository,
+  PrismaAIProviderConfigRepository,
+  PrismaAIBudgetRepository,
+  PrismaAnalyticsEventRepository,
+  PrismaCareerInsightRepository,
+  PrismaProviderConfigRepository,
+  PrismaTelegramChannelRepository,
+  PrismaQualityDataRepository,
+  PrismaUserVacancyInteractionRepository,
 } from '@careeros/database';
 import { createAuthProvider } from '@careeros/auth';
 import { ApplicationServiceImpl } from '@careeros/career';
 import type { ApplicationService } from '@careeros/career';
+import {
+  AIOrchestrator,
+  AnalyzeVacancyHandler,
+  TailorResumeHandler,
+  CoverLetterHandler,
+  InterviewPrepHandler,
+  SalaryAnalysisHandler,
+  CompanyAnalysisHandler,
+  ResumeImprovementHandler,
+  CareerAdviceHandler,
+  BudgetEnforcer,
+  UsageTracker,
+} from '@careeros/ai-orchestrator';
+import type { AIFeature, JobHandler } from '@careeros/ai-orchestrator';
 import {
   MatchingEngine,
   VacancyAnalysisPromptBuilder,
@@ -47,6 +76,22 @@ import {
   createAshbyProvider,
   createWorkdayProvider,
   createTeamtailorProvider,
+  createRemotiveProvider,
+  createHimalayasProvider,
+  createArbeitnowProvider,
+  createJobicyProvider,
+  createWWRProvider,
+  createWorkingNomadsProvider,
+  createNoDeskProvider,
+  createHNHiringProvider,
+  createLinkedInProvider,
+  createAdzunaProvider,
+  createSmartRecruitersProvider,
+  createRecruiteeProvider,
+  createComeetProvider,
+  createHabrCareerProvider,
+  createSuperJobProvider,
+  createTelegramProvider,
   ConsoleLogger as ProviderConsoleLogger,
   InMemoryMetricsCollector as ProviderInMemoryMetricsCollector,
   InMemoryTracer as ProviderInMemoryTracer,
@@ -56,6 +101,7 @@ import type { Logger as ProviderLogger } from '@careeros/providers';
 import { TelegramAdapter, InMemoryTelegramClient } from '@careeros/telegram';
 import type { TelegramClient } from '@careeros/telegram';
 import { FollowUpReminderService } from '@careeros/notifications';
+import { CompanyWatchService, AtsAdapterRegistry } from '@careeros/company-watch';
 import { SearchProfileService } from './services/search-profile-service.js';
 import { ProviderSearchService } from './services/provider-search-service.js';
 import { AiMatchingService } from './services/ai-matching-service.js';
@@ -74,16 +120,24 @@ import { TelegramLinkingService } from './services/telegram-linking-service.js';
 import { AuthService } from './services/auth-service.js';
 import { ResumeService } from './services/resume-service.js';
 import { SearchProfileSuggestionService } from './services/search-profile-suggestion-service.js';
+import { SyncSchedulerService } from './services/sync-scheduler-service.js';
+import { RedisRateLimiter } from './services/redis-rate-limiter.js';
+import { DashboardStatsService } from './services/dashboard-stats-service.js';
+import { NotificationDispatcherService } from './services/notification-dispatcher-service.js';
 import { BullMqVacancyAnalysisQueue, type VacancyAnalysisQueue } from './queues/vacancy-analysis-queue.js';
 import { ProviderDiagnosticsService, type ProviderRegistrationOutcome } from './services/provider-diagnostics-service.js';
 import { SearchRunTraceRecorder } from './services/search-run-trace.js';
 import { QueueDiagnosticsService } from './services/queue-diagnostics-service.js';
+import { CareerIntelligenceService } from './services/career-intelligence-service.js';
+import { ResumeVersionIntelligenceService } from './services/resume-version-intelligence-service.js';
+import { ProviderManagementService } from './services/provider-management-service.js';
 
 export interface Container {
   readonly repositories: {
     readonly user: PrismaUserRepository;
     readonly resume: PrismaResumeRepository;
     readonly vacancy: PrismaVacancyRepository;
+    readonly vacancySource: PrismaVacancySourceRepository;
     readonly company: PrismaCompanyRepository;
     readonly application: PrismaApplicationRepository;
     readonly recruiter: PrismaRecruiterRepository;
@@ -98,6 +152,16 @@ export interface Container {
     readonly workspace: PrismaWorkspaceRepository;
     readonly refreshToken: PrismaRefreshTokenRepository;
     readonly structuredResume: PrismaStructuredResumeRepository;
+    readonly aiJob: PrismaAIJobRepository;
+    readonly aiCache: PrismaAICacheRepository;
+    readonly aiUsage: PrismaAIUsageRepository;
+    readonly aiProviderConfig: PrismaAIProviderConfigRepository;
+    readonly aiBudget: PrismaAIBudgetRepository;
+    readonly analyticsEvent: PrismaAnalyticsEventRepository;
+    readonly careerInsight: PrismaCareerInsightRepository;
+    readonly providerConfig: PrismaProviderConfigRepository;
+    readonly telegramChannel: PrismaTelegramChannelRepository;
+    readonly userVacancyInteraction: PrismaUserVacancyInteractionRepository;
   };
   readonly authProvider: ReturnType<typeof createAuthProvider>;
   readonly providerRegistry: ProviderRegistry;
@@ -108,6 +172,7 @@ export interface Container {
   readonly aiProvider: AIProvider;
   readonly aiProviderHealthMonitor: AIProviderHealthMonitor;
   readonly aiMetrics: InMemoryAIMetricsCollector;
+  readonly aiOrchestrator: AIOrchestrator;
   readonly applicationService: ApplicationService;
   readonly services: {
     readonly auth: AuthService;
@@ -127,6 +192,14 @@ export interface Container {
     readonly telegramLinking: TelegramLinkingService;
     readonly resume: ResumeService;
     readonly searchProfileSuggestion: SearchProfileSuggestionService;
+    readonly syncScheduler: SyncSchedulerService;
+    readonly syncRateLimiter: RedisRateLimiter;
+    readonly dashboardStats: DashboardStatsService;
+    readonly notificationDispatcher: NotificationDispatcherService;
+    readonly companyWatch: CompanyWatchService;
+    readonly careerIntelligence: CareerIntelligenceService;
+    readonly resumeVersionIntelligence: ResumeVersionIntelligenceService;
+    readonly providerManagement: ProviderManagementService;
   };
 }
 
@@ -143,7 +216,8 @@ export interface Container {
 function registerConfiguredProviders(
   registry: ProviderRegistry,
   config: Config,
-  logger: ProviderLogger
+  logger: ProviderLogger,
+  telegramChannelRepo?: PrismaTelegramChannelRepository,
 ): ProviderRegistrationOutcome[] {
   const outcomes: ProviderRegistrationOutcome[] = [];
 
@@ -158,9 +232,12 @@ function registerConfiguredProviders(
 
   // HH (HeadHunter) requires no API key for search — an access token only
   // raises rate limits, so it's registered unconditionally, same as RemoteOK.
+  // All HH group domains (hh.ru, hh.kz, headhunter.ge) use api.hh.ru.
+  // rabota.by has NO API — Belarus jobs are accessed via area ID 16.
   registry.register(
     createHHProvider({
       accessToken: config.HH_ACCESS_TOKEN,
+      areas: config.HH_AREAS.split(',').map((area) => area.trim()).filter(Boolean),
       logger,
       metrics: new ProviderInMemoryMetricsCollector(),
       tracer: new ProviderInMemoryTracer(),
@@ -173,6 +250,27 @@ function registerConfiguredProviders(
     authenticated: config.HH_ACCESS_TOKEN ? 'configured' : 'not_required',
   });
 
+  // Adzuna — requires app_id and app_key from https://developer.adzuna.com
+  const adzunaRequiredConfig = ['ADZUNA_APP_ID', 'ADZUNA_APP_KEY'];
+  if (config.ADZUNA_APP_ID && config.ADZUNA_APP_KEY) {
+    registry.register(
+      createAdzunaProvider({
+        appId: config.ADZUNA_APP_ID,
+        appKey: config.ADZUNA_APP_KEY,
+        country: config.ADZUNA_COUNTRY,
+        logger,
+        metrics: new ProviderInMemoryMetricsCollector(),
+        tracer: new ProviderInMemoryTracer(),
+      })
+    );
+    outcomes.push({ providerId: 'adzuna', registered: true, configured: true, authenticated: 'configured', requiredConfig: adzunaRequiredConfig });
+  } else {
+    const reason = 'ADZUNA_APP_ID/ADZUNA_APP_KEY not set';
+    logger.warn(`Adzuna provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'adzuna', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: adzunaRequiredConfig });
+  }
+
+  const greenhouseRequiredConfig = ['GREENHOUSE_BOARD_TOKEN', 'GREENHOUSE_COMPANY_NAME'];
   if (config.GREENHOUSE_BOARD_TOKEN && config.GREENHOUSE_COMPANY_NAME) {
     registry.register(
       createGreenhouseProvider({
@@ -183,13 +281,14 @@ function registerConfiguredProviders(
         tracer: new ProviderInMemoryTracer(),
       })
     );
-    outcomes.push({ providerId: 'greenhouse', registered: true, configured: true, authenticated: 'configured' });
+    outcomes.push({ providerId: 'greenhouse', registered: true, configured: true, authenticated: 'configured', requiredConfig: greenhouseRequiredConfig });
   } else {
     const reason = 'GREENHOUSE_BOARD_TOKEN/GREENHOUSE_COMPANY_NAME not set';
     logger.warn(`Greenhouse provider not registered: ${reason}`);
-    outcomes.push({ providerId: 'greenhouse', registered: false, configured: false, authenticated: 'missing', reason });
+    outcomes.push({ providerId: 'greenhouse', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: greenhouseRequiredConfig });
   }
 
+  const leverRequiredConfig = ['LEVER_COMPANY', 'LEVER_COMPANY_NAME'];
   if (config.LEVER_COMPANY && config.LEVER_COMPANY_NAME) {
     registry.register(
       createLeverProvider({
@@ -200,13 +299,14 @@ function registerConfiguredProviders(
         tracer: new ProviderInMemoryTracer(),
       })
     );
-    outcomes.push({ providerId: 'lever', registered: true, configured: true, authenticated: 'not_required' });
+    outcomes.push({ providerId: 'lever', registered: true, configured: true, authenticated: 'not_required', requiredConfig: leverRequiredConfig });
   } else {
     const reason = 'LEVER_COMPANY/LEVER_COMPANY_NAME not set';
     logger.warn(`Lever provider not registered: ${reason}`);
-    outcomes.push({ providerId: 'lever', registered: false, configured: false, authenticated: 'missing', reason });
+    outcomes.push({ providerId: 'lever', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: leverRequiredConfig });
   }
 
+  const ashbyRequiredConfig = ['ASHBY_JOB_BOARD_NAME', 'ASHBY_COMPANY_NAME'];
   if (config.ASHBY_JOB_BOARD_NAME && config.ASHBY_COMPANY_NAME) {
     registry.register(
       createAshbyProvider({
@@ -217,13 +317,14 @@ function registerConfiguredProviders(
         tracer: new ProviderInMemoryTracer(),
       })
     );
-    outcomes.push({ providerId: 'ashby', registered: true, configured: true, authenticated: 'not_required' });
+    outcomes.push({ providerId: 'ashby', registered: true, configured: true, authenticated: 'not_required', requiredConfig: ashbyRequiredConfig });
   } else {
     const reason = 'ASHBY_JOB_BOARD_NAME/ASHBY_COMPANY_NAME not set';
     logger.warn(`Ashby provider not registered: ${reason}`);
-    outcomes.push({ providerId: 'ashby', registered: false, configured: false, authenticated: 'missing', reason });
+    outcomes.push({ providerId: 'ashby', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: ashbyRequiredConfig });
   }
 
+  const workdayRequiredConfig = ['WORKDAY_TENANT', 'WORKDAY_SITE', 'WORKDAY_COMPANY_NAME'];
   if (config.WORKDAY_TENANT && config.WORKDAY_SITE && config.WORKDAY_COMPANY_NAME) {
     registry.register(
       createWorkdayProvider({
@@ -236,13 +337,14 @@ function registerConfiguredProviders(
         tracer: new ProviderInMemoryTracer(),
       })
     );
-    outcomes.push({ providerId: 'workday', registered: true, configured: true, authenticated: 'not_required' });
+    outcomes.push({ providerId: 'workday', registered: true, configured: true, authenticated: 'not_required', requiredConfig: workdayRequiredConfig });
   } else {
     const reason = 'WORKDAY_TENANT/WORKDAY_SITE/WORKDAY_COMPANY_NAME not set';
     logger.warn(`Workday provider not registered: ${reason}`);
-    outcomes.push({ providerId: 'workday', registered: false, configured: false, authenticated: 'missing', reason });
+    outcomes.push({ providerId: 'workday', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: workdayRequiredConfig });
   }
 
+  const teamtailorRequiredConfig = ['TEAMTAILOR_API_KEY', 'TEAMTAILOR_COMPANY_NAME'];
   if (config.TEAMTAILOR_API_KEY && config.TEAMTAILOR_COMPANY_NAME) {
     registry.register(
       createTeamtailorProvider({
@@ -253,11 +355,196 @@ function registerConfiguredProviders(
         tracer: new ProviderInMemoryTracer(),
       })
     );
-    outcomes.push({ providerId: 'teamtailor', registered: true, configured: true, authenticated: 'configured' });
+    outcomes.push({ providerId: 'teamtailor', registered: true, configured: true, authenticated: 'configured', requiredConfig: teamtailorRequiredConfig });
   } else {
     const reason = 'TEAMTAILOR_API_KEY/TEAMTAILOR_COMPANY_NAME not set';
     logger.warn(`Teamtailor provider not registered: ${reason}`);
-    outcomes.push({ providerId: 'teamtailor', registered: false, configured: false, authenticated: 'missing', reason });
+    outcomes.push({ providerId: 'teamtailor', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: teamtailorRequiredConfig });
+  }
+
+  // SmartRecruiters — requires company slug
+  const smartRecruitersRequiredConfig = ['SMARTRECRUITERS_COMPANY', 'SMARTRECRUITERS_COMPANY_NAME'];
+  if (config.SMARTRECRUITERS_COMPANY && config.SMARTRECRUITERS_COMPANY_NAME) {
+    registry.register(
+      createSmartRecruitersProvider({
+        company: config.SMARTRECRUITERS_COMPANY,
+        companyName: config.SMARTRECRUITERS_COMPANY_NAME,
+        logger,
+        metrics: new ProviderInMemoryMetricsCollector(),
+        tracer: new ProviderInMemoryTracer(),
+      })
+    );
+    outcomes.push({ providerId: 'smartrecruiters', registered: true, configured: true, authenticated: 'not_required', requiredConfig: smartRecruitersRequiredConfig });
+  } else {
+    const reason = 'SMARTRECRUITERS_COMPANY/SMARTRECRUITERS_COMPANY_NAME not set';
+    logger.warn(`SmartRecruiters provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'smartrecruiters', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: smartRecruitersRequiredConfig });
+  }
+
+  // Recruitee — requires company slug
+  const recruiteeRequiredConfig = ['RECRUITEE_COMPANY', 'RECRUITEE_COMPANY_NAME'];
+  if (config.RECRUITEE_COMPANY && config.RECRUITEE_COMPANY_NAME) {
+    registry.register(
+      createRecruiteeProvider({
+        company: config.RECRUITEE_COMPANY,
+        companyName: config.RECRUITEE_COMPANY_NAME,
+        logger,
+        metrics: new ProviderInMemoryMetricsCollector(),
+        tracer: new ProviderInMemoryTracer(),
+      })
+    );
+    outcomes.push({ providerId: 'recruitee', registered: true, configured: true, authenticated: 'not_required', requiredConfig: recruiteeRequiredConfig });
+  } else {
+    const reason = 'RECRUITEE_COMPANY/RECRUITEE_COMPANY_NAME not set';
+    logger.warn(`Recruitee provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'recruitee', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: recruiteeRequiredConfig });
+  }
+
+  // Comeet — requires company UID + token (both scoped to one company; see
+  // https://developers.comeet.com/reference/careers-api-overview)
+  const comeetRequiredConfig = ['COMEET_TOKEN', 'COMEET_COMPANY_UID', 'COMEET_COMPANY_NAME'];
+  if (config.COMEET_TOKEN && config.COMEET_COMPANY_UID && config.COMEET_COMPANY_NAME) {
+    registry.register(
+      createComeetProvider({
+        token: config.COMEET_TOKEN,
+        companyUid: config.COMEET_COMPANY_UID,
+        companyName: config.COMEET_COMPANY_NAME,
+        logger,
+        metrics: new ProviderInMemoryMetricsCollector(),
+        tracer: new ProviderInMemoryTracer(),
+      })
+    );
+    outcomes.push({ providerId: 'comeet', registered: true, configured: true, authenticated: 'not_required', requiredConfig: comeetRequiredConfig });
+  } else {
+    const reason = 'COMEET_TOKEN/COMEET_COMPANY_UID/COMEET_COMPANY_NAME not set';
+    logger.warn(`Comeet provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'comeet', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: comeetRequiredConfig });
+  }
+
+  // Free providers — no API key needed, always register
+  registry.register(
+    createRemotiveProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
+  );
+  outcomes.push({ providerId: 'remotive', registered: true, configured: true, authenticated: 'not_required' });
+
+  registry.register(
+    createHimalayasProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
+  );
+  outcomes.push({ providerId: 'himalayas', registered: true, configured: true, authenticated: 'not_required' });
+
+  registry.register(
+    createArbeitnowProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
+  );
+  outcomes.push({ providerId: 'arbeitnow', registered: true, configured: true, authenticated: 'not_required' });
+
+  registry.register(
+    createJobicyProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
+  );
+  outcomes.push({ providerId: 'jobicy', registered: true, configured: true, authenticated: 'not_required' });
+
+  registry.register(
+    createWWRProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
+  );
+  outcomes.push({ providerId: 'we_work_remotely', registered: true, configured: true, authenticated: 'not_required' });
+
+  registry.register(
+    createWorkingNomadsProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
+  );
+  outcomes.push({ providerId: 'working_nomads', registered: true, configured: true, authenticated: 'not_required' });
+
+  registry.register(
+    createNoDeskProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
+  );
+  outcomes.push({ providerId: 'nodesk', registered: true, configured: true, authenticated: 'not_required' });
+
+  registry.register(
+    createHNHiringProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
+  );
+  outcomes.push({ providerId: 'hn_hiring', registered: true, configured: true, authenticated: 'not_required' });
+
+  // Habr Career — no auth, no config needed. High-value CIS IT source; see
+  // habr-career-provider.ts for the RSS-feed ingestion approach.
+  registry.register(
+    createHabrCareerProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
+  );
+  outcomes.push({ providerId: 'habr_career', registered: true, configured: true, authenticated: 'not_required' });
+
+  // SuperJob — requires an X-Api-App-Id secret key for every endpoint,
+  // including plain search (unlike HH, there is no unauthenticated mode).
+  const superjobRequiredConfig = ['SUPERJOB_API_KEY'];
+  if (config.SUPERJOB_API_KEY) {
+    registry.register(
+      createSuperJobProvider({
+        apiKey: config.SUPERJOB_API_KEY,
+        logger,
+        metrics: new ProviderInMemoryMetricsCollector(),
+        tracer: new ProviderInMemoryTracer(),
+      })
+    );
+    outcomes.push({ providerId: 'superjob', registered: true, configured: true, authenticated: 'configured', requiredConfig: superjobRequiredConfig });
+  } else {
+    const reason = 'SUPERJOB_API_KEY not set';
+    logger.warn(`SuperJob provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'superjob', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: superjobRequiredConfig });
+  }
+
+  // Telegram — COMMUNITY-type provider: scrapes public channels' `/s/`
+  // preview pages (see packages/providers/src/providers/telegram/telegram-fetcher.ts),
+  // no bot token or login needed. Only registered when at least one channel
+  // is configured, same pattern as the board-scoped ATS providers above.
+  // Priority: DB enabled channels > ENV fallback for migration compatibility.
+  // TELEGRAM_CHANNELS env is kept only as migration fallback — DB is authoritative.
+  const telegramRequiredConfig = ['TELEGRAM_CHANNELS (fallback)'];
+
+  const envChannelsList = config.TELEGRAM_CHANNELS
+    ? config.TELEGRAM_CHANNELS.split(',').map((c) => c.trim().replace(/^@/, '').replace(/^https?:\/\/t\.me\//i, '')).filter(Boolean)
+    : [];
+
+  const channelProvider = telegramChannelRepo
+    ? async (): Promise<readonly string[]> => {
+        try {
+          const dbChannels = await telegramChannelRepo.findEnabledUsernames();
+          if (dbChannels.length > 0) return dbChannels;
+        } catch {
+          // DB not available, fall through to ENV
+        }
+        return envChannelsList;
+      }
+    : undefined;
+
+  const telegramChannels = envChannelsList;
+
+  if (telegramChannels.length > 0 || channelProvider) {
+    registry.register(
+      createTelegramProvider({
+        channels: telegramChannels,
+        logger,
+        metrics: new ProviderInMemoryMetricsCollector(),
+        tracer: new ProviderInMemoryTracer(),
+        channelProvider,
+      })
+    );
+    outcomes.push({ providerId: 'telegram', registered: true, configured: true, authenticated: 'not_required', requiredConfig: telegramRequiredConfig });
+  } else {
+    const reason = 'TELEGRAM_CHANNELS not set and no DB channels configured';
+    logger.warn(`Telegram provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'telegram', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: telegramRequiredConfig });
+  }
+
+  // LinkedIn — Guest API, no auth required. Disable with LINKEDIN_ENABLED=false.
+  if (config.LINKEDIN_ENABLED !== 'false') {
+    registry.register(
+      createLinkedInProvider({
+        logger,
+        metrics: new ProviderInMemoryMetricsCollector(),
+        tracer: new ProviderInMemoryTracer(),
+      })
+    );
+    outcomes.push({ providerId: 'linkedin', registered: true, configured: true, authenticated: 'not_required' });
+  } else {
+    const reason = 'LINKEDIN_ENABLED=false';
+    logger.warn(`LinkedIn provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'linkedin', registered: false, configured: false, authenticated: 'not_required', reason });
   }
 
   return outcomes;
@@ -305,6 +592,7 @@ export function buildContainer(config: Config): Container {
   const userRepository = new PrismaUserRepository();
   const resumeRepository = new PrismaResumeRepository();
   const vacancyRepository = new PrismaVacancyRepository();
+  const vacancySourceRepository = new PrismaVacancySourceRepository();
   const companyRepository = new PrismaCompanyRepository();
   const applicationRepository = new PrismaApplicationRepository();
   const recruiterRepository = new PrismaRecruiterRepository();
@@ -319,6 +607,27 @@ export function buildContainer(config: Config): Container {
   const workspaceRepository = new PrismaWorkspaceRepository();
   const refreshTokenRepository = new PrismaRefreshTokenRepository();
   const structuredResumeRepository = new PrismaStructuredResumeRepository();
+  const companyWatchRepository = new PrismaCompanyWatchRepository();
+  const companyWatchEventRepository = new PrismaCompanyWatchEventRepository();
+  const companyWatchSyncLogRepository = new PrismaCompanyWatchSyncLogRepository();
+  const aiJobRepository = new PrismaAIJobRepository();
+  const aiCacheRepository = new PrismaAICacheRepository();
+  const aiUsageRepository = new PrismaAIUsageRepository();
+  const aiProviderConfigRepository = new PrismaAIProviderConfigRepository();
+  const aiBudgetRepository = new PrismaAIBudgetRepository();
+  // Shared budget gate for bulk/background AI call sites that bypass
+  // AIOrchestrator.execute() (AiMatchingService, SearchProfileSuggestionService)
+  // — AIOrchestrator constructs its own internally for the orchestrated routes.
+  // Honors the same AI_BUDGET_CHECK_ENABLED toggle as the orchestrator (undefined = no cap).
+  const bulkAiBudgetEnforcer = config.AI_BUDGET_CHECK_ENABLED
+    ? new BudgetEnforcer(aiBudgetRepository, new UsageTracker(aiUsageRepository))
+    : undefined;
+  const analyticsEventRepository = new PrismaAnalyticsEventRepository();
+  const careerInsightRepository = new PrismaCareerInsightRepository();
+  const providerConfigRepository = new PrismaProviderConfigRepository();
+  const telegramChannelRepository = new PrismaTelegramChannelRepository();
+  const qualityDataRepository = new PrismaQualityDataRepository();
+  const userVacancyInteractionRepository = new PrismaUserVacancyInteractionRepository();
 
   const authProvider = createAuthProvider({
     jwtSecret: config.JWT_SECRET,
@@ -333,7 +642,8 @@ export function buildContainer(config: Config): Container {
   const registrationOutcomes = registerConfiguredProviders(
     providerRegistry,
     config,
-    new ProviderConsoleLogger(config.LOG_LEVEL)
+    new ProviderConsoleLogger(config.LOG_LEVEL),
+    telegramChannelRepository,
   );
 
   const providerHealthMonitor = new ProviderHealthMonitor({
@@ -344,6 +654,9 @@ export function buildContainer(config: Config): Container {
   });
   const providerDiagnosticsService = new ProviderDiagnosticsService(providerHealthMonitor);
   providerDiagnosticsService.recordRegistrations(registrationOutcomes);
+  // Wired after syncSchedulerService is constructed below (see setSyncScheduler
+  // doc comment) so Diagnostics and Provider Management read the same live
+  // health signal instead of two independently-derived ones.
   const searchRunTraceRecorder = new SearchRunTraceRecorder();
   const queueDiagnosticsService = new QueueDiagnosticsService(config.REDIS_URL);
 
@@ -368,13 +681,15 @@ export function buildContainer(config: Config): Container {
   const providerSearchService = new ProviderSearchService(
     providerRegistry,
     vacancyRepository,
+    vacancySourceRepository,
     companyRepository,
     new ProviderConsoleLogger(config.LOG_LEVEL),
     new ProviderInMemoryMetricsCollector(),
     config.PROVIDER_TIMEOUT_MS,
     config.PROVIDER_SEARCH_LIMIT,
     config.MIN_RELEVANCE_SCORE,
-    providerDiagnosticsService
+    providerDiagnosticsService,
+    true,
   );
   const aiMatchingService = new AiMatchingService(
     matchingEngine,
@@ -386,10 +701,12 @@ export function buildContainer(config: Config): Container {
     // fanning out at the configured concurrency.
     config.AI_PROVIDER === 'groq' ? 1 : config.AI_MATCHING_CONCURRENCY,
     config.AI_MAX_CANDIDATES,
-    new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info')
+    new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info'),
+    config.AI_MIN_TRIAGE_SCORE,
+    bulkAiBudgetEnforcer
   );
   const recommendationService = new RecommendationService(aiMetrics);
-  const applicationCreationService = new ApplicationCreationService(applicationService);
+  const applicationCreationService = new ApplicationCreationService(applicationService, analyticsEventRepository);
   const followUpService = new FollowUpService(
     followUpRepository,
     applicationRepository,
@@ -402,7 +719,8 @@ export function buildContainer(config: Config): Container {
     recruiterRepository,
     communicationRepository,
     interviewRepository,
-    followUpService
+    followUpService,
+    analyticsEventRepository
   );
   const recruiterService = new RecruiterService(recruiterRepository);
   const vacancyAnalysisQueue: VacancyAnalysisQueue = new BullMqVacancyAnalysisQueue(config.REDIS_URL);
@@ -418,7 +736,8 @@ export function buildContainer(config: Config): Container {
     new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info'),
     config.AI_ENABLED,
     new RedisAiBatchBacklog(getRedis(config.REDIS_URL)),
-    searchRunTraceRecorder
+    searchRunTraceRecorder,
+    analyticsEventRepository
   );
 
   const digestMetrics = new ProviderInMemoryMetricsCollector();
@@ -428,7 +747,8 @@ export function buildContainer(config: Config): Container {
     notificationHistoryRepository,
     companyRepository,
     new DigestBuilder(),
-    digestMetrics
+    digestMetrics,
+    followUpService
   );
   const digestDeliveryService = new DigestDeliveryService(
     morningDigestService,
@@ -481,7 +801,113 @@ export function buildContainer(config: Config): Container {
     structuredResumeRepository,
     extractionEngine,
     '1.0.0',
-    new SearchProfileSuggestionPromptBuilder()
+    new SearchProfileSuggestionPromptBuilder(),
+    bulkAiBudgetEnforcer
+  );
+
+  // Distributed across replicas via Redis (SET NX), unlike a per-process Map —
+  // see ADR-019.
+  const syncRateLimiter = new RedisRateLimiter(getRedis(config.REDIS_URL), 'sync-rate-limit', 60_000);
+
+  const syncSchedulerService = new SyncSchedulerService(
+    providerRegistry,
+    vacancyRepository,
+    vacancySourceRepository,
+    companyRepository,
+    new ProviderConsoleLogger(config.LOG_LEVEL),
+    new ProviderInMemoryMetricsCollector(),
+    60 * 60 * 1000,
+    providerConfigRepository,
+  );
+  providerDiagnosticsService.setSyncScheduler(syncSchedulerService);
+
+  const dashboardStatsService = new DashboardStatsService(
+    vacancyRepository,
+    applicationRepository,
+    matchResultRepository,
+  );
+  const notificationDispatcherService = new NotificationDispatcherService(
+    matchResultRepository,
+    vacancyRepository,
+    applicationRepository,
+    telegramClient,
+  );
+
+  const atsAdapterRegistry = new AtsAdapterRegistry();
+  const companyWatchService = new CompanyWatchService(
+    companyWatchRepository,
+    companyWatchEventRepository,
+    companyWatchSyncLogRepository,
+    atsAdapterRegistry
+  );
+
+  const careerIntelligenceService = new CareerIntelligenceService({
+    applicationRepository,
+    vacancyRepository,
+    vacancySourceRepository,
+    companyRepository,
+    matchResultRepository,
+    analyticsEventRepository,
+    careerInsightRepository,
+  });
+
+  const resumeVersionIntelligenceService = new ResumeVersionIntelligenceService({
+    resumeRepository,
+    applicationRepository,
+    vacancyRepository,
+    vacancySourceRepository,
+    companyRepository,
+    matchResultRepository,
+    careerInsightRepository,
+  });
+
+  const providerManagementService = new ProviderManagementService(
+    providerConfigRepository,
+    telegramChannelRepository,
+    providerRegistry,
+    syncSchedulerService,
+    new ProviderConsoleLogger(config.LOG_LEVEL),
+    qualityDataRepository,
+    providerDiagnosticsService,
+  );
+
+  // AI Orchestrator
+  const aiHandlers = new Map<AIFeature, JobHandler>();
+  aiHandlers.set('analyze_vacancy', new AnalyzeVacancyHandler());
+  aiHandlers.set('tailor_resume', new TailorResumeHandler());
+  aiHandlers.set('cover_letter', new CoverLetterHandler());
+  aiHandlers.set('interview_prep', new InterviewPrepHandler());
+  aiHandlers.set('salary_analysis', new SalaryAnalysisHandler());
+  aiHandlers.set('company_analysis', new CompanyAnalysisHandler());
+  aiHandlers.set('resume_improvement', new ResumeImprovementHandler());
+  aiHandlers.set('career_advice', new CareerAdviceHandler());
+
+  const featureProviderMap = config.AI_FEATURE_PROVIDER_MAP
+    ? JSON.parse(config.AI_FEATURE_PROVIDER_MAP) as Partial<Record<AIFeature, string>>
+    : undefined;
+
+  const aiOrchestrator = new AIOrchestrator(
+    {
+      aiProvider,
+      aiJobRepository,
+      aiCacheRepository,
+      aiUsageRepository,
+      aiProviderConfigRepository,
+      aiBudgetRepository,
+      logger: new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info'),
+    },
+    {
+      redisUrl: config.REDIS_URL,
+      defaultProvider: config.AI_PROVIDER,
+      defaultModel: config.AI_MODEL,
+      fallbackProviders: config.AI_FALLBACK_PROVIDERS?.split(',').filter(Boolean),
+      cacheTtlMs: config.AI_CACHE_TTL_MS,
+      maxRetries: 3,
+      budgetCheckEnabled: config.AI_BUDGET_CHECK_ENABLED,
+      aiMode: config.AI_ORCHESTRATOR_MODE,
+      featureProviderMap,
+    },
+    aiHandlers
   );
 
   return {
@@ -489,6 +915,7 @@ export function buildContainer(config: Config): Container {
       user: userRepository,
       resume: resumeRepository,
       vacancy: vacancyRepository,
+      vacancySource: vacancySourceRepository,
       company: companyRepository,
       application: applicationRepository,
       recruiter: recruiterRepository,
@@ -503,6 +930,16 @@ export function buildContainer(config: Config): Container {
       workspace: workspaceRepository,
       refreshToken: refreshTokenRepository,
       structuredResume: structuredResumeRepository,
+      aiJob: aiJobRepository,
+      aiCache: aiCacheRepository,
+      aiUsage: aiUsageRepository,
+      aiProviderConfig: aiProviderConfigRepository,
+      aiBudget: aiBudgetRepository,
+      analyticsEvent: analyticsEventRepository,
+      careerInsight: careerInsightRepository,
+      providerConfig: providerConfigRepository,
+      telegramChannel: telegramChannelRepository,
+      userVacancyInteraction: userVacancyInteractionRepository,
     },
     authProvider,
     providerRegistry,
@@ -513,6 +950,7 @@ export function buildContainer(config: Config): Container {
     aiProvider,
     aiProviderHealthMonitor,
     aiMetrics,
+    aiOrchestrator,
     applicationService,
     services: {
       auth: authService,
@@ -532,6 +970,14 @@ export function buildContainer(config: Config): Container {
       telegramLinking: telegramLinkingService,
       resume: resumeService,
       searchProfileSuggestion: searchProfileSuggestionService,
+      syncScheduler: syncSchedulerService,
+      syncRateLimiter,
+      dashboardStats: dashboardStatsService,
+      notificationDispatcher: notificationDispatcherService,
+      companyWatch: companyWatchService,
+      careerIntelligence: careerIntelligenceService,
+      resumeVersionIntelligence: resumeVersionIntelligenceService,
+      providerManagement: providerManagementService,
     },
   };
 }

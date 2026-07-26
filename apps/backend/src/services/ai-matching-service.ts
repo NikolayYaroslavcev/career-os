@@ -5,14 +5,15 @@ import type {
   MatchResultRepository,
   AIMetricsCollector,
   AILogger,
-  AIErrorType,
 } from '@careeros/ai';
-import { AIError, NoopAILogger, computeVacancyAnalysisInputHash, analyzeVacancyForSearchProfile } from '@careeros/ai';
+import { AIError, AIErrorType, NoopAILogger, computeVacancyAnalysisInputHash, analyzeVacancyForSearchProfile } from '@careeros/ai';
+import type { BudgetEnforcer } from '@careeros/ai-orchestrator';
 import { mapWithConcurrency } from './concurrency.js';
 import { TriageMatchingService, type TriageOutcome } from './triage-matching-service.js';
 
 const DEFAULT_CONCURRENCY = 5;
 const DEFAULT_MAX_AI_CANDIDATES = 15;
+const DEFAULT_MIN_TRIAGE_SCORE = 2;
 
 export interface AiMatchingStats {
   readonly evaluated: number;
@@ -68,9 +69,14 @@ export class AiMatchingService {
     private readonly metrics: AIMetricsCollector,
     private readonly concurrency: number = DEFAULT_CONCURRENCY,
     private readonly maxAiCandidates: number = DEFAULT_MAX_AI_CANDIDATES,
-    private readonly logger: AILogger = new NoopAILogger()
+    private readonly logger: AILogger = new NoopAILogger(),
+    private readonly minTriageScore: number = DEFAULT_MIN_TRIAGE_SCORE,
+    // Optional so existing tests/callers that construct this service directly
+    // keep working without a budget repository; when unset, no cap is enforced
+    // (matches AIOrchestrator's own budgetCheckEnabled-off behavior).
+    private readonly budgetEnforcer?: BudgetEnforcer
   ) {
-    this.triageService = new TriageMatchingService({ topN: maxAiCandidates });
+    this.triageService = new TriageMatchingService({ topN: maxAiCandidates, minScore: minTriageScore });
   }
 
   /**
@@ -157,9 +163,29 @@ export class AiMatchingService {
     const triageOutcome = selection.triage;
     const reusedResults = [...selection.reused];
 
+    // Budget gate: this is the highest-volume AI call site in the app (one call
+    // per triage-passed vacancy per search), and previously had no spend ceiling
+    // at all. Checked once per batch (not per vacancy) to avoid N extra budget-repo
+    // round trips — same granularity the single-call AIOrchestrator routes accept.
+    let budgetBlockedCount = 0;
+    let toAnalyze = selection.toAnalyze;
+    if (this.budgetEnforcer && toAnalyze.length > 0) {
+      const budgetCheck = await this.budgetEnforcer.checkBudget(params.userId, 'vacancy_matching');
+      if (!budgetCheck.allowed) {
+        this.logger.warn('AI matching batch skipped: budget limit reached', {
+          userId: params.userId,
+          reason: budgetCheck.reason,
+          candidateCount: toAnalyze.length,
+        });
+        budgetBlockedCount = toAnalyze.length;
+        toAnalyze = [];
+        firstAiError = AIErrorType.QUOTA_EXCEEDED;
+      }
+    }
+
     // Level 2: Full AI matching (only for triage survivors)
     const aiStart = Date.now();
-    const computedResults = await mapWithConcurrency(selection.toAnalyze, this.concurrency, async (vacancy) => {
+    const computedResults = await mapWithConcurrency(toAnalyze, this.concurrency, async (vacancy) => {
       try {
         return await this.matchVacancy(params, vacancy, companyNameCache);
       } catch (error) {
@@ -202,7 +228,7 @@ export class AiMatchingService {
         reused: reusedResults.length,
         computed: computedResults.filter((result) => result !== undefined).length,
         failed,
-        skipped: triageOutcome.rejected.length,
+        skipped: triageOutcome.rejected.length + budgetBlockedCount,
         triageDurationMs,
         aiDurationMs,
         durationMs,
