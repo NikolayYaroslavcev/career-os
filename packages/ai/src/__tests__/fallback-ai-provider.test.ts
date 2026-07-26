@@ -36,7 +36,7 @@ function makeProvider(name: string): AIProvider & { complete: ReturnType<typeof 
 }
 
 // Zero backoff so tests using the retry policy don't need fake timers.
-const noDelayRetryPolicy = () => new AIRetryPolicy({ maxAttempts: 3, baseDelayMs: 0, maxDelayMs: 0, backoffMultiplier: 1, jitter: false });
+const noDelayRetryPolicy = (): AIRetryPolicy => new AIRetryPolicy({ maxAttempts: 3, baseDelayMs: 0, maxDelayMs: 0, backoffMultiplier: 1, jitter: false });
 
 describe('FallbackAIProvider', () => {
   it('throws when constructed with no providers', () => {

@@ -4,6 +4,8 @@ export { AIErrorType, AIError, AIParseError } from './domain/ai-error.js';
 export { Recommendation, RECOMMENDATION_PRIORITY, compareRecommendations } from './domain/recommendation.js';
 export type { MatchResult, MatchResultInput, FitAssessment } from './domain/match-result.js';
 export { createMatchResult } from './domain/match-result.js';
+export type { CategoryScore, ActionableItem, MatchExplanation } from './domain/match-category.js';
+export { MatchCategory, MATCH_CATEGORY_LABELS, ALL_MATCH_CATEGORIES } from './domain/match-category.js';
 export type { MatchResultRepository } from './domain/match-result-repository.js';
 export type { AIProvider, AIProviderConfig, AIProviderFactory } from './domain/ai-provider.js';
 export type {
@@ -41,6 +43,7 @@ export type {
 export type { PromptBuilder, BuiltPrompt } from './prompts/prompt-builder.js';
 export type { PromptVersion } from './prompts/prompt-version.js';
 export { createPromptVersion, verifyPromptChecksum } from './prompts/prompt-version.js';
+export { wrapUntrustedContent, UNTRUSTED_CONTENT_SYSTEM_RULE } from './prompts/untrusted-content.js';
 export { VacancyAnalysisPromptBuilder } from './prompts/vacancy-analysis.js';
 export { ResumeAnalysisPromptBuilder } from './prompts/resume-analysis.js';
 export { SkillGapPromptBuilder } from './prompts/skill-gap.js';
@@ -49,6 +52,10 @@ export { SearchProfileSuggestionPromptBuilder } from './prompts/search-profile-s
 export type { SearchProfileSuggestionParams } from './prompts/search-profile-suggestion.js';
 export { StructuredResumeExtractionPromptBuilder } from './prompts/structured-resume-extraction.js';
 export type { StructuredResumeExtractionParams } from './prompts/structured-resume-extraction.js';
+export { ResumeTailoringPromptBuilder } from './prompts/resume-tailoring.js';
+export type { ResumeTailoringParams } from './prompts/resume-tailoring.js';
+export { CoverLetterPromptBuilder } from './prompts/cover-letter.js';
+export type { CoverLetterParams } from './prompts/cover-letter.js';
 
 // Cache
 export { computePromptHash } from './cache/prompt-hash.js';
@@ -70,7 +77,7 @@ export { ResumeContextProviderImpl } from './context/resume-context-provider.js'
 
 // Matching
 export type { ExplainabilityFactor, ExplainabilityReport } from './matching/explainability.js';
-export { rankFactorsByImpact, getPositiveFactors, getNegativeFactors } from './matching/explainability.js';
+export { rankFactorsByImpact, getPositiveFactors, getNegativeFactors, categoryScoreToExplainabilityFactor, buildExplainabilityReport } from './matching/explainability.js';
 export type { MatchingEngineConfig, MatchingEngineDeps, MatchParams } from './matching/matching-engine.js';
 export { MatchingEngine } from './matching/matching-engine.js';
 export { CURRENT_MATCHING_ALGORITHM_VERSION } from './matching/matching-algorithm-version.js';
