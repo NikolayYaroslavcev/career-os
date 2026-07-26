@@ -25,7 +25,7 @@ import { createFollowUpReminderJobHandler } from './jobs/follow-up-reminder-proc
 import { createContinuationHandler } from './continuation.js';
 import { startHealthServer } from './health-server.js';
 
-const start = async () => {
+const start = async (): Promise<void> => {
   const config = loadConfig();
   const logger = createLogger(config.LOG_LEVEL);
 
@@ -75,6 +75,8 @@ const start = async () => {
     {
       connection: { url: config.REDIS_URL },
       concurrency: config.WORKER_CONCURRENCY,
+      lockDuration: 120_000,
+      stalledInterval: 60_000,
     }
   );
 
@@ -120,6 +122,8 @@ const start = async () => {
     {
       connection: { url: config.REDIS_URL },
       concurrency: 1,
+      lockDuration: 60_000,
+      stalledInterval: 30_000,
     }
   );
 
@@ -133,7 +137,7 @@ const start = async () => {
   console.log(`Follow-up reminder sweep scheduled every ${FOLLOW_UP_REMINDER_SWEEP_INTERVAL_MS}ms.`);
   console.log(`Worker health server listening on port ${config.WORKER_HEALTH_PORT}.`);
 
-  const shutdown = async () => {
+  const shutdown = async (): Promise<void> => {
     console.log('Shutting down worker...');
     await worker.close();
     await followUpReminderWorker.close();

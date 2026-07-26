@@ -36,7 +36,11 @@ export function createContinuationHandler(deps: ContinuationDeps) {
         nextVacancyIds.map((vacancyId) => ({
           name: VACANCY_ANALYSIS_JOB_NAME,
           data: { vacancyId, searchProfileId },
-          opts: { jobId: buildVacancyAnalysisJobId(searchProfileId, vacancyId) },
+          opts: {
+            jobId: buildVacancyAnalysisJobId(searchProfileId, vacancyId),
+            removeOnFail: { count: 1000 },
+            removeOnComplete: { count: 1000 },
+          },
         }))
       );
       deps.logger.info('Continuation batch enqueued', { searchProfileId, count: nextVacancyIds.length });

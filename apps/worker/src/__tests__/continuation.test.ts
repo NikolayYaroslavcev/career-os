@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { InMemoryAiBatchBacklog } from '@careeros/shared';
 import { createContinuationHandler } from '../continuation.js';
 
-function buildLogger() {
+function buildLogger(): { info: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> } {
   return { info: vi.fn(), error: vi.fn() };
 }
 
@@ -23,12 +23,16 @@ describe('createContinuationHandler (EPIC-17 Part 6 — continuous background pr
     await continueBatch('profile-1');
 
     expect(addBulk).toHaveBeenCalledTimes(1);
-    const jobs = addBulk.mock.calls[0]![0];
+    const jobs = addBulk.mock.calls[0]?.[0];
     expect(jobs).toHaveLength(2);
     expect(jobs[0]).toEqual({
       name: 'analyze-vacancy',
       data: { vacancyId: 'v1', searchProfileId: 'profile-1' },
-      opts: { jobId: 'profile-1__v1' },
+      opts: {
+        jobId: 'profile-1__v1',
+        removeOnFail: { count: 1000 },
+        removeOnComplete: { count: 1000 },
+      },
     });
     expect(await backlog.remaining('profile-1')).toBe(1);
   });

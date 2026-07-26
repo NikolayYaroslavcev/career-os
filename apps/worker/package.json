@@ -1,0 +1,35 @@
+{
+  "name": "@careeros/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@careeros/ai": "workspace:*",
+    "@careeros/career": "workspace:*",
+    "@careeros/database": "workspace:*",
+    "@careeros/notifications": "workspace:*",
+    "@careeros/providers": "workspace:*",
+    "@careeros/shared": "workspace:*",
+    "@careeros/telegram": "workspace:*",
+    "bullmq": "^5.30.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "dotenv": "^17.4.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0",
+    "eslint": "^9.0.0"
+  }
+}
