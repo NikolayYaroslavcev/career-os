@@ -1,0 +1,46 @@
+{
+  "jobCount": 3,
+  "jobs": [
+    {
+      "id": 55001,
+      "url": "https://jobicy.com/jobs/55001-senior-react-developer",
+      "jobTitle": "Senior React Developer",
+      "companyName": "RemoteWorks",
+      "companyLogo": "https://jobicy.com/logos/remoteworks.png",
+      "jobIndustry": ["Dev", "Design"],
+      "jobType": ["full_time"],
+      "jobGeo": "Europe",
+      "jobLevel": "Senior",
+      "jobExcerpt": "Join our frontend team.",
+      "jobDescription": "<p>We need a Senior React Developer to build our design system.</p>",
+      "pubDate": "2024-05-01 09:00:00",
+      "salaryMin": 70000,
+      "salaryMax": 95000,
+      "salaryCurrency": "USD"
+    },
+    {
+      "id": 55002,
+      "url": "https://jobicy.com/jobs/55002-copywriter",
+      "jobTitle": "Remote Copywriter",
+      "companyName": "WordSmiths",
+      "jobIndustry": [],
+      "jobGeo": "Anywhere",
+      "jobExcerpt": "Write compelling marketing copy.",
+      "pubDate": "2024-05-02 11:30:00"
+    },
+    {
+      "id": 55003,
+      "url": "https://jobicy.com/jobs/55003-devops-engineer",
+      "jobTitle": "DevOps Engineer",
+      "companyName": "CloudNine",
+      "jobIndustry": ["Dev", "Ops"],
+      "jobType": ["full_time", "contract"],
+      "jobGeo": "US Only",
+      "jobLevel": "Mid-level",
+      "jobDescription": "<p>Manage our Kubernetes infrastructure.</p>",
+      "pubDate": "2024-05-03 14:00:00",
+      "salaryMin": 0,
+      "salaryMax": 0
+    }
+  ]
+}

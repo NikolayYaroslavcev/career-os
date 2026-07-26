@@ -1,0 +1,51 @@
+{
+  "data": [
+    {
+      "id": "998877",
+      "type": "jobs",
+      "attributes": {
+        "title": "Backend Engineer",
+        "body": "<p>Join our backend team building the core platform.</p>",
+        "pitch": "Join our backend team",
+        "created-at": "2026-07-02T08:00:00.000Z",
+        "locationName": "Remote - Sweden",
+        "remote-status": "fully-remote",
+        "employment-type": "full_time",
+        "employment-level": "senior",
+        "status": "published"
+      },
+      "links": { "careersite-job-url": "https://careers.acme.com/jobs/998877-backend-engineer" }
+    },
+    {
+      "id": "998878",
+      "type": "jobs",
+      "attributes": {
+        "title": "Office Coordinator",
+        "body": "<p>Coordinate day-to-day office operations at our Stockholm HQ.</p>",
+        "created-at": "2026-07-01T08:00:00.000Z",
+        "locationName": "Stockholm, Sweden",
+        "remote-status": "hybrid",
+        "employment-type": "full_time",
+        "employment-level": "junior",
+        "status": "published"
+      },
+      "links": { "careersite-job-url": "https://careers.acme.com/jobs/998878-office-coordinator" }
+    },
+    {
+      "id": "998879",
+      "type": "jobs",
+      "attributes": {
+        "title": "Seasonal Support Specialist",
+        "body": "<p>Short-term support role during peak season.</p>",
+        "created-at": "2026-06-28T08:00:00.000Z",
+        "locationName": "Remote - EU",
+        "remote-status": "fully-remote",
+        "employment-type": "seasonal",
+        "status": "published"
+      },
+      "links": { "careersite-job-url": "https://careers.acme.com/jobs/998879-seasonal-support-specialist" }
+    }
+  ],
+  "meta": { "record-count": 3 },
+  "links": {}
+}

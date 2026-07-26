@@ -3,6 +3,23 @@ import type { HealthState } from './provider-state.js';
 export type ProviderAuthStatus = 'not_required' | 'configured' | 'missing';
 
 /**
+ * User-facing operational status, distinct from the low-level
+ * registered/configured/authenticated flags: READY means the provider is
+ * usable right now, BLOCKED means it's fully configured but an external
+ * factor (e.g. anti-bot protection) prevents it from working,
+ * NEEDS_CONFIGURATION means it's simply missing required env vars.
+ */
+export type ProviderOperationalStatus = 'READY' | 'BLOCKED' | 'NEEDS_CONFIGURATION' | 'UNKNOWN';
+
+/**
+ * Whether this provider can be bulk-synced through the standard fetch
+ * pipeline. Some providers (e.g. LinkedIn) are READY but only ingest data
+ * through a different mechanism (a browser extension), so bulk sync isn't
+ * applicable even though the provider itself works.
+ */
+export type BulkSyncStatus = 'SUPPORTED' | 'NOT_SUPPORTED_FOR_BULK_SYNC';
+
+/**
  * Outcome of the most recent fetch attempt for a provider — one snapshot per
  * provider, overwritten on every search. Counts trace the pipeline stages a
  * vacancy from this provider passed through: fetched -> normalized ->
@@ -37,4 +54,13 @@ export interface ProviderDiagnostics {
   readonly health: HealthState;
   readonly reason?: string;
   readonly lastFetch?: ProviderFetchDiagnostics;
+  /** User-facing status — see {@link ProviderOperationalStatus}. */
+  readonly status: ProviderOperationalStatus;
+  /** Human-readable explanation, set when status is BLOCKED or NEEDS_CONFIGURATION. */
+  readonly statusReason?: string;
+  /** Env vars this provider needs before it can be configured (e.g. ['GREENHOUSE_BOARD_TOKEN', 'GREENHOUSE_COMPANY_NAME']). */
+  readonly requiredConfig?: readonly string[];
+  /** Set when the provider ingests data through a non-bulk-sync mechanism, e.g. "Browser Extension ingestion". */
+  readonly ingestionMode?: string;
+  readonly bulkSyncStatus: BulkSyncStatus;
 }

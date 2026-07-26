@@ -1,0 +1,50 @@
+{
+  "job_count": 3,
+  "jobs": [
+    {
+      "id": 1901234,
+      "url": "https://remotive.com/remote-jobs/software-dev/senior-backend-engineer-1901234",
+      "title": "Senior Backend Engineer",
+      "company_name": "Acme Remote Inc",
+      "company_logo": "https://remotive.com/logos/acme.png",
+      "tags": ["typescript", "node.js", "postgresql"],
+      "job_type": "full_time",
+      "publication_date": "2024-05-01T08:00:00",
+      "description": "<p>We are looking for a Senior Backend Engineer to join our fully remote team.</p>",
+      "salary": "$120,000 - $150,000",
+      "required_experience": "Senior",
+      "candidate_required_location": "Worldwide",
+      "category": "Software Development"
+    },
+    {
+      "id": 1901235,
+      "url": "https://remotive.com/remote-jobs/design/product-designer-1901235",
+      "title": "Product Designer",
+      "company_name": "PixelWorks",
+      "company_logo": null,
+      "tags": [],
+      "job_type": "contract",
+      "publication_date": "2024-05-02T09:30:00",
+      "description": "<p>Design delightful product experiences.</p>",
+      "salary": "",
+      "required_experience": "Mid-level",
+      "candidate_required_location": "USA Only",
+      "category": "Design"
+    },
+    {
+      "id": 1901236,
+      "url": "https://remotive.com/remote-jobs/customer-support/support-specialist-1901236",
+      "title": "Customer Support Specialist",
+      "company_name": "HelpDeskCo",
+      "company_logo": "https://remotive.com/logos/helpdesk.png",
+      "tags": ["zendesk"],
+      "job_type": "full_time",
+      "publication_date": "2024-05-03T10:15:00",
+      "description": "<p>Support our customers around the clock.</p>",
+      "salary": "$31,2k- $52k",
+      "required_experience": "Entry-level",
+      "candidate_required_location": "Europe",
+      "category": "Customer Support"
+    }
+  ]
+}

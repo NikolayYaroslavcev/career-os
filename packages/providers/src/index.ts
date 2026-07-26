@@ -67,6 +67,8 @@ export type {
   ProviderDiagnostics,
   ProviderFetchDiagnostics,
   ProviderAuthStatus,
+  ProviderOperationalStatus,
+  BulkSyncStatus,
 } from './interfaces/provider-diagnostics.js';
 export { DefaultProviderJob } from './interfaces/default-provider-job.js';
 export { DefaultSyncStrategy } from './interfaces/default-sync-strategy.js';
@@ -219,6 +221,132 @@ export type { TeamtailorProviderConfig } from './providers/teamtailor/teamtailor
 export { TeamtailorFetcher } from './providers/teamtailor/teamtailor-fetcher.js';
 export { TeamtailorMapper } from './providers/teamtailor/teamtailor-mapper.js';
 export { TeamtailorNormalizer } from './providers/teamtailor/teamtailor-normalizer.js';
+
+// Remotive Provider
+export { createRemotiveProvider, REMOTIVE_PROVIDER_INFO, REMOTIVE_PROVIDER_CAPABILITIES } from './providers/remotive/remotive-provider.js';
+export type { RemotiveProviderConfig } from './providers/remotive/remotive-provider.js';
+export { RemotiveFetcher } from './providers/remotive/remotive-fetcher.js';
+export { RemotiveMapper } from './providers/remotive/remotive-mapper.js';
+export { RemotiveNormalizer } from './providers/remotive/remotive-normalizer.js';
+export { RemotiveSyncStrategy } from './providers/remotive/remotive-sync-strategy.js';
+
+// Himalayas Provider
+export { createHimalayasProvider, HIMALAYAS_PROVIDER_INFO, HIMALAYAS_PROVIDER_CAPABILITIES } from './providers/himalayas/himalayas-provider.js';
+export type { HimalayasProviderConfig } from './providers/himalayas/himalayas-provider.js';
+export { HimalayasFetcher } from './providers/himalayas/himalayas-fetcher.js';
+export { HimalayasMapper } from './providers/himalayas/himalayas-mapper.js';
+export { HimalayasNormalizer } from './providers/himalayas/himalayas-normalizer.js';
+
+// Arbeitnow Provider
+export { createArbeitnowProvider, ARBEITNOW_PROVIDER_INFO, ARBEITNOW_PROVIDER_CAPABILITIES } from './providers/arbeitnow/arbeitnow-provider.js';
+export type { ArbeitnowProviderConfig } from './providers/arbeitnow/arbeitnow-provider.js';
+export { ArbeitnowFetcher } from './providers/arbeitnow/arbeitnow-fetcher.js';
+export { ArbeitnowMapper } from './providers/arbeitnow/arbeitnow-mapper.js';
+export { ArbeitnowNormalizer } from './providers/arbeitnow/arbeitnow-normalizer.js';
+
+// Jobicy Provider
+export { createJobicyProvider, JOBICY_PROVIDER_INFO, JOBICY_PROVIDER_CAPABILITIES } from './providers/jobicy/jobicy-provider.js';
+export type { JobicyProviderConfig } from './providers/jobicy/jobicy-provider.js';
+export { JobicyFetcher } from './providers/jobicy/jobicy-fetcher.js';
+export { JobicyMapper } from './providers/jobicy/jobicy-mapper.js';
+export { JobicyNormalizer } from './providers/jobicy/jobicy-normalizer.js';
+
+// We Work Remotely Provider
+export { createWWRProvider, WWR_PROVIDER_INFO, WWR_PROVIDER_CAPABILITIES } from './providers/weworkremotely/weworkremotely-provider.js';
+export type { WWRProviderConfig } from './providers/weworkremotely/weworkremotely-provider.js';
+export { WWRFetcher } from './providers/weworkremotely/weworkremotely-fetcher.js';
+export { WWRMapper } from './providers/weworkremotely/weworkremotely-mapper.js';
+export { WWRNormalizer } from './providers/weworkremotely/weworkremotely-normalizer.js';
+
+// Working Nomads Provider
+export { createWorkingNomadsProvider, WORKING_NOMADS_PROVIDER_INFO, WORKING_NOMADS_PROVIDER_CAPABILITIES } from './providers/workingnomads/workingnomads-provider.js';
+export type { WorkingNomadsProviderConfig } from './providers/workingnomads/workingnomads-provider.js';
+export { WorkingNomadsFetcher } from './providers/workingnomads/workingnomads-fetcher.js';
+export { WorkingNomadsMapper } from './providers/workingnomads/workingnomads-mapper.js';
+export { WorkingNomadsNormalizer } from './providers/workingnomads/workingnomads-normalizer.js';
+
+// NoDesk Provider
+export { createNoDeskProvider, NODESK_PROVIDER_INFO, NODESK_PROVIDER_CAPABILITIES } from './providers/nodesk/nodesk-provider.js';
+export type { NoDeskProviderConfig } from './providers/nodesk/nodesk-provider.js';
+export { NoDeskFetcher } from './providers/nodesk/nodesk-fetcher.js';
+export { NoDeskMapper } from './providers/nodesk/nodesk-mapper.js';
+export { NoDeskNormalizer } from './providers/nodesk/nodesk-normalizer.js';
+
+// HN Who Is Hiring Provider
+export { createHNHiringProvider, HN_HIRING_PROVIDER_INFO, HN_HIRING_PROVIDER_CAPABILITIES } from './providers/hnhiring/hnhiring-provider.js';
+export type { HNHiringProviderConfig } from './providers/hnhiring/hnhiring-provider.js';
+export { HNHiringFetcher } from './providers/hnhiring/hnhiring-fetcher.js';
+export { HNHiringMapper } from './providers/hnhiring/hnhiring-mapper.js';
+export { HNHiringNormalizer } from './providers/hnhiring/hnhiring-normalizer.js';
+
+// Adzuna Provider
+export { createAdzunaProvider, ADZUNA_PROVIDER_INFO, ADZUNA_PROVIDER_CAPABILITIES } from './providers/adzuna/adzuna-provider.js';
+export type { AdzunaProviderConfig } from './providers/adzuna/adzuna-provider.js';
+export { AdzunaFetcher } from './providers/adzuna/adzuna-fetcher.js';
+export { AdzunaMapper } from './providers/adzuna/adzuna-mapper.js';
+export { AdzunaNormalizer } from './providers/adzuna/adzuna-normalizer.js';
+
+// LinkedIn Provider
+export { createLinkedInProvider, LINKEDIN_PROVIDER_INFO, LINKEDIN_PROVIDER_CAPABILITIES } from './providers/linkedin/linkedin-provider.js';
+export type { LinkedInProviderConfig } from './providers/linkedin/linkedin-provider.js';
+export { LinkedInFetcher } from './providers/linkedin/linkedin-fetcher.js';
+export { LinkedInMapper } from './providers/linkedin/linkedin-mapper.js';
+export { LinkedInNormalizer } from './providers/linkedin/linkedin-normalizer.js';
+export { LinkedInSyncStrategy } from './providers/linkedin/linkedin-sync-strategy.js';
+export { validateIngestionPayload, ingestionPayloadToRawJob } from './providers/linkedin/linkedin-ingestion.js';
+export type { LinkedInIngestionPayload } from './providers/linkedin/linkedin-types.js';
+
+// SmartRecruiters Provider
+export { createSmartRecruitersProvider, SMARTRECRUITERS_PROVIDER_INFO, SMARTRECRUITERS_PROVIDER_CAPABILITIES } from './providers/smartrecruiters/smartrecruiters-provider.js';
+export type { SmartRecruitersProviderConfig } from './providers/smartrecruiters/smartrecruiters-provider.js';
+export { SmartRecruitersFetcher } from './providers/smartrecruiters/smartrecruiters-fetcher.js';
+export { SmartRecruitersMapper } from './providers/smartrecruiters/smartrecruiters-mapper.js';
+export { SmartRecruitersNormalizer } from './providers/smartrecruiters/smartrecruiters-normalizer.js';
+
+// Recruitee Provider
+export { createRecruiteeProvider, RECRUITEE_PROVIDER_INFO, RECRUITEE_PROVIDER_CAPABILITIES } from './providers/recruitee/recruitee-provider.js';
+export type { RecruiteeProviderConfig } from './providers/recruitee/recruitee-provider.js';
+export { RecruiteeFetcher } from './providers/recruitee/recruitee-fetcher.js';
+export { RecruiteeMapper } from './providers/recruitee/recruitee-mapper.js';
+export { RecruiteeNormalizer } from './providers/recruitee/recruitee-normalizer.js';
+
+// Comeet Provider
+export { createComeetProvider, COMEET_PROVIDER_INFO, COMEET_PROVIDER_CAPABILITIES } from './providers/comeet/comeet-provider.js';
+export type { ComeetProviderConfig } from './providers/comeet/comeet-provider.js';
+export { ComeetFetcher } from './providers/comeet/comeet-fetcher.js';
+export { ComeetMapper } from './providers/comeet/comeet-mapper.js';
+export { ComeetNormalizer } from './providers/comeet/comeet-normalizer.js';
+
+// Habr Career Provider
+export { createHabrCareerProvider, HABR_CAREER_PROVIDER_INFO, HABR_CAREER_PROVIDER_CAPABILITIES } from './providers/habr-career/habr-career-provider.js';
+export type { HabrCareerProviderConfig } from './providers/habr-career/habr-career-provider.js';
+export { HabrCareerFetcher } from './providers/habr-career/habr-career-fetcher.js';
+export { HabrCareerMapper } from './providers/habr-career/habr-career-mapper.js';
+export { HabrCareerNormalizer } from './providers/habr-career/habr-career-normalizer.js';
+
+// SuperJob Provider
+export { createSuperJobProvider, SUPERJOB_PROVIDER_INFO, SUPERJOB_PROVIDER_CAPABILITIES } from './providers/superjob/superjob-provider.js';
+export type { SJProviderConfig } from './providers/superjob/superjob-provider.js';
+export { SJFetcher } from './providers/superjob/superjob-fetcher.js';
+export { SJMapper } from './providers/superjob/superjob-mapper.js';
+export { SJNormalizer } from './providers/superjob/superjob-normalizer.js';
+export { SJSyncStrategy } from './providers/superjob/superjob-sync-strategy.js';
+
+// Telegram Provider
+export { createTelegramProvider, TELEGRAM_PROVIDER_INFO, TELEGRAM_PROVIDER_CAPABILITIES } from './providers/telegram/telegram-provider.js';
+export type { TelegramProviderConfig } from './providers/telegram/telegram-provider.js';
+export { TelegramFetcher } from './providers/telegram/telegram-fetcher.js';
+export { TelegramMapper } from './providers/telegram/telegram-mapper.js';
+export { TelegramNormalizer } from './providers/telegram/telegram-normalizer.js';
+export { TelegramSyncStrategy } from './providers/telegram/telegram-sync-strategy.js';
+export type { TelegramRawMessage, TelegramExtractedFields, TelegramChannelConfig } from './providers/telegram/telegram-types.js';
+
+// Resilience
+export { resilientFetch, fetchWithTimeout } from './resilience/resilient-fetch.js';
+export type { ResilientFetchConfig } from './resilience/resilient-fetch.js';
+
+// Shared utilities
+export { TECH_KEYWORDS, extractTechnologiesFromText } from './shared/tech-keywords.js';
 
 // Testing (fixture-based, no network — for use by consumer test suites and demo scripts)
 export { FakeProvider } from './__tests__/fake-provider.js';

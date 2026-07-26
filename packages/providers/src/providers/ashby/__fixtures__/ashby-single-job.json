@@ -1,0 +1,13 @@
+{
+  "id": "11111111-2222-3333-4444-555555555555",
+  "title": "Staff Software Engineer",
+  "departmentName": "Engineering",
+  "teamName": "Infrastructure",
+  "locationName": "Remote - North America",
+  "isRemote": true,
+  "descriptionHtml": "<p>We're hiring a Staff Software Engineer to lead our infrastructure team.</p>",
+  "publishedAt": "2026-07-05T00:00:00.000Z",
+  "employmentType": "FullTime",
+  "jobUrl": "https://jobs.ashbyhq.com/acme/11111111-2222-3333-4444-555555555555",
+  "applyUrl": "https://jobs.ashbyhq.com/acme/11111111-2222-3333-4444-555555555555/apply"
+}

@@ -1,0 +1,491 @@
+import { fetchWithTimeout } from '../../resilience/resilient-fetch.js';
+import type { Fetcher, FetchResult } from '../../interfaces/fetcher.js';
+import type { ProviderResult, ResultMeta } from '../../interfaces/result.js';
+import type { RawJob } from '../../interfaces/raw-job.js';
+import type { SearchCriteria } from '../../interfaces/search-criteria.js';
+import type { SyncCursor, CursorState, OffsetCursor } from '../../interfaces/sync-cursor.js';
+import type { Logger } from '../../observability/logger.js';
+import type { MetricsCollector } from '../../observability/metrics.js';
+import type { Tracer } from '../../observability/tracer.js';
+import { PROVIDER_METRICS } from '../../observability/metrics.js';
+import { ProviderErrorType } from '../../errors/provider-errors.js';
+
+const DEFAULT_PAGE_LIMIT = 100;
+
+export interface LeverFetcherConfig {
+  readonly baseUrl: string;
+  readonly company: string;
+  readonly companyName: string;
+  readonly logger: Logger;
+  readonly metrics: MetricsCollector;
+  readonly tracer: Tracer;
+}
+
+export interface LeverCategories {
+  readonly commitment?: string;
+  readonly department?: string;
+  readonly location?: string;
+  readonly team?: string;
+  readonly allLocations?: readonly string[];
+}
+
+export interface LeverSalaryRange {
+  readonly min?: number;
+  readonly max?: number;
+  readonly currency?: string;
+  readonly interval?: string;
+}
+
+export interface LeverList {
+  readonly text: string;
+  readonly content: string;
+}
+
+export interface LeverRawJob {
+  readonly id: string;
+  readonly text: string;
+  readonly categories?: LeverCategories;
+  readonly description?: string;
+  readonly descriptionPlain?: string;
+  readonly lists?: readonly LeverList[];
+  readonly hostedUrl: string;
+  readonly applyUrl?: string;
+  readonly createdAt: number;
+  readonly workplaceType?: 'remote' | 'hybrid' | 'on-site';
+  readonly salaryRange?: LeverSalaryRange;
+  readonly tags?: readonly string[];
+}
+
+export type LeverPostingsResponse = readonly LeverRawJob[];
+
+export class LeverFetcher implements Fetcher {
+  private readonly baseUrl: string;
+  private readonly company: string;
+  private readonly companyName: string;
+  private readonly logger: Logger;
+  private readonly metrics: MetricsCollector;
+  private readonly tracer: Tracer;
+
+  constructor(config: LeverFetcherConfig) {
+    this.baseUrl = config.baseUrl;
+    this.company = config.company;
+    this.companyName = config.companyName;
+    this.logger = config.logger;
+    this.metrics = config.metrics;
+    this.tracer = config.tracer;
+  }
+
+  async search(criteria: SearchCriteria): Promise<ProviderResult<RawJob[]>> {
+    const span = this.tracer.startSpan('lever.fetcher.search', {
+      providerId: 'lever',
+      query: criteria.query ?? '',
+    });
+
+    const startTime = Date.now();
+
+    try {
+      this.logger.info('Fetching Lever postings', {
+        providerId: 'lever',
+        operation: 'search',
+        company: this.company,
+      });
+
+      const limit = criteria.limit ?? DEFAULT_PAGE_LIMIT;
+      const url = this.buildPostingsUrl(0, limit);
+      const response = await fetchWithTimeout(url, {
+        headers: { Accept: 'application/json' },
+      });
+
+      if (!response.ok) {
+        span.setAttribute('error', true);
+        span.setAttribute('http.status', response.status);
+
+        if (response.status === 429) {
+          return {
+            ok: false,
+            error: ProviderErrorType.RATE_LIMITED,
+            message: `HTTP ${response.status}: Rate limited by Lever API`,
+            retryable: true,
+            meta: { durationMs: Date.now() - startTime },
+          };
+        }
+
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const jobs = this.parseResponse(data).filter((job) => matchesCriteria(job, criteria));
+
+      const durationMs = Date.now() - startTime;
+      this.metrics.recordHistogram(PROVIDER_METRICS.FETCH_DURATION, durationMs, {
+        providerId: 'lever',
+        operation: 'search',
+        status: 'success',
+      });
+      this.metrics.incrementCounter(PROVIDER_METRICS.VACANCIES_FETCHED, jobs.length, {
+        providerId: 'lever',
+      });
+
+      span.setAttribute('jobs.fetched', jobs.length);
+      span.setAttribute('duration_ms', durationMs);
+      span.end();
+
+      const meta: ResultMeta = {
+        durationMs,
+        providerMeta: { totalJobs: jobs.length },
+      };
+
+      return { ok: true, data: jobs, meta };
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+      this.metrics.recordHistogram(PROVIDER_METRICS.FETCH_DURATION, durationMs, {
+        providerId: 'lever',
+        operation: 'search',
+        status: 'error',
+      });
+      this.metrics.incrementCounter(PROVIDER_METRICS.FETCH_FAILURE, 1, {
+        providerId: 'lever',
+      });
+
+      span.setAttribute('error', true);
+      span.end();
+
+      const message = error instanceof Error ? error.message : 'Unknown error';
+
+      if (message.startsWith('HTTP')) {
+        return {
+          ok: false,
+          error: ProviderErrorType.NETWORK_ERROR,
+          message,
+          retryable: true,
+          meta: { durationMs },
+        };
+      }
+
+      if (message.includes('not an array') || message.includes('JSON')) {
+        return {
+          ok: false,
+          error: ProviderErrorType.INVALID_RESPONSE,
+          message,
+          retryable: false,
+          meta: { durationMs },
+        };
+      }
+
+      return {
+        ok: false,
+        error: ProviderErrorType.UNKNOWN_ERROR,
+        message,
+        retryable: false,
+        meta: { durationMs },
+      };
+    }
+  }
+
+  async getVacancy(sourceId: string): Promise<ProviderResult<RawJob | null>> {
+    const span = this.tracer.startSpan('lever.fetcher.getVacancy', {
+      providerId: 'lever',
+      sourceId,
+    });
+
+    const startTime = Date.now();
+
+    try {
+      this.logger.info('Fetching Lever vacancy', {
+        providerId: 'lever',
+        operation: 'getVacancy',
+        sourceId,
+      });
+
+      const result = await this.search({});
+      if (!result.ok) {
+        span.end();
+        return result;
+      }
+
+      const job = result.data.find((j) => j.sourceId === sourceId);
+      const durationMs = Date.now() - startTime;
+
+      span.setAttribute('found', !!job);
+      span.end();
+
+      return { ok: true, data: job ?? null, meta: { durationMs } };
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+      span.setAttribute('error', true);
+      span.end();
+
+      return {
+        ok: false,
+        error: ProviderErrorType.UNKNOWN_ERROR,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        retryable: false,
+        meta: { durationMs },
+      };
+    }
+  }
+
+  async fetchWithCursor(
+    criteria: SearchCriteria,
+    cursor: SyncCursor,
+  ): Promise<ProviderResult<FetchResult>> {
+    const span = this.tracer.startSpan('lever.fetcher.fetchWithCursor', {
+      providerId: 'lever',
+    });
+
+    const startTime = Date.now();
+
+    try {
+      const offsetCursor: OffsetCursor =
+        cursor.type === 'offset'
+          ? cursor
+          : { type: 'offset', offset: 0, limit: criteria.limit ?? DEFAULT_PAGE_LIMIT };
+
+      this.logger.info('Fetching Lever postings with cursor', {
+        providerId: 'lever',
+        operation: 'fetchWithCursor',
+        offset: offsetCursor.offset,
+        limit: offsetCursor.limit,
+      });
+
+      const url = this.buildPostingsUrl(offsetCursor.offset, offsetCursor.limit);
+      const response = await fetchWithTimeout(url, {
+        headers: { Accept: 'application/json' },
+      });
+
+      if (!response.ok) {
+        span.setAttribute('error', true);
+        span.setAttribute('http.status', response.status);
+
+        if (response.status === 429) {
+          return {
+            ok: false,
+            error: ProviderErrorType.RATE_LIMITED,
+            message: `HTTP ${response.status}: Rate limited by Lever API`,
+            retryable: true,
+            meta: { durationMs: Date.now() - startTime },
+          };
+        }
+
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const rawJobs = this.parseResponse(data);
+      const hasMore = rawJobs.length === offsetCursor.limit;
+      const jobs = rawJobs.filter((job) => matchesCriteria(job, criteria));
+
+      const durationMs = Date.now() - startTime;
+      this.metrics.recordHistogram(PROVIDER_METRICS.FETCH_DURATION, durationMs, {
+        providerId: 'lever',
+        operation: 'fetchWithCursor',
+        status: 'success',
+      });
+      this.metrics.incrementCounter(PROVIDER_METRICS.VACANCIES_FETCHED, jobs.length, {
+        providerId: 'lever',
+      });
+
+      const cursorState: CursorState = {
+        cursor: {
+          type: 'offset',
+          offset: offsetCursor.offset + offsetCursor.limit,
+          limit: offsetCursor.limit,
+        },
+        strategy: 'offset',
+        exhausted: !hasMore,
+        fetchedCount: jobs.length,
+      };
+
+      const fetchResult: FetchResult = {
+        jobs,
+        cursor: cursorState,
+        hasMore,
+        meta: { totalJobs: jobs.length, offset: offsetCursor.offset, limit: offsetCursor.limit },
+      };
+
+      span.setAttribute('jobs.fetched', jobs.length);
+      span.setAttribute('has_more', hasMore);
+      span.end();
+
+      return { ok: true, data: fetchResult, meta: { durationMs } };
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+      span.setAttribute('error', true);
+      span.end();
+
+      const message = error instanceof Error ? error.message : 'Unknown error';
+
+      if (message.startsWith('HTTP')) {
+        return {
+          ok: false,
+          error: ProviderErrorType.NETWORK_ERROR,
+          message,
+          retryable: true,
+          meta: { durationMs },
+        };
+      }
+
+      if (message.includes('not an array') || message.includes('JSON')) {
+        return {
+          ok: false,
+          error: ProviderErrorType.INVALID_RESPONSE,
+          message,
+          retryable: false,
+          meta: { durationMs },
+        };
+      }
+
+      return {
+        ok: false,
+        error: ProviderErrorType.UNKNOWN_ERROR,
+        message,
+        retryable: false,
+        meta: { durationMs },
+      };
+    }
+  }
+
+  async ping(): Promise<ProviderResult<boolean>> {
+    const span = this.tracer.startSpan('lever.fetcher.ping', {
+      providerId: 'lever',
+    });
+
+    const startTime = Date.now();
+
+    try {
+      this.logger.debug('Pinging Lever API', {
+        providerId: 'lever',
+        operation: 'ping',
+      });
+
+      const response = await fetchWithTimeout(this.buildPostingsUrl(0, DEFAULT_PAGE_LIMIT), { method: 'HEAD' });
+      const durationMs = Date.now() - startTime;
+
+      span.setAttribute('http.status', response.status);
+      span.end();
+
+      return { ok: true, data: response.ok, meta: { durationMs } };
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+      span.setAttribute('error', true);
+      span.end();
+
+      return {
+        ok: false,
+        error: ProviderErrorType.NETWORK_ERROR,
+        message: error instanceof Error ? error.message : 'Network error',
+        retryable: true,
+        meta: { durationMs },
+      };
+    }
+  }
+
+  private buildPostingsUrl(skip: number, limit: number): string {
+    return `${this.baseUrl}/${this.company}?mode=json&skip=${skip}&limit=${limit}`;
+  }
+
+  private parseResponse(data: unknown): RawJob[] {
+    if (!Array.isArray(data)) {
+      throw new Error('Response is not an array of Lever postings');
+    }
+
+    const jobs: RawJob[] = [];
+    for (const item of data) {
+      const job = this.parseSingleJob(item);
+      if (job) jobs.push(job);
+    }
+    return jobs;
+  }
+
+  private parseSingleJob(item: unknown): RawJob | null {
+    if (!this.isValidJob(item)) {
+      return null;
+    }
+
+    const locationRaw = item.categories?.location ?? '';
+    const description = item.description ?? item.descriptionPlain ?? '';
+
+    return {
+      sourceId: item.id,
+      title: item.text,
+      description,
+      companyName: this.companyName,
+      location: locationRaw,
+      salary: this.parseSalary(item.salaryRange),
+      technologies: item.tags ? [...item.tags] : [],
+      url: item.hostedUrl,
+      publishedAt: new Date(item.createdAt),
+      fetchedAt: new Date(),
+      remote: this.isRemote(item),
+      extensions: {
+        applyUrl: item.applyUrl,
+        department: item.categories?.department,
+        team: item.categories?.team,
+        commitment: item.categories?.commitment,
+        allLocations: item.categories?.allLocations ?? [],
+        workplaceType: item.workplaceType,
+      },
+    };
+  }
+
+  private isRemote(item: LeverRawJob): boolean {
+    if (item.workplaceType === 'remote') {
+      return true;
+    }
+    return /remote/i.test(item.categories?.location ?? '');
+  }
+
+  private isValidJob(item: unknown): item is LeverRawJob {
+    return (
+      typeof item === 'object' &&
+      item !== null &&
+      'id' in item &&
+      'text' in item &&
+      'hostedUrl' in item &&
+      'createdAt' in item
+    );
+  }
+
+  private parseSalary(range: LeverSalaryRange | undefined): RawJob['salary'] | undefined {
+    if (!range || (range.min == null && range.max == null)) {
+      return undefined;
+    }
+
+    return {
+      from: range.min,
+      to: range.max,
+      currency: range.currency ?? 'USD',
+      period: 'yearly',
+    };
+  }
+}
+
+function matchesCriteria(job: RawJob, criteria: SearchCriteria): boolean {
+  if (criteria.query) {
+    const query = criteria.query.toLowerCase();
+    if (!job.title.toLowerCase().includes(query) && !job.description.toLowerCase().includes(query)) {
+      return false;
+    }
+  }
+
+  if (criteria.technologies && criteria.technologies.length > 0) {
+    const jobTechs = new Set(job.technologies.map((t) => t.toLowerCase()));
+    const hasMatch = criteria.technologies.some((t) => jobTechs.has(t.toLowerCase()));
+    if (!hasMatch && jobTechs.size > 0) {
+      return false;
+    }
+  }
+
+  if (criteria.remoteOnly && !job.remote) {
+    return false;
+  }
+
+  if (criteria.location) {
+    const location = criteria.location.toLowerCase();
+    if (!job.location.toLowerCase().includes(location)) {
+      return false;
+    }
+  }
+
+  return true;
+}

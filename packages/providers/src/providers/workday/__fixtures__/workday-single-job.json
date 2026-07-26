@@ -1,0 +1,13 @@
+{
+  "total": 1,
+  "jobPostings": [
+    {
+      "title": "Software Engineer II",
+      "externalPath": "/job/Remote---USA/Software-Engineer-II_R-12345",
+      "locationsText": "Remote - USA",
+      "postedOn": "Posted Today",
+      "bulletFields": ["R-12345"],
+      "jobReqId": "R-12345"
+    }
+  ]
+}

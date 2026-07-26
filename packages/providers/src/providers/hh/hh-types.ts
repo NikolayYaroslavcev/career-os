@@ -101,7 +101,9 @@ export interface HHVacancyListResponse {
 
 export interface HHSearchParams {
   text?: string;
-  area?: string;
+  // string[] sends the `area` query param multiple times, which api.hh.ru
+  // treats as an OR across regions/countries (used for default CIS-wide sync).
+  area?: string | readonly string[];
   employment?: string;
   schedule?: string;
   experience?: string;

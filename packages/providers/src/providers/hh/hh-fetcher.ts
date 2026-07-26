@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from '../../resilience/resilient-fetch.js';
 import type { Fetcher, FetchResult } from '../../interfaces/fetcher.js';
 import type { ProviderResult, ResultMeta } from '../../interfaces/result.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
@@ -22,6 +23,11 @@ import type {
 export interface HHFetcherConfig {
   readonly baseUrl: string;
   readonly accessToken?: string;
+  // Default HH area IDs to search when a call doesn't specify criteria.location
+  // (e.g. "113,16,40,97,48,9" for Russia/Belarus/Kazakhstan/Uzbekistan/
+  // Kyrgyzstan/Azerbaijan). Sent as repeated `area` query params, which
+  // api.hh.ru ORs together. Omit/empty for HH's own default (Russia-wide).
+  readonly areas?: readonly string[];
   readonly logger: Logger;
   readonly metrics: MetricsCollector;
   readonly tracer: Tracer;
@@ -48,6 +54,7 @@ const TECH_KEYWORDS = [
 export class HHFetcher implements Fetcher {
   private readonly baseUrl: string;
   private readonly accessToken?: string;
+  private readonly areas: readonly string[];
   private readonly logger: Logger;
   private readonly metrics: MetricsCollector;
   private readonly tracer: Tracer;
@@ -55,6 +62,7 @@ export class HHFetcher implements Fetcher {
   constructor(config: HHFetcherConfig) {
     this.baseUrl = config.baseUrl;
     this.accessToken = config.accessToken;
+    this.areas = config.areas ?? [];
     this.logger = config.logger;
     this.metrics = config.metrics;
     this.tracer = config.tracer;
@@ -86,11 +94,21 @@ export class HHFetcher implements Fetcher {
         const params = this.buildSearchParams(criteria, page, perPage);
         const url = this.buildSearchUrl(params);
 
-        const response = await fetch(url, { headers: this.buildHeaders() });
+        const response = await fetchWithTimeout(url, { headers: this.buildHeaders() });
 
         if (!response.ok) {
           span.setAttribute('error', true);
           span.setAttribute('http.status', response.status);
+
+          if (response.status === 403) {
+            return {
+              ok: false,
+              error: ProviderErrorType.PROVIDER_UNAVAILABLE,
+              message: `HTTP 403: Access denied by HH — IP may be blocked by DDoS-Guard`,
+              retryable: true,
+              meta: { durationMs: Date.now() - startTime },
+            };
+          }
 
           if (response.status === 429) {
             return {
@@ -206,7 +224,7 @@ export class HHFetcher implements Fetcher {
       });
 
       const url = `${this.baseUrl}/vacancies/${sourceId}`;
-      const response = await fetch(url, { headers: this.buildHeaders() });
+      const response = await fetchWithTimeout(url, { headers: this.buildHeaders() });
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -260,9 +278,33 @@ export class HHFetcher implements Fetcher {
       const params = this.buildSearchParams(criteria, page, perPage);
       const url = this.buildSearchUrl(params);
 
-      const response = await fetch(url, { headers: this.buildHeaders() });
+      const response = await fetchWithTimeout(url, { headers: this.buildHeaders() });
 
       if (!response.ok) {
+        if (response.status === 403) {
+          span.setAttribute('error', true);
+          span.setAttribute('http.status', 403);
+          span.end();
+          return {
+            ok: false,
+            error: ProviderErrorType.PROVIDER_UNAVAILABLE,
+            message: `HTTP 403: Access denied by HH — IP may be blocked by DDoS-Guard. Set HH_ACCESS_TOKEN or use a proxy.`,
+            retryable: true,
+            meta: { durationMs: Date.now() - startTime },
+          };
+        }
+        if (response.status === 429) {
+          span.setAttribute('error', true);
+          span.setAttribute('http.status', 429);
+          span.end();
+          return {
+            ok: false,
+            error: ProviderErrorType.RATE_LIMITED,
+            message: `HTTP 429: Rate limited by HH API`,
+            retryable: true,
+            meta: { durationMs: Date.now() - startTime },
+          };
+        }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
@@ -326,7 +368,7 @@ export class HHFetcher implements Fetcher {
         operation: 'ping',
       });
 
-      const response = await fetch(`${this.baseUrl}/vacancies?per_page=1`, {
+      const response = await fetchWithTimeout(`${this.baseUrl}/vacancies?per_page=1`, {
         method: 'GET',
         headers: this.buildHeaders(),
       });
@@ -385,7 +427,11 @@ export class HHFetcher implements Fetcher {
     }
 
     if (criteria.location) {
+      // An explicit location narrows to a single area, overriding the
+      // configured CIS-wide default.
       params.area = criteria.location;
+    } else if (this.areas.length > 0) {
+      params.area = this.areas;
     }
 
     if (criteria.remoteOnly) {
@@ -422,9 +468,18 @@ export class HHFetcher implements Fetcher {
     const url = new URL(`${this.baseUrl}/vacancies`);
 
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') {
-        url.searchParams.set(key, String(value));
+      if (value === undefined || value === null || value === '') {
+        return;
       }
+      if (Array.isArray(value)) {
+        // Repeated `area=X&area=Y` params — api.hh.ru ORs them together
+        // across regions/countries.
+        for (const item of value) {
+          url.searchParams.append(key, String(item));
+        }
+        return;
+      }
+      url.searchParams.set(key, String(value));
     });
 
     return url.toString();

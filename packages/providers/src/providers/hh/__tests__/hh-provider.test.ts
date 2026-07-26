@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createHHProvider } from '../hh-provider.js';
+import { createHHProvider, HH_AREA_IDS } from '../hh-provider.js';
 import { HHFetcher } from '../hh-fetcher.js';
 import { HHMapper } from '../hh-mapper.js';
 import { HHNormalizer } from '../hh-normalizer.js';
@@ -55,6 +55,19 @@ describe('HHProvider', () => {
     it('should accept an optional access token without requiring one', () => {
       const provider = createHHProvider({ accessToken: 'test-token', logger, metrics, tracer });
       expect(provider.info.auth.optional).toBe(true);
+    });
+  });
+
+  describe('HH_AREA_IDS', () => {
+    it('should have correct area IDs for HH group domains', () => {
+      expect(HH_AREA_IDS['hh.ru']).toBe('113');  // Russia
+      expect(HH_AREA_IDS['hh.kz']).toBe('40');   // Kazakhstan
+      expect(HH_AREA_IDS['hh.by']).toBe('16');   // Belarus
+    });
+
+    it('should note that rabota.by has no API', () => {
+      // rabota.by is NOT in HH_AREA_IDS because it has no API
+      expect(HH_AREA_IDS).not.toHaveProperty('rabota.by');
     });
   });
 

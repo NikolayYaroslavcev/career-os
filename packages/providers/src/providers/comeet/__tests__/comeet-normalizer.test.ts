@@ -1,0 +1,92 @@
+import { describe, it, expect } from 'vitest';
+import { ComeetNormalizer } from '../comeet-normalizer.js';
+import type { MappedJob } from '../../../interfaces/mapper.js';
+
+describe('ComeetNormalizer', () => {
+  const normalizer = new ComeetNormalizer();
+
+  const createMappedJob = (overrides: Partial<MappedJob> = {}): MappedJob => ({
+    sourceId: 'abc-123',
+    title: 'Senior React Developer',
+    description: 'We are looking for a Senior React Developer.',
+    companyName: 'Test Company',
+    location: { raw: 'Tel Aviv, Israel' },
+    technologies: ['react', 'javascript'],
+    url: 'https://comeet.co/jobs/abc-123',
+    publishedAt: new Date('2026-07-15'),
+    fetchedAt: new Date(),
+    ...overrides,
+  });
+
+  describe('normalize', () => {
+    it('should normalize a basic mapped job', () => {
+      const mapped = createMappedJob();
+      const result = normalizer.normalize(mapped);
+
+      expect(result.id).toBe('comeet:abc-123');
+      expect(result.source).toBe('comeet');
+      expect(result.sourceId).toBe('abc-123');
+      expect(result.title).toBe('Senior React Developer');
+      expect(result.companyName).toBe('Test Company');
+      expect(result.url).toBe('https://comeet.co/jobs/abc-123');
+      expect(result.contentHash).toBeDefined();
+      expect(result.normalizedAt).toBeInstanceOf(Date);
+    });
+
+    it('should set remote info correctly', () => {
+      const mapped = createMappedJob({ remote: true });
+      const result = normalizer.normalize(mapped);
+
+      expect(result.remote).toEqual({ level: 'remote_only', explicit: true });
+    });
+
+    it('should generate consistent content hash', () => {
+      const mapped = createMappedJob();
+      const result1 = normalizer.normalize(mapped);
+      const result2 = normalizer.normalize(mapped);
+
+      expect(result1.contentHash).toBe(result2.contentHash);
+    });
+  });
+
+  describe('validate', () => {
+    it('should return null for valid job', () => {
+      const mapped = createMappedJob();
+      const result = normalizer.validate(mapped);
+
+      expect(result).toBeNull();
+    });
+
+    it('should return error for missing sourceId', () => {
+      const mapped = createMappedJob({ sourceId: '' });
+      const result = normalizer.validate(mapped);
+
+      expect(result).not.toBeNull();
+      expect(result?.field).toBe('sourceId');
+    });
+
+    it('should return error for missing title', () => {
+      const mapped = createMappedJob({ title: '' });
+      const result = normalizer.validate(mapped);
+
+      expect(result).not.toBeNull();
+      expect(result?.field).toBe('title');
+    });
+
+    it('should return error for missing company name', () => {
+      const mapped = createMappedJob({ companyName: '' });
+      const result = normalizer.validate(mapped);
+
+      expect(result).not.toBeNull();
+      expect(result?.field).toBe('companyName');
+    });
+
+    it('should return error for missing URL', () => {
+      const mapped = createMappedJob({ url: '' });
+      const result = normalizer.validate(mapped);
+
+      expect(result).not.toBeNull();
+      expect(result?.field).toBe('url');
+    });
+  });
+});

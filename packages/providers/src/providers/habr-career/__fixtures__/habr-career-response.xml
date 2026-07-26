@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Вакансии - Хабр Карьера</title>
+    <link>https://career.habr.com/vacancies</link>
+    <description>Вакансии для IT-специалистов</description>
+    <item>
+      <title><![CDATA[Senior Backend Developer (Python) (Skyeng)]]></title>
+      <link>https://career.habr.com/vacancies/1000123456</link>
+      <guid>https://career.habr.com/vacancies/1000123456</guid>
+      <description><![CDATA[<p>Ищем Senior Backend Developer в команду. Стек: Python, Django, PostgreSQL, Docker.</p><p>Зарплата: 250 000 - 350 000 ₽. Можно удалённо. Офис в Москва по желанию.</p>]]></description>
+      <pubDate>Wed, 22 Jul 2026 08:00:00 +0300</pubDate>
+      <category><![CDATA[Backend]]></category>
+    </item>
+    <item>
+      <title><![CDATA[Frontend Developer (React/TypeScript) (ИнновейтТех)]]></title>
+      <link>https://career.habr.com/vacancies/1000123457</link>
+      <guid>https://career.habr.com/vacancies/1000123457</guid>
+      <description><![CDATA[<p>Разработка интерфейсов на React и TypeScript. Офис в Минск, гибридный формат.</p>]]></description>
+      <pubDate>Wed, 22 Jul 2026 07:30:00 +0300</pubDate>
+    </item>
+    <item>
+      <title><![CDATA[QA Engineer]]></title>
+      <link>https://career.habr.com/vacancies/1000123458</link>
+      <guid>https://career.habr.com/vacancies/1000123458</guid>
+      <description><![CDATA[Тестирование мобильных приложений. Полностью удалённая работа.]]></description>
+      <pubDate>Wed, 22 Jul 2026 06:00:00 +0300</pubDate>
+    </item>
+    <item>
+      <title></title>
+      <link>https://career.habr.com/vacancies/1000123459</link>
+      <description></description>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,27 @@
+[
+  {
+    "title": "Senior Full Stack Engineer",
+    "tags": "javascript,react,node",
+    "company_name": "Nomad Labs",
+    "company_logo": "https://workingnomads.com/logos/nomadlabs.png",
+    "category_name": "Development",
+    "url": "https://www.workingnomads.com/jobs/senior-full-stack-engineer/12345",
+    "location": "Worldwide",
+    "pub_date": "2024-05-01T12:00:00Z",
+    "description": "Build and ship features across our stack."
+  },
+  {
+    "title": "Content Marketer",
+    "company_name": "",
+    "category_name": "Marketing",
+    "url": "https://www.workingnomads.com/jobs/content-marketer-67890",
+    "pub_date": "2024-05-02T09:00:00Z"
+  },
+  {
+    "title": "Data Analyst (no url id)",
+    "tags": "sql, python",
+    "company_name": "DataCo",
+    "url": "https://www.workingnomads.com/jobs/data-analyst",
+    "location": "Europe"
+  }
+]

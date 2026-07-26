@@ -1,0 +1,59 @@
+[
+  {
+    "id": "a1b2c3d4-1111-2222-3333-444455556666",
+    "text": "Senior Backend Engineer",
+    "categories": {
+      "commitment": "Full-time",
+      "department": "Engineering",
+      "location": "Remote - US",
+      "team": "Platform",
+      "allLocations": ["Remote - US"]
+    },
+    "description": "<div>We are looking for a Senior Backend Engineer to join our platform team.</div>",
+    "descriptionPlain": "We are looking for a Senior Backend Engineer to join our platform team.",
+    "lists": [{ "text": "Requirements", "content": "<ul><li>5+ years experience</li></ul>" }],
+    "hostedUrl": "https://jobs.lever.co/acme/a1b2c3d4-1111-2222-3333-444455556666",
+    "applyUrl": "https://jobs.lever.co/acme/a1b2c3d4-1111-2222-3333-444455556666/apply",
+    "createdAt": 1752105600000,
+    "workplaceType": "remote",
+    "salaryRange": { "min": 150000, "max": 190000, "currency": "USD", "interval": "per-year-salary" },
+    "tags": ["go", "kubernetes"]
+  },
+  {
+    "id": "b2c3d4e5-2222-3333-4444-555566667777",
+    "text": "Office Administrator",
+    "categories": {
+      "commitment": "Full-time",
+      "department": "Operations",
+      "location": "New York, NY",
+      "team": "Operations",
+      "allLocations": ["New York, NY"]
+    },
+    "description": "<div>Support day-to-day office operations at our New York headquarters.</div>",
+    "descriptionPlain": "Support day-to-day office operations at our New York headquarters.",
+    "lists": [],
+    "hostedUrl": "https://jobs.lever.co/acme/b2c3d4e5-2222-3333-4444-555566667777",
+    "applyUrl": "https://jobs.lever.co/acme/b2c3d4e5-2222-3333-4444-555566667777/apply",
+    "createdAt": 1752019200000,
+    "workplaceType": "on-site"
+  },
+  {
+    "id": "c3d4e5f6-3333-4444-5555-666677778888",
+    "text": "Junior Frontend Developer",
+    "categories": {
+      "commitment": "Full-time",
+      "department": "Engineering",
+      "location": "Remote - EU",
+      "team": "Web",
+      "allLocations": ["Remote - EU"]
+    },
+    "description": "<div>Entry-level frontend role, great for a junior developer. You will work with React and TypeScript.</div>",
+    "descriptionPlain": "Entry-level frontend role, great for a junior developer. You will work with React and TypeScript.",
+    "lists": [],
+    "hostedUrl": "https://jobs.lever.co/acme/c3d4e5f6-3333-4444-5555-666677778888",
+    "applyUrl": "https://jobs.lever.co/acme/c3d4e5f6-3333-4444-5555-666677778888/apply",
+    "createdAt": 1751932800000,
+    "workplaceType": "remote",
+    "tags": ["react", "typescript"]
+  }
+]

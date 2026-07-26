@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>NoDesk Jobs</title>
+    <link>https://nodesk.co/remote-jobs/</link>
+    <description>Remote jobs from NoDesk</description>
+    <item>
+      <title><![CDATA[Senior Frontend Engineer]]></title>
+      <link>https://nodesk.co/remote-jobs/acme/senior-frontend-engineer/</link>
+      <guid>https://nodesk.co/remote-jobs/acme/senior-frontend-engineer/</guid>
+      <description><![CDATA[<p>Build our design system with <strong>React</strong> and TypeScript.</p>]]></description>
+      <pubDate>Wed, 01 May 2024 08:00:00 +0000</pubDate>
+      <category><![CDATA[Engineering]]></category>
+    </item>
+    <item>
+      <title><![CDATA[Remote Bookkeeper]]></title>
+      <link>https://nodesk.co/remote-jobs/betaco/remote-bookkeeper/</link>
+      <guid>https://nodesk.co/remote-jobs/betaco/remote-bookkeeper/</guid>
+      <description><![CDATA[Keep our books balanced from anywhere.]]></description>
+      <pubDate>Thu, 02 May 2024 10:30:00 +0000</pubDate>
+    </item>
+    <item>
+      <title></title>
+      <link>https://nodesk.co/remote-jobs/no-title-job/</link>
+      <description></description>
+    </item>
+  </channel>
+</rss>

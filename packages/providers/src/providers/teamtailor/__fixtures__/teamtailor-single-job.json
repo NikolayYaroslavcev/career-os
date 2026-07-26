@@ -1,0 +1,17 @@
+{
+  "data": {
+    "id": "998877",
+    "type": "jobs",
+    "attributes": {
+      "title": "Backend Engineer",
+      "body": "<p>Join our backend team building the core platform.</p>",
+      "created-at": "2026-07-02T08:00:00.000Z",
+      "locationName": "Remote - Sweden",
+      "remote-status": "fully-remote",
+      "employment-type": "full_time",
+      "employment-level": "senior",
+      "status": "published"
+    },
+    "links": { "careersite-job-url": "https://careers.acme.com/jobs/998877-backend-engineer" }
+  }
+}
