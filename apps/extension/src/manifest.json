@@ -1,0 +1,121 @@
+{
+  "manifest_version": 3,
+  "name": "CareerOS",
+  "version": "0.1.0",
+  "description": "Job vacancy detection, extraction, and AI-powered career tools",
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://*.linkedin.com/*",
+    "https://hh.ru/*",
+    "https://hh.kz/*",
+    "https://hh.ua/*",
+    "https://*.greenhouse.io/*",
+    "https://boards.greenhouse.io/*",
+    "https://jobs.lever.co/*",
+    "https://jobs.ashbyhq.com/*",
+    "https://*.myworkdayjobs.com/*",
+    "https://*.teamtailor.com/*",
+    "https://*.smartrecruiters.com/*",
+    "https://*.recruitee.com/*",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.linkedin.com/jobs/*"
+      ],
+      "js": ["content/providers/linkedin.js", "content/core.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://hh.ru/vacancy/*",
+        "https://hh.kz/vacancy/*",
+        "https://hh.ua/vacancy/*"
+      ],
+      "js": ["content/providers/hh.js", "content/core.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.greenhouse.io/*"
+      ],
+      "js": ["content/providers/greenhouse.js", "content/core.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://jobs.lever.co/*"
+      ],
+      "js": ["content/providers/lever.js", "content/core.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://jobs.ashbyhq.com/*"
+      ],
+      "js": ["content/providers/ashby.js", "content/core.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.myworkdayjobs.com/*"
+      ],
+      "js": ["content/providers/workday.js", "content/core.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.teamtailor.com/*"
+      ],
+      "js": ["content/providers/teamtailor.js", "content/core.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.smartrecruiters.com/*"
+      ],
+      "js": ["content/providers/smartrecruiters.js", "content/core.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.recruitee.com/*"
+      ],
+      "js": ["content/providers/recruitee.js", "content/core.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/providers/generic.js", "content/core.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "options_page": "options/options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
