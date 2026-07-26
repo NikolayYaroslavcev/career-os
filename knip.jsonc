@@ -1,0 +1,68 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // Known intentional cases — see docs/development/knip.md for the full list
+  // of current findings this does *not* cover.
+  "ignoreDependencies": [
+    // Referenced only via a JSDoc @type import in apps/dashboard/postcss.config.mjs
+    // for editor type-checking; Next.js resolves the postcss config at runtime
+    // without it being a direct dependency.
+    "postcss-load-config"
+  ],
+  "ignoreBinaries": [
+    // Invoked directly in .github/workflows/ci.yml ("pnpm exec playwright ...")
+    // rather than through an apps/e2e package.json script, so Knip can't tie
+    // the binary back to the @playwright/test devDependency that provides it.
+    "playwright"
+  ],
+  "workspaces": {
+    ".": {
+      // Repo root has no source of its own — every real entry point lives in
+      // an app/package workspace below.
+      "entry": [],
+      "project": []
+    },
+    "apps/backend": {
+      // One-off scripts run manually via `tsx src/scripts/*.ts` (demo-*.ts
+      // via package.json demo:* scripts; the rest are ad-hoc verify/analyze/
+      // backfill/test scripts invoked directly), not imported by anything else.
+      "entry": ["src/scripts/*.ts"],
+      "ignore": [
+        // Deliberate, documented, unimplemented extension point (EPIC-17
+        // Part 7 / ADR-027): defines the VacancyRanker interface for a
+        // future semantic-ranking stage; referenced only in a comment in
+        // triage-matching-service.ts pointing future implementers here.
+        "src/services/ranking/vacancy-ranker.ts"
+      ]
+    },
+    "apps/dashboard": {
+      "next": true,
+      "vitest": true
+    },
+    "apps/e2e": {
+      "playwright": true,
+      "entry": ["tests/**/*.spec.ts"],
+      "project": ["**/*.ts"]
+    },
+    "apps/extension": {
+      // vite.config.ts declares a multi-entry rollup build (background,
+      // popup, options, per-provider content-script detectors) instead of a
+      // single src/index.ts, so each entry has to be listed explicitly.
+      "vitest": true,
+      "entry": [
+        "src/background/service-worker.ts",
+        "src/popup/popup.tsx",
+        "src/options/options.tsx",
+        "src/content/core/detector.ts",
+        "src/content/providers/*/detector.ts",
+        "src/content/providers/generic/jsonld.ts"
+      ],
+      "project": ["src/**/*.{ts,tsx}"]
+    },
+    "apps/worker": {
+      "vitest": true
+    },
+    "packages/*": {
+      "vitest": true
+    }
+  }
+}

@@ -1,0 +1,242 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  NODE_VERSION: 22
+  PNPM_VERSION: 9
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  # Unit tests + the mocked-Prisma repository/mapper "integration" tests that
+  # already live alongside them (packages/*/src/**/*.test.ts). Does not touch
+  # a real database — see `db-integration-tests` below for that tier.
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+
+  # Fixture-based contract tests for every job-board provider (Jobicy,
+  # Himalayas, Working Nomads, NoDesk, Remotive, plus the ATS-backed
+  # providers) — verifies mapper/fetcher changes don't break on real-shaped
+  # API responses without needing any live external API or database.
+  provider-contract-tests:
+    name: Provider Contract Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:contract
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+  # Non-blocking dead-code/dependency report (see docs/development/knip.md).
+  # Always exits 0 via --no-exit-code — this job reports findings, it never
+  # fails the pipeline or blocks a merge.
+  knip:
+    name: Knip (unused code report)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm knip:ci
+
+  # Fails the PR if schema.prisma and prisma/migrations/ have diverged, if a
+  # freshly-migrated database differs from schema.prisma, or if any table/
+  # column this project previously lost to drift (see migration
+  # 20260722162328_fix_schema_drift) is missing. Two databases on one
+  # throwaway Postgres service: `careeros` (gets `migrate deploy`'d, for the
+  # fresh-DB-vs-schema and required-columns checks) and `careeros_shadow`
+  # (left empty, for `prisma migrate diff --shadow-database-url`).
+  schema-validation:
+    name: Prisma Schema Validation
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: careeros
+          POSTGRES_USER: careeros
+          POSTGRES_PASSWORD: careeros_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U careeros"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://careeros:careeros_dev@localhost:5432/careeros
+      SHADOW_DATABASE_URL: postgresql://careeros:careeros_dev@localhost:5432/careeros_shadow
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @careeros/database exec prisma migrate deploy
+      - run: psql "$DATABASE_URL" -c "CREATE DATABASE careeros_shadow;"
+        env:
+          PGPASSWORD: careeros_dev
+      - run: pnpm db:check-drift
+
+  # Real-Postgres persistence tests for Vacancy, MatchResult, and Company
+  # Watch (all three tables + CRUD) — round-trips domain entities through
+  # the actual repositories against a throwaway database, not a mock.
+  integration-tests:
+    name: Integration Tests (real Postgres)
+    runs-on: ubuntu-latest
+    needs: [build]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: careeros
+          POSTGRES_USER: careeros
+          POSTGRES_PASSWORD: careeros_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U careeros"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://careeros:careeros_dev@localhost:5432/careeros
+      RUN_DB_INTEGRATION_TESTS: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter @careeros/database exec prisma migrate deploy
+      - run: pnpm test:integration
+
+  # The project's primary smoke test: register -> login -> refresh -> upload
+  # resume -> wait for parsing -> create search profile -> import vacancies
+  # -> open vacancy -> open match -> create application -> career
+  # intelligence -> resume intelligence, driven by a real browser against
+  # the full stack (docker-compose.full.yml).
+  e2e:
+    name: E2E Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Prepare .env for the full stack
+        run: |
+          cp .env.example .env
+          echo "AI_ENABLED=false" >> .env
+          echo "JWT_SECRET=ci-only-test-secret-do-not-use-in-production" >> .env
+      - name: Start the full stack
+        run: docker compose -f docker-compose.full.yml up -d --build
+      - name: Wait for backend and dashboard to be healthy
+        run: |
+          timeout 180 bash -c 'until curl -sf http://localhost:3000/health; do sleep 3; done'
+          timeout 180 bash -c 'until curl -sf http://localhost:3001; do sleep 3; done'
+      - name: Run the E2E smoke test
+        working-directory: apps/e2e
+        env:
+          E2E_BASE_URL: http://localhost:3001
+        run: pnpm test:e2e
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.full.yml logs --tail 200
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/e2e/playwright-report/
+          retention-days: 7
+      - name: Tear down the full stack
+        if: always()
+        run: docker compose -f docker-compose.full.yml down -v

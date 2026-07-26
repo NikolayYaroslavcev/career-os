@@ -1,0 +1,13 @@
+app = "hh-api-test"
+primary_region = "ams"
+
+[build]
+  builder = "nixpacks"
+
+[deploy]
+  command = "node scripts/hh-test-curl.js"
+  kill_signal = "SIGTERM"
+  kill_timeout = 5
+
+[env]
+  DEPLOY_ENV = "fly-io"

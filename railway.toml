@@ -1,0 +1,10 @@
+[build]
+  builder = "nixpacks"
+
+[deploy]
+  startCommand = "node scripts/hh-test-curl.js"
+  healthcheckPath = "/"
+  healthcheckTimeout = 10
+
+[env]
+  DEPLOY_ENV = "railway"

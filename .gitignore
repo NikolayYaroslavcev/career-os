@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+
+# Docker
+docker-compose.override.yml
+
+# Temp
+tmp/
+temp/
+*.tmp
+
+# Graphify
+graphify-out/
+
+# Local tool state (not project source)
+.mimocode/
+
+# Ad-hoc QA artifacts (screenshots/videos from manual browser QA sessions)
+/qa-onboarding-report/
+/screenshots/
+/*.png

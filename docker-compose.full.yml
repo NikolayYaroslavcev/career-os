@@ -1,0 +1,236 @@
+# Full local stack: backend + worker + dashboard + all infra, in containers.
+#
+# Usage:
+#   docker compose -f docker-compose.full.yml up -d --build
+#   docker compose -f docker-compose.full.yml down
+#
+# This is separate from docker-compose.yml (infra-only, used by the normal
+# `pnpm dev` workflow) so that workflow keeps working unchanged. Don't run
+# both compose files at the same time — they publish the same host ports
+# (5432, 6379, 9000/9001, 1025/8025).
+#
+#   backend:   http://localhost:3000  (health: /health)
+#   worker:    http://localhost:3002  (health: /health — no other HTTP surface)
+#   dashboard: http://localhost:3001
+#   mailpit:   http://localhost:8025
+#   minio:     http://localhost:9001
+
+name: careeros-full
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_full_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: careeros
+      POSTGRES_USER: careeros
+      # Override via a repo-root .env file (docker compose auto-loads it for
+      # ${...} interpolation — separate from the app services' env_file: below).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-careeros_dev}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+      - SETUID
+      - SETGID
+      - FOWNER
+      - CHOWN
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U careeros"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-careeros_redis_dev}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_full_data:/data
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-careeros_redis_dev}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_full_data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mailpit:
+    image: axllent/mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8025/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Runs once per `up` and exits — never restarted automatically (a crash
+  # loop here would otherwise churn the DB). Idempotent: `migrate deploy` and
+  # the seed script are both safe to re-run against an already-migrated/seeded
+  # database, so `docker compose up` on an existing stack is a no-op here.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+      target: installer
+    restart: "no"
+    env_file:
+      - ./.env
+    environment:
+      DATABASE_URL: postgresql://careeros:${POSTGRES_PASSWORD:-careeros_dev}@postgres:5432/careeros
+    # Seed after migrating: resume upload (and other placeholder-workspace
+    # writes) hard-depend on a Workspace row with id 'default' existing —
+    # see packages/database/src/seed.ts. Without this, a fresh stack's first
+    # resume upload fails with a Resume_workspaceId_fkey violation. The seed
+    # script is idempotent (upsert), so re-running it on every `up` is safe.
+    command: >
+      sh -c "pnpm --filter @careeros/database exec prisma migrate deploy &&
+             pnpm --filter @careeros/database exec tsx src/seed.ts"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./.env
+    # These intentionally override .env's host-oriented DATABASE_URL/REDIS_URL
+    # (e.g. .../localhost:5432/...) — this container reaches postgres/redis by
+    # their in-network service names, not localhost. The credential itself is
+    # still sourced from POSTGRES_PASSWORD (see the postgres service above) so
+    # it can't drift out of sync with the actual database password.
+    environment:
+      DATABASE_URL: postgresql://careeros:${POSTGRES_PASSWORD:-careeros_dev}@postgres:5432/careeros
+      REDIS_URL: redis://:${REDIS_PASSWORD:-careeros_redis_dev}@redis:6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      CORS_ORIGIN: http://localhost:3001
+      PORT: 3000
+      HOST: 0.0.0.0
+    volumes:
+      - backend_uploads:/app/uploads
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+
+  # Consumes the vacancy-analysis and follow-up-reminder queues that the
+  # backend enqueues to. Without this service, /api/v1/intelligence/search
+  # returns immediately but no AI matching ever runs — jobs pile up in Redis.
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    env_file:
+      - ./.env
+    environment:
+      DATABASE_URL: postgresql://careeros:${POSTGRES_PASSWORD:-careeros_dev}@postgres:5432/careeros
+      REDIS_URL: redis://:${REDIS_PASSWORD:-careeros_redis_dev}@redis:6379
+      WORKER_HEALTH_PORT: 3002
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:3000
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3000
+      PORT: 3001
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_full_data:
+  redis_full_data:
+  minio_full_data:
+  backend_uploads:

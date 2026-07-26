@@ -1,0 +1,51 @@
+{
+  "name": "career-os",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "lint:fix": "turbo lint -- --fix",
+    "typecheck": "turbo typecheck",
+    "knip": "knip",
+    "knip:ci": "knip --no-exit-code",
+    "test": "turbo test",
+    "test:integration": "turbo test:integration --filter=@careeros/database",
+    "test:contract": "turbo test --filter=@careeros/providers",
+    "test:e2e": "turbo test:e2e --filter=@careeros/e2e",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,md,json}\"",
+    "clean": "turbo clean",
+    "db:migrate": "turbo db:migrate --filter=@careeros/database",
+    "db:generate": "turbo db:generate --filter=@careeros/database",
+    "db:seed": "turbo db:seed --filter=@careeros/database",
+    "db:validate": "turbo db:validate --filter=@careeros/database",
+    "db:check-drift": "turbo db:check-drift --filter=@careeros/database",
+    "demo:intelligence": "pnpm --filter @careeros/backend demo:intelligence",
+    "demo:digest": "pnpm --filter @careeros/backend demo:digest",
+    "demo:telegram-link": "pnpm --filter @careeros/backend demo:telegram-link",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:full:up": "docker compose -f docker-compose.full.yml up -d --build",
+    "docker:full:down": "docker compose -f docker-compose.full.yml down",
+    "docker:full:logs": "docker compose -f docker-compose.full.yml logs -f"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "knip": "^6.29.0",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.6",
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.65.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "zod": "3.24.4",
+      "knip>zod": "4.4.3"
+    }
+  }
+}
