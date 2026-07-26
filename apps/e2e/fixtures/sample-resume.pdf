@@ -1,0 +1,26 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 300 >>
+stream
+BT /F1 20 Tf 72 720 Td (E2E Smoke Test Candidate) Tj ET
+BT /F1 14 Tf 72 690 Td (Senior Backend Engineer) Tj ET
+BT /F1 11 Tf 72 660 Td (Remote-first, 8 years of experience.) Tj ET
+BT /F1 11 Tf 72 640 Td (Skills: TypeScript, Node.js, PostgreSQL, Docker, Kubernetes, AWS) Tj ET
+BT /F1 11 Tf 72 620 Td (Experience: Backend Engineer at Acme Corp, 2016-2024) Tj ET
+endstream
+endobj
+trailer
+<< /Size 6 /Root 1 0 R >>
+%%EOF
