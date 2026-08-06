@@ -13,6 +13,10 @@ export type {
   AIRailguardConfig,
   EvidenceCheckInput,
   EvidenceCheckResult,
+  EvidenceClaim,
+  EvidenceClaimResult,
+  EvidenceCheckBatchInput,
+  EvidenceCheckBatchResult,
   ConfidenceValidationInput,
   ConfidenceValidationResult,
   HallucinationCheckInput,
@@ -38,6 +42,9 @@ export type {
   MatchFeedbackSummary,
   MatchFeedbackRepository,
 } from './domain/match-feedback.js';
+export { MessageExtractionStatus, createMessageExtraction } from './domain/message-extraction.js';
+export type { MessageExtraction, MessageExtractionInput } from './domain/message-extraction.js';
+export type { MessageExtractionRepository } from './domain/message-extraction-repository.js';
 
 // Prompts
 export type { PromptBuilder, BuiltPrompt } from './prompts/prompt-builder.js';
@@ -53,9 +60,23 @@ export type { SearchProfileSuggestionParams } from './prompts/search-profile-sug
 export { StructuredResumeExtractionPromptBuilder } from './prompts/structured-resume-extraction.js';
 export type { StructuredResumeExtractionParams } from './prompts/structured-resume-extraction.js';
 export { ResumeTailoringPromptBuilder } from './prompts/resume-tailoring.js';
-export type { ResumeTailoringParams } from './prompts/resume-tailoring.js';
+export type { ResumeTailoringParams, ResumeTailoringExperienceInput } from './prompts/resume-tailoring.js';
 export { CoverLetterPromptBuilder } from './prompts/cover-letter.js';
 export type { CoverLetterParams } from './prompts/cover-letter.js';
+export { VacancyRequirementsPromptBuilder } from './prompts/vacancy-requirements-extraction.js';
+export type {
+  VacancyRequirementsExtractionParams,
+  VacancyRequirementsResult,
+} from './prompts/vacancy-requirements-extraction.js';
+export { TailoringReviewPromptBuilder } from './prompts/resume-tailoring-review.js';
+export type {
+  TailoringReviewParams,
+  TailoringReviewResult,
+  TailoringReviewOriginalJob,
+  TailoringReviewBullet,
+} from './prompts/resume-tailoring-review.js';
+export { MessageExtractionPromptBuilder } from './prompts/message-extraction.js';
+export type { MessageExtractionPromptParams } from './prompts/message-extraction.js';
 
 // Cache
 export { computePromptHash } from './cache/prompt-hash.js';
@@ -66,14 +87,41 @@ export { InMemoryAICache } from './cache/ai-cache.js';
 export type { CostTracker, CostRecord, CostSummary, ModelPricing } from './cost/cost-tracker.js';
 export { estimateCost } from './cost/cost-tracker.js';
 export { InMemoryCostTracker } from './cost/cost-tracker-impl.js';
+export { getModelPricing } from './cost/pricing.js';
+export type { UsageRecorder, UsageRecorderInput } from './cost/usage-recorder.js';
 
 // Extraction
 export type { StructuredResumeExtractionResult, ResumeExtractionEngineDeps, ResumeExtractionEngineConfig } from './extraction/resume-extraction-engine.js';
 export { ResumeExtractionEngine } from './extraction/resume-extraction-engine.js';
+export { extractedVacancyFieldsSchema } from './extraction/social-message-extraction-schema.js';
+export type { ExtractedVacancyFields } from './extraction/social-message-extraction-schema.js';
+export { computeMessageExtractionCacheKey } from './extraction/message-extraction-cache-key.js';
+export type { MessageExtractionCacheKeyInput } from './extraction/message-extraction-cache-key.js';
+export {
+  computeMessageExtractionConfidence,
+  classifyMessageExtractionStatus,
+  MESSAGE_EXTRACTION_LOW_CONFIDENCE_THRESHOLD,
+  MESSAGE_EXTRACTION_DISCOVERY_MIN_CONFIDENCE,
+} from './extraction/message-extraction-confidence.js';
+export type { MessageExtractionConfidenceResult } from './extraction/message-extraction-confidence.js';
+export type {
+  MessageExtractionEngineConfig,
+  MessageExtractionEngineDeps,
+  MessageExtractionOutcome,
+} from './extraction/message-extraction-engine.js';
+export { MessageExtractionEngine } from './extraction/message-extraction-engine.js';
 
 // Context
-export type { ResumeContextProvider, ResumeContextProviderDeps, ResumeAIContext, ResumeExperienceContext } from './context/resume-context-provider.js';
+export type {
+  ResumeContextProvider,
+  ResumeContextProviderDeps,
+  ResumeAIContext,
+  ResumeExperienceContext,
+  ResumeEducationContext,
+} from './context/resume-context-provider.js';
 export { ResumeContextProviderImpl } from './context/resume-context-provider.js';
+export type { ResumeSectionName } from './context/resume-context-fallback.js';
+export { buildCompactResumeContext, estimateTokens } from './context/resume-context-fallback.js';
 
 // Matching
 export type { ExplainabilityFactor, ExplainabilityReport } from './matching/explainability.js';
@@ -91,6 +139,46 @@ export type {
   VacancyAnalysisOutcome,
 } from './matching/vacancy-analysis-orchestrator.js';
 export { analyzeVacancyForSearchProfile } from './matching/vacancy-analysis-orchestrator.js';
+
+// ATS scoring (ADR-031)
+export type { AtsCategoryId, AtsWeights } from './ats/ats-weights-config.js';
+export { ATS_CATEGORY_LABELS, ATS_WEIGHTS_VERSION, DEFAULT_ATS_WEIGHTS } from './ats/ats-weights-config.js';
+export type { AtsResumeEvidence, AtsVacancyRequirements, AtsCategoryScore, AtsScoreResult } from './ats/ats-scoring-engine.js';
+export { computeAtsScore } from './ats/ats-scoring-engine.js';
+
+// Resume tailoring pipeline (ADR-031)
+export type { SkillMatrixResult } from './tailoring/skill-matrix-engine.js';
+export { computeSkillMatrix } from './tailoring/skill-matrix-engine.js';
+export type { TailoringResumeEvidence, TailoringExperienceEvidence } from './tailoring/resume-evidence-builder.js';
+export { ResumeEvidenceBuilder, toAtsResumeEvidence } from './tailoring/resume-evidence-builder.js';
+export type { RenderableExperience, RenderTailoredResumeInput } from './tailoring/tailored-resume-renderer.js';
+export { renderTailoredResume } from './tailoring/tailored-resume-renderer.js';
+export type {
+  TailoringDraftBullet,
+  TailoringDraftJob,
+  TailoringDraft,
+  TailoringOriginalEvidence,
+  TailoringChange,
+  TailoringRejectedChange,
+  TailoringHallucinationCheck,
+  TailoringReviewOutcome,
+} from './tailoring/tailoring-reviewer.js';
+export { TailoringReviewer } from './tailoring/tailoring-reviewer.js';
+export type { TailoringHashInput } from './tailoring/tailoring-hash.js';
+export { computeTailoringInputHash } from './tailoring/tailoring-hash.js';
+export type { TailoringPipelineTarget, TailoringPipelineDeps } from './tailoring/tailoring-pipeline.js';
+export { runTailoringPipeline, CURRENT_TAILORING_ALGORITHM_VERSION } from './tailoring/tailoring-pipeline.js';
+export type {
+  TailoredResume,
+  TailoringStatus,
+  TailoringStage,
+  TailoringStageExecution,
+  TailoredContent,
+  TailoredContentExperience,
+  TailoredContentBullet,
+} from './domain/tailored-resume.js';
+export { createQueuedTailoredResume } from './domain/tailored-resume.js';
+export type { TailoredResumeRepository } from './domain/tailored-resume-repository.js';
 
 // Observability
 export type { AILogger, AILogContext } from './observability/ai-logger.js';

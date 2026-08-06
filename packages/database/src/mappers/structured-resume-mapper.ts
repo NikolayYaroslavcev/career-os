@@ -25,6 +25,8 @@ interface PrismaStructuredResume {
   technologies: unknown;
   experience: unknown;
   education: unknown;
+  certifications: unknown;
+  languages: unknown;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,6 +48,8 @@ export class StructuredResumeMapper {
       technologies: (record.technologies as string[]) ?? [],
       experience: StructuredResumeMapper.parseExperience(record.experience),
       education: StructuredResumeMapper.parseEducation(record.education),
+      certifications: (record.certifications as string[]) ?? [],
+      languages: (record.languages as string[]) ?? [],
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
     });
@@ -67,6 +71,8 @@ export class StructuredResumeMapper {
     technologies: object;
     experience: object;
     education: object;
+    certifications: object;
+    languages: object;
     createdAt: Date;
     updatedAt: Date;
   } {
@@ -86,6 +92,8 @@ export class StructuredResumeMapper {
       technologies: entity.technologies as object,
       experience: entity.experience as object,
       education: entity.education as object,
+      certifications: entity.certifications as object,
+      languages: entity.languages as object,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
@@ -99,6 +107,7 @@ export class StructuredResumeMapper {
       startDate: new Date(item.startDate),
       endDate: item.endDate ? new Date(item.endDate) : undefined,
       description: String(item.description ?? ''),
+      bullets: Array.isArray(item.bullets) ? item.bullets.map(String) : [],
       technologies: Array.isArray(item.technologies)
         ? item.technologies.map(String)
         : [],

@@ -44,8 +44,38 @@ export interface FlaggedEntity {
   readonly reason: string;
 }
 
+export interface EvidenceClaim {
+  readonly id: string;
+  readonly claim: string;
+}
+
+export interface EvidenceClaimResult {
+  readonly id: string;
+  readonly supported: boolean;
+  readonly matchedSourceField?: string;
+  readonly reason?: string;
+}
+
+export interface EvidenceCheckBatchInput {
+  readonly claims: readonly EvidenceClaim[];
+  readonly sourceData: ReadonlyArray<{ readonly field: string; readonly value: string }>;
+  readonly provider: string;
+  readonly model: string;
+}
+
+export interface EvidenceCheckBatchResult {
+  readonly results: readonly EvidenceClaimResult[];
+}
+
 export interface AIRailguards {
   checkEvidence(input: EvidenceCheckInput): Promise<EvidenceCheckResult>;
+  /**
+   * Checks every claim against the same source data in a single LLM call,
+   * instead of one call per claim (checkEvidence) — used wherever a whole
+   * generated document (e.g. a tailored resume's bullets) needs verifying,
+   * since a per-bullet call would be prohibitively slow/expensive.
+   */
+  checkEvidenceBatch(input: EvidenceCheckBatchInput): Promise<EvidenceCheckBatchResult>;
   validateConfidence(input: ConfidenceValidationInput): ConfidenceValidationResult;
   detectHallucinations(input: HallucinationCheckInput): Promise<HallucinationCheckResult>;
 }

@@ -229,6 +229,26 @@ export class AuthService {
     };
   }
 
+  async updateProfile(
+    userId: string,
+    input: { firstName?: string; lastName?: string }
+  ): Promise<{ id: string; email: string; firstName: string; lastName: string }> {
+    const user = await this.userRepository.findById(createUserId(userId));
+    if (!user) {
+      throw new NotFoundError('User');
+    }
+
+    user.updateName(input.firstName ?? user.firstName, input.lastName ?? user.lastName);
+    await this.userRepository.save(user);
+
+    return {
+      id: user.id,
+      email: user.email.value,
+      firstName: user.firstName,
+      lastName: user.lastName,
+    };
+  }
+
   private async getPasswordHash(userId: string): Promise<string | null> {
     const record = await prisma.user.findUnique({
       where: { id: userId },

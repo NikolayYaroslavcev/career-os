@@ -4,6 +4,7 @@ export interface RawJob {
   readonly description: string;
   readonly companyName: string;
   readonly companySourceId?: string;
+  readonly companyUrl?: string;
   readonly location: string;
   readonly salary?: RawSalary;
   readonly experienceLevel?: string;

@@ -17,7 +17,9 @@
   "dependencies": {
     "@careeros/ai": "workspace:*",
     "@careeros/career": "workspace:*",
+    "@careeros/company-watch": "workspace:*",
     "@careeros/database": "workspace:*",
+    "@careeros/discovery-sources": "workspace:*",
     "@careeros/notifications": "workspace:*",
     "@careeros/providers": "workspace:*",
     "@careeros/shared": "workspace:*",

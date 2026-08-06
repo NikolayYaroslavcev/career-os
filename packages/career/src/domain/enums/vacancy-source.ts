@@ -2,8 +2,14 @@ export const VacancySource = {
   LINKEDIN: 'linkedin',
   HH: 'hh',
   HABR_CAREER: 'habr_career',
-  REMOTE_OK: 'remote_ok',
+  // WELLFOUND: rejected, do not implement — no API, ToS-risky scraping,
+  // inconsistent direct-apply flow. See research/free-provider-expansion/REPORT.md §4.5.
   WELLFOUND: 'wellfound',
+  // OTTA: retired, do not implement — Otta merged into Welcome to the Jungle
+  // and no longer exists as an independent product; its pre-merger apply flow
+  // was platform-mediated (not direct-apply) anyway. Slot kept reserved-but-
+  // dormant rather than deleted (avoids a breaking enum/type change) per
+  // research/free-provider-expansion/EPIC.md Phase 0 §3 / REPORT.md §4.5.
   OTTA: 'otta',
   RSS_FEED: 'rss_feed',
   COMPANY_CAREER_PAGE: 'company_career_page',
@@ -15,7 +21,6 @@ export const VacancySource = {
   WORKDAY: 'workday',
   TEAMTAILOR: 'teamtailor',
   REMOTIVE: 'remotive',
-  HIMALAYAS: 'himalayas',
   ARBEITNOW: 'arbeitnow',
   JOBICY: 'jobicy',
   WE_WORK_REMOTELY: 'we_work_remotely',
@@ -26,6 +31,13 @@ export const VacancySource = {
   RECRUITEE: 'recruitee',
   SUPERJOB: 'superjob',
   COMEET: 'comeet',
+  PERSONIO: 'personio',
+  WORKABLE: 'workable',
+  PYJOBS: 'pyjobs',
+  DJANGO_JOBS: 'django_jobs',
+  SPEEDRUN: 'speedrun',
+  FRANCE_TRAVAIL: 'france_travail',
+  ADZUNA: 'adzuna',
 } as const;
 
 export type VacancySource = (typeof VacancySource)[keyof typeof VacancySource];

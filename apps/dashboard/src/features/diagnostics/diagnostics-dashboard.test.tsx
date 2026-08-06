@@ -50,7 +50,7 @@ describe('DiagnosticsDashboard provider status rendering', () => {
   it('renders a READY provider with no extra detail', async () => {
     mockProviders([
       {
-        providerId: 'remote_ok',
+        providerId: 'remotive',
         registered: true,
         enabled: true,
         configured: true,
@@ -64,7 +64,7 @@ describe('DiagnosticsDashboard provider status rendering', () => {
     renderWithI18n(<DiagnosticsDashboard />);
 
     await waitFor(() => {
-      expect(screen.getByText('remote_ok')).toBeInTheDocument();
+      expect(screen.getByText('remotive')).toBeInTheDocument();
     });
     expect(screen.getByText('Ready')).toBeInTheDocument();
   });

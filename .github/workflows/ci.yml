@@ -60,7 +60,7 @@ jobs:
       - run: pnpm test
 
   # Fixture-based contract tests for every job-board provider (Jobicy,
-  # Himalayas, Working Nomads, NoDesk, Remotive, plus the ATS-backed
+  # Working Nomads, NoDesk, Remotive, plus the ATS-backed
   # providers) — verifies mapper/fetcher changes don't break on real-shaped
   # API responses without needing any live external API or database.
   provider-contract-tests:

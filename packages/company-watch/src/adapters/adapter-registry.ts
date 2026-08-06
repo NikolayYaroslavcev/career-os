@@ -5,6 +5,10 @@ import { LeverAdapter } from './lever-adapter.js';
 import { AshbyAdapter } from './ashby-adapter.js';
 import { WorkdayAdapter } from './workday-adapter.js';
 import { TeamtailorAdapter } from './teamtailor-adapter.js';
+import { SmartRecruitersAdapter } from './smartrecruiters-adapter.js';
+import { RecruiteeAdapter } from './recruitee-adapter.js';
+import { PersonioAdapter } from './personio-adapter.js';
+import { WorkableAdapter } from './workable-adapter.js';
 import { CustomHtmlAdapter } from './custom-html-adapter.js';
 import { JsonLdAdapter } from './json-ld-adapter.js';
 
@@ -18,6 +22,16 @@ export class AtsAdapterRegistry {
     this.adapters.set('ASHBY', new AshbyAdapter());
     this.adapters.set('WORKDAY', new WorkdayAdapter());
     this.adapters.set('TEAMTAILOR', new TeamtailorAdapter());
+
+    // ADR-033: closes the SmartRecruiters/Recruitee registry gaps (AtsType
+    // declared them, no adapter existed for either until these migrations).
+    this.adapters.set('SMARTRECRUITERS', new SmartRecruitersAdapter());
+    this.adapters.set('RECRUITEE', new RecruiteeAdapter());
+
+    // research/free-provider-expansion/EPIC.md Phase 1: closes the PERSONIO
+    // gap AtsType already declared (see REPORT.md §2.3) — first adapter for it.
+    this.adapters.set('PERSONIO', new PersonioAdapter());
+    this.adapters.set('WORKABLE', new WorkableAdapter());
 
     // Register fallback adapters
     this.adapters.set('CUSTOM_HTML', new CustomHtmlAdapter());

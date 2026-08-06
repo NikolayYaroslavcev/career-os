@@ -24,6 +24,10 @@ export const HH_CIS_AREA_IDS = {
   UZ: '97',  // Узбекистан
   KG: '48',  // Кыргызстан
   AZ: '9',   // Азербайджан
+  GE: '28',  // Грузия
+  AM: '13',  // Армения
+  TJ: '86',  // Таджикистан
+  MD: '62',  // Молдова
 } as const;
 
 export const HH_PROVIDER_INFO: ProviderInfo = {

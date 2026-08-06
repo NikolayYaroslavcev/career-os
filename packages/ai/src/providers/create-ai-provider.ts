@@ -6,12 +6,13 @@ import { AnthropicProvider } from './anthropic-provider.js';
 import { GeminiProvider } from './gemini-provider.js';
 import { OpenRouterProvider } from './openrouter-provider.js';
 import { GroqProvider } from './groq-provider.js';
+import { DeepSeekProvider } from './deepseek-provider.js';
 import { FallbackAIProvider } from './fallback-ai-provider.js';
 import { AIRetryPolicy } from '../resilience/retry-policy.js';
 import { AIProviderHealthMonitor } from '../resilience/health-monitor.js';
 import { AIConcurrencyLimiter } from '../resilience/concurrency-limiter.js';
 
-export type SupportedAIProviderName = 'openai' | 'anthropic' | 'groq' | 'gemini' | 'openrouter';
+export type SupportedAIProviderName = 'openai' | 'anthropic' | 'groq' | 'gemini' | 'openrouter' | 'deepseek';
 
 export const SUPPORTED_AI_PROVIDER_NAMES: readonly SupportedAIProviderName[] = [
   'openai',
@@ -19,6 +20,7 @@ export const SUPPORTED_AI_PROVIDER_NAMES: readonly SupportedAIProviderName[] = [
   'groq',
   'gemini',
   'openrouter',
+  'deepseek',
 ];
 
 export interface CreateAIProviderInput {
@@ -42,6 +44,8 @@ export function createAIProviderFromConfig(input: CreateAIProviderInput): AIProv
       return new GeminiProvider(input.config);
     case 'openrouter':
       return new OpenRouterProvider(input.config);
+    case 'deepseek':
+      return new DeepSeekProvider(input.config);
     case 'openai':
     default:
       return new OpenAIProvider(input.config);
@@ -75,6 +79,7 @@ export interface AIProviderEnvConfig {
   readonly GROQ_API_KEY?: string;
   readonly GEMINI_API_KEY?: string;
   readonly OPENROUTER_API_KEY?: string;
+  readonly DEEPSEEK_API_KEY?: string;
 }
 
 export function resolveAIProviderApiKey(provider: SupportedAIProviderName, config: AIProviderEnvConfig): string {
@@ -87,6 +92,8 @@ export function resolveAIProviderApiKey(provider: SupportedAIProviderName, confi
       return config.GEMINI_API_KEY ?? '';
     case 'openrouter':
       return config.OPENROUTER_API_KEY ?? '';
+    case 'deepseek':
+      return config.DEEPSEEK_API_KEY ?? '';
     case 'openai':
     default:
       return config.OPENAI_API_KEY ?? '';

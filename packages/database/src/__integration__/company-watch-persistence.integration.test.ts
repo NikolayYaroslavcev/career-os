@@ -51,6 +51,9 @@ runIf('Company Watch persistence (real Postgres)', () => {
       workspaceId,
       createdAt: new Date(),
       updatedAt: new Date(),
+      consecutiveFailureCount: 0,
+      healthStatus: 'ACTIVE',
+      priorityScore: 50,
     };
 
     const created = await repository.create(data);
@@ -85,6 +88,9 @@ runIf('Company Watch persistence (real Postgres)', () => {
       workspaceId,
       createdAt: new Date(),
       updatedAt: new Date(),
+      consecutiveFailureCount: 0,
+      healthStatus: 'ACTIVE',
+      priorityScore: 50,
     });
 
     const event = await eventRepository.create({

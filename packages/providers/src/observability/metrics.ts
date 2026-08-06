@@ -22,6 +22,21 @@ export const PROVIDER_METRICS = {
   RATE_LIMIT_ACQUIRED: 'provider.rate_limit.acquired',
   RATE_LIMIT_REJECTED: 'provider.rate_limit.rejected',
   RETRY_ATTEMPT: 'provider.retry.attempt',
+  PRECHECK_REJECTED: 'provider.precheck.rejected',
+} as const;
+
+// SocialMessageTransport-side counterpart to PROVIDER_METRICS — kept in the
+// same module/naming convention rather than a parallel metrics system, since
+// TransportManager reuses the same MetricsCollector interface as ProviderJob.
+export const TRANSPORT_METRICS = {
+  FETCH_DURATION: 'transport.fetch.duration_ms',
+  FETCH_SUCCESS: 'transport.fetch.success',
+  FETCH_FAILURE: 'transport.fetch.failure',
+  FETCH_TIMEOUT: 'transport.fetch.timeout',
+  MESSAGES_FETCHED: 'transport.messages.fetched',
+  MESSAGES_REJECTED: 'transport.messages.rejected',
+  RETRY_ATTEMPT: 'transport.retry.attempt',
+  HEALTH_STATE: 'transport.health.state',
 } as const;
 
 export class InMemoryMetricsCollector implements MetricsCollector {

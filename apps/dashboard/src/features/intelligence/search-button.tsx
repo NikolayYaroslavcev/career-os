@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   runSearch,
@@ -12,6 +12,7 @@ import {
 } from '@/api/intelligence';
 import { listSearchProfiles, type SearchProfile } from '@/api/search-profiles';
 import { createApplication } from '@/api/applications';
+import { recordVacancySave } from '@/api/sync';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +20,7 @@ import { Loading } from '@/components/ui/loading';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Search, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
+import { pluralize } from '@/lib/i18n/pluralize';
 import {
   Select,
   SelectContent,
@@ -147,6 +149,29 @@ export function SearchButton(): React.JSX.Element {
     return (): void => clearInterval(intervalId);
   }, [searchProfileId, searchToken]);
 
+  // stats.matchedVacancies/pendingVacancies/averageScore reflect the snapshot
+  // at search time — AI matching resolves progressively via the poll effect
+  // above, so once polling updates a result's status those counts go stale.
+  // totalVacancies isn't affected (it's the fixed size of the searched set).
+  const liveStats = useMemo(() => {
+    if (!stats) return stats;
+    if (!results) return stats;
+
+    const matched = results.filter((r) => r.status === 'matched' && r.recommendation);
+    const pending = results.filter((r) => r.status === 'pending').length;
+    const averageScore =
+      matched.length > 0
+        ? matched.reduce((sum, r) => sum + (r.recommendation?.score ?? 0), 0) / matched.length
+        : 0;
+
+    return {
+      ...stats,
+      matchedVacancies: matched.length,
+      pendingVacancies: pending,
+      averageScore,
+    };
+  }, [stats, results]);
+
   const handleSearch = async (): Promise<void> => {
     setIsLoading(true);
     setError(null);
@@ -194,6 +219,7 @@ export function SearchButton(): React.JSX.Element {
         matchResultId: result.recommendation?.matchResultId,
       });
       setAppliedIds((prev) => new Set(prev).add(result.vacancy.id));
+      recordVacancySave(result.vacancy.id).catch(() => {});
     } catch (err) {
       console.error('Failed to save to pipeline:', err);
     }
@@ -263,7 +289,7 @@ export function SearchButton(): React.JSX.Element {
         </Alert>
       )}
 
-      {results && stats && (
+      {results && liveStats && (
         <div className="space-y-4">
           {!aiEnabled && (
             <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
@@ -274,26 +300,26 @@ export function SearchButton(): React.JSX.Element {
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <Card>
               <CardContent className="py-4 text-center">
-                <p className="text-2xl font-bold">{stats.totalVacancies}</p>
+                <p className="text-2xl font-bold">{liveStats.totalVacancies}</p>
                 <p className="text-sm text-muted-foreground">{t('intelligence.totalVacancies')}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="py-4 text-center">
-                <p className="text-2xl font-bold">{stats.matchedVacancies}</p>
+                <p className="text-2xl font-bold">{liveStats.matchedVacancies}</p>
                 <p className="text-sm text-muted-foreground">{t('intelligence.matched')}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="py-4 text-center">
-                <p className="text-2xl font-bold">{stats.pendingVacancies}</p>
+                <p className="text-2xl font-bold">{liveStats.pendingVacancies}</p>
                 <p className="text-sm text-muted-foreground">{t('intelligence.pending')}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="py-4 text-center">
                 <p className="text-2xl font-bold">
-                  {Math.round(stats.averageScore * 100)}%
+                  {Math.round(liveStats.averageScore * 100)}%
                 </p>
                 <p className="text-sm text-muted-foreground">{t('intelligence.avgScore')}</p>
               </CardContent>
@@ -360,7 +386,7 @@ interface VacancyResultListProps {
 }
 
 function VacancyResultList({ results, appliedIds, onSaveToPipeline, onOpenApplicationPage, sortBy, onSortByChange }: VacancyResultListProps): React.JSX.Element {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [page, setPage] = useState(1);
 
   // 'skipped' vacancies never got (and never will get, for this snapshot) an
@@ -388,7 +414,10 @@ function VacancyResultList({ results, appliedIds, onSaveToPipeline, onOpenApplic
       <div className="flex items-center justify-between gap-2">
         {hiddenCount > 0 ? (
           <p className="text-sm text-muted-foreground">
-            {t('intelligence.hiddenNotice', { count: hiddenCount })}
+            {t('intelligence.hiddenNotice', {
+              count: hiddenCount,
+              unit: pluralize(locale, hiddenCount, { one: t('intelligence.hiddenUnit.one'), few: t('intelligence.hiddenUnit.few'), many: t('intelligence.hiddenUnit.many') }),
+            })}
           </p>
         ) : (
           <div />

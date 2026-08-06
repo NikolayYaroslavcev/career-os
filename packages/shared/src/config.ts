@@ -106,6 +106,7 @@ const configSchema = z.object({
   GROQ_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
+  DEEPSEEK_API_KEY: z.string().optional(),
   // Cheaper/faster Groq model for low-stakes suggestions (e.g. search profile
   // suggestion), kept separate from the model used for vacancy matching so the
   // two features don't share the same Groq rate limit budget.
@@ -124,16 +125,32 @@ const configSchema = z.object({
   // repeated `area` query params that api.hh.ru ORs together. Defaults to
   // the CIS area IDs verified against https://api.hh.ru/areas/countries:
   // 113 Russia, 16 Belarus, 40 Kazakhstan, 97 Uzbekistan, 48 Kyrgyzstan,
-  // 9 Azerbaijan. See HH_CIS_AREA_IDS in packages/providers for the same
-  // mapping. NOTE: rabota.by has NO API — Belarus jobs are accessed via
-  // api.hh.ru area 16.
-  HH_AREAS: z.string().default('113,16,40,97,48,9'),
+  // 9 Azerbaijan, 28 Georgia, 13 Armenia, 86 Tajikistan, 62 Moldova.
+  // See HH_CIS_AREA_IDS in packages/providers for the same mapping.
+  // NOTE: rabota.by has NO API — Belarus jobs are accessed via api.hh.ru
+  // area 16. Ukraine (area 5) is deliberately excluded — HH's Ukraine
+  // operation was sold/rebranded years before 2022 and current access
+  // patterns are unverified; do not add without a separate live check.
+  HH_AREAS: z.string().default('113,16,40,97,48,9,28,13,86,62'),
   HH_ACCESS_TOKEN: z.string().optional(),
   ADZUNA_APP_ID: z.string().optional(),
   ADZUNA_APP_KEY: z.string().optional(),
   ADZUNA_COUNTRY: z.string().default('gb'),
-  GREENHOUSE_BOARD_TOKEN: z.string().optional(),
-  GREENHOUSE_COMPANY_NAME: z.string().optional(),
+  // France Travail requires OAuth2 client credentials from a free
+  // francetravail.io developer registration (client_credentials grant) —
+  // unlike the no-auth free providers, this can't self-register.
+  FRANCE_TRAVAIL_CLIENT_ID: z.string().optional(),
+  FRANCE_TRAVAIL_CLIENT_SECRET: z.string().optional(),
+  // Comma-separated ROME occupation codes; defaults to M1805 (Études et
+  // développement informatique) if unset — see FRANCE_TRAVAIL_DEFAULT_ROME_CODES.
+  FRANCE_TRAVAIL_ROME_CODES: z.string().optional(),
+  // Greenhouse is per-company (one board token per deployment, unlike HH's
+  // single-endpoint-many-countries shape), but defaults to JetBrains
+  // (job-boards.eu.greenhouse.io/jetbrains, live-verified) so the slot isn't
+  // sitting empty — override both vars together to point at a different
+  // company's board instead.
+  GREENHOUSE_BOARD_TOKEN: z.preprocess(blankToUndefined, z.string().default('jetbrains')),
+  GREENHOUSE_COMPANY_NAME: z.preprocess(blankToUndefined, z.string().default('JetBrains')),
   LEVER_COMPANY: z.string().optional(),
   LEVER_COMPANY_NAME: z.string().optional(),
   ASHBY_JOB_BOARD_NAME: z.string().optional(),
@@ -151,6 +168,18 @@ const configSchema = z.object({
   COMEET_TOKEN: z.string().optional(),
   COMEET_COMPANY_UID: z.string().optional(),
   COMEET_COMPANY_NAME: z.string().optional(),
+  // Personio — public unauthenticated per-tenant XML feed
+  // (https://{company}.jobs.personio.de/xml), see research/free-provider-expansion.
+  // No default: unlike Greenhouse, there's no single well-known Personio
+  // tenant worth defaulting to, so this stays opt-in per deployment.
+  PERSONIO_COMPANY: z.string().optional(),
+  PERSONIO_COMPANY_NAME: z.string().optional(),
+  PERSONIO_LANGUAGE: z.string().optional(),
+  // Workable — public unauthenticated per-tenant JSON widget endpoint
+  // (https://apply.workable.com/api/v1/widget/accounts/{accountSlug}), see
+  // research/free-provider-expansion. No default account, same reasoning as Personio.
+  WORKABLE_ACCOUNT_SLUG: z.string().optional(),
+  WORKABLE_COMPANY_NAME: z.string().optional(),
   LINKEDIN_ENABLED: z.string().optional(),
   // SuperJob — requires an X-Api-App-Id secret key for every endpoint
   // (including plain vacancy search), obtained via free self-service signup
@@ -182,6 +211,30 @@ const configSchema = z.object({
   // Default off so a misconfigured production deploy never exposes pipeline
   // internals by accident.
   DIAGNOSTICS_ENABLED: booleanField(false),
+
+  // Company Discovery (ADR-035 §4) — single system workspace AUTO_APPROVED
+  // candidates are auto-converted into CompanyWatch rows under. Unset means
+  // auto-enrollment stops at AUTO_APPROVED and waits for a human to approve
+  // it into an explicit workspace via the review queue.
+  DISCOVERY_WORKSPACE_ID: z.string().optional(),
+
+  // ADR-035 Phase 4 — bulk DiscoverySource seed config. Unauthenticated
+  // GitHub API is rate-limited to 60 req/hour; DISCOVERY_GITHUB_TOKEN raises
+  // this to 5,000/hour (same "conditionally registered, needs credentials"
+  // pattern as FRANCE_TRAVAIL_CLIENT_ID above) — optional, not required.
+  DISCOVERY_GITHUB_TOKEN: z.string().optional(),
+  // Comma-separated GitHub org logins to resolve via GitHubOrgsDiscoverySource.
+  DISCOVERY_GITHUB_ORG_SEEDS: z.string().optional(),
+  // Comma-separated domains (no protocol) JsonLdCrawlDiscoverySource re-scans
+  // for schema.org JobPosting markup — see EPIC-18's "CC-Index-seeded, not
+  // standalone crawlers" note for why this needs a seed at all.
+  DISCOVERY_JSONLD_SEED_DOMAINS: z.string().optional(),
+  // Same shape for RssCareerFeedDiscoverySource.
+  DISCOVERY_RSS_SEED_DOMAINS: z.string().optional(),
+  // Web Data Commons JobPosting subset file URL — unset means the source
+  // stays disabled (see WebDataCommonsJobPostingSource's doc comment: this
+  // pass could not locate a directly fetchable subset URL within scope).
+  DISCOVERY_WDC_SOURCE_FILE_URL: z.string().optional(),
 
   // AI Orchestrator
   AI_ORCHESTRATOR_MODE: z.enum(['manual', 'smart', 'automatic']).default('manual'),

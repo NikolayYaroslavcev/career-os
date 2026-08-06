@@ -32,6 +32,7 @@ export const AI_METRICS = {
   GUARDRAIL_HALLUCINATION_DETECTED: 'ai.guardrail.hallucination_detected',
   FEEDBACK_RECEIVED: 'ai.feedback.received',
   FEEDBACK_ACCURACY: 'ai.feedback.accuracy',
+  EXTRACTION_REUSED: 'ai.extraction.reused',
 } as const;
 
 export class InMemoryAIMetricsCollector implements AIMetricsCollector {

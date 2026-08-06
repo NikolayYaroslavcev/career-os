@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loading } from '@/components/ui/loading';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sparkles, Copy, Check, RefreshCw } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
 import { listResumes, type Resume } from '@/api/resumes';
@@ -14,15 +15,19 @@ import { listSearchProfiles } from '@/api/search-profiles';
 import {
   analyzeVacancy,
   tailorResume,
+  getTailoringStatus,
   generateCoverLetter,
   getInterviewPrep,
   getAIJobs,
   type AnalyzeVacancyResult,
-  type TailorResumeResultData,
+  type TailoringStatusResult,
+  type TailoringResultData,
+  type TailoringStage,
   type CoverLetterResultData,
   type InterviewPrepResultData,
   type AIJob,
 } from '@/api/ai';
+import { useJobPolling } from '@/hooks/use-job-polling';
 import {
   analyzeVacancyForApplication,
   tailorResumeForApplication,
@@ -35,6 +40,16 @@ interface AiActionsPanelProps {
   readonly vacancyTitle: string;
   readonly applicationId?: string;
 }
+
+const AI_ACTION_TABS = [
+  { value: 'analyze', labelKey: 'aiPanel.tabs.analyze' },
+  { value: 'tailor', labelKey: 'aiPanel.tabs.tailor' },
+  { value: 'cover-letter', labelKey: 'aiPanel.tabs.coverLetter' },
+  { value: 'interview-prep', labelKey: 'aiPanel.tabs.interviewPrep' },
+  { value: 'history', labelKey: 'aiPanel.tabs.history' },
+] as const;
+
+type AiActionTab = (typeof AI_ACTION_TABS)[number]['value'];
 
 const INTERVIEW_TYPES = ['HR', 'TECHNICAL', 'SYSTEM_DESIGN', 'BEHAVIORAL', 'CODING', 'CULTURAL', 'FINAL'] as const;
 
@@ -62,6 +77,7 @@ function jobStatusVariant(status: string): 'success' | 'warning' | 'destructive'
 
 export function AiActionsPanel({ vacancyId, vacancyTitle, applicationId }: AiActionsPanelProps): React.JSX.Element {
   const { t } = useTranslation();
+  const [tab, setTab] = useState<AiActionTab>('analyze');
 
   return (
     <Card>
@@ -72,13 +88,13 @@ export function AiActionsPanel({ vacancyId, vacancyTitle, applicationId }: AiAct
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="analyze">
-          <TabsList>
-            <TabsTrigger value="analyze">{t('aiPanel.tabs.analyze')}</TabsTrigger>
-            <TabsTrigger value="tailor">{t('aiPanel.tabs.tailor')}</TabsTrigger>
-            <TabsTrigger value="cover-letter">{t('aiPanel.tabs.coverLetter')}</TabsTrigger>
-            <TabsTrigger value="interview-prep">{t('aiPanel.tabs.interviewPrep')}</TabsTrigger>
-            <TabsTrigger value="history">{t('aiPanel.tabs.history')}</TabsTrigger>
+        <Tabs value={tab} onValueChange={(value) => { if (value) setTab(value as AiActionTab); }}>
+          <TabsList className="w-full">
+            {AI_ACTION_TABS.map((option) => (
+              <TabsTrigger key={option.value} value={option.value}>
+                {t(option.labelKey)}
+              </TabsTrigger>
+            ))}
           </TabsList>
 
           <TabsContent value="analyze" className="pt-4">
@@ -237,19 +253,61 @@ function ResumeSelect({
   onChange: (value: string | null) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
+  const labelFor = (id: string): string =>
+    resumes.find((resume) => resume.id === id)?.title || t('aiPanel.untitledResume');
   return (
-    <select
-      value={value ?? ''}
-      onChange={(e) => onChange(e.target.value || null)}
-      className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 outline-none"
-    >
-      <option value="">{t('aiPanel.chooseResume')}</option>
+    <Select value={value ?? undefined} onValueChange={(nextValue) => onChange(nextValue ?? null)}>
+      <SelectTrigger className="w-full">
+        <SelectValue placeholder={t('aiPanel.chooseResume')}>
+          {(id: string) => (id ? labelFor(id) : t('aiPanel.chooseResume'))}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={false}>
       {resumes.map((resume) => (
-        <option key={resume.id} value={resume.id}>
+        <SelectItem key={resume.id} value={resume.id}>
           {resume.title || t('aiPanel.untitledResume')}
-        </option>
+        </SelectItem>
       ))}
-    </select>
+      </SelectContent>
+    </Select>
+  );
+}
+
+const TAILORING_STAGE_ORDER: TailoringStage[] = [
+  'QUEUED',
+  'PARSING_RESUME',
+  'PARSING_VACANCY',
+  'BUILDING_EVIDENCE',
+  'TAILORING_RESUME',
+  'ATS_SCORING',
+  'REVIEWER_VALIDATION',
+  'SAVING_RESULTS',
+  'COMPLETED',
+];
+
+function isTailoringDone(status: TailoringStatusResult): boolean {
+  return status.status === 'completed' || status.status === 'failed';
+}
+
+function TailoringStageStepper({ currentStage }: { currentStage: TailoringStage }): React.JSX.Element {
+  const { t } = useTranslation();
+  const currentIndex = TAILORING_STAGE_ORDER.indexOf(currentStage);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">{t(`aiPanel.tailor.stages.${currentStage}`)}</p>
+      </div>
+      <div className="flex gap-1">
+        {TAILORING_STAGE_ORDER.map((stage, i) => (
+          <div
+            key={stage}
+            className={`h-1.5 flex-1 rounded-full ${i <= currentIndex ? 'bg-primary' : 'bg-muted'}`}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -257,30 +315,48 @@ function TailorResumeTab({ vacancyId, applicationId }: { vacancyId: string; appl
   const { t } = useTranslation();
   const { resumes, isLoading } = useResumes();
   const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
-  const [result, setResult] = useState<TailorResumeResultData | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [initialResponse, setInitialResponse] = useState<TailoringStatusResult | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleGenerate = async (): Promise<void> => {
+  const isPollingEnabled = Boolean(jobId) && initialResponse?.status !== 'cached';
+  const { status: polledStatus } = useJobPolling<TailoringStatusResult>({
+    jobId,
+    enabled: isPollingEnabled,
+    fetchStatus: getTailoringStatus,
+    isDone: isTailoringDone,
+  });
+
+  const currentStatus = isPollingEnabled ? (polledStatus ?? initialResponse) : initialResponse;
+  const isResolved = currentStatus?.status === 'completed' || currentStatus?.status === 'cached';
+  const hasFailed = currentStatus?.status === 'failed';
+  const isGenerating = Boolean(jobId) && !isResolved && !hasFailed;
+  const result: TailoringResultData | null = isResolved ? (currentStatus?.result ?? null) : null;
+
+  const handleGenerate = async (forceRegenerate: boolean): Promise<void> => {
     if (!selectedResumeId) return;
-    setIsGenerating(true);
+    setIsSubmitting(true);
     setError(null);
+    setJobId(null);
+    setInitialResponse(null);
     try {
       const response = applicationId
-        ? await tailorResumeForApplication(applicationId, selectedResumeId)
-        : await tailorResume({ vacancyId, resumeId: selectedResumeId });
-      setResult(response.result ?? null);
+        ? await tailorResumeForApplication(applicationId, selectedResumeId, forceRegenerate)
+        : await tailorResume({ vacancyId, resumeId: selectedResumeId, forceRegenerate });
+      setInitialResponse(response);
+      setJobId(response.jobId);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('aiPanel.errors.generic'));
     } finally {
-      setIsGenerating(false);
+      setIsSubmitting(false);
     }
   };
 
   const handleCopy = async (): Promise<void> => {
-    if (!result?.tailoredResume) return;
-    await navigator.clipboard.writeText(result.tailoredResume);
+    if (!result?.tailoredResumeText) return;
+    await navigator.clipboard.writeText(result.tailoredResumeText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -291,8 +367,11 @@ function TailorResumeTab({ vacancyId, applicationId }: { vacancyId: string; appl
     <div className="space-y-4">
       <ResumeSelect resumes={resumes} value={selectedResumeId} onChange={setSelectedResumeId} />
       <div className="flex gap-2">
-        <Button onClick={handleGenerate} disabled={!selectedResumeId || isGenerating}>
-          {isGenerating ? (
+        <Button
+          onClick={() => handleGenerate(Boolean(result))}
+          disabled={!selectedResumeId || isSubmitting || isGenerating}
+        >
+          {isSubmitting || isGenerating ? (
             <>
               <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
               {t('aiPanel.tailor.generating')}
@@ -311,50 +390,86 @@ function TailorResumeTab({ vacancyId, applicationId }: { vacancyId: string; appl
         )}
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
+      {isGenerating && currentStatus && <TailoringStageStepper currentStage={currentStatus.currentStage} />}
+      {hasFailed && <p className="text-sm text-destructive">{t('aiPanel.tailor.failed')}</p>}
       {result && <TailorResumeResultView result={result} />}
     </div>
   );
 }
 
-function TailorResumeResultView({ result }: { result: TailorResumeResultData }): React.JSX.Element {
+function AtsScoreCompare({ result }: { result: TailoringResultData }): React.JSX.Element | null {
+  const { t } = useTranslation();
+  if (!result.atsScoreBefore && !result.atsScoreAfter) return null;
+
+  return (
+    <div className="flex gap-4">
+      {result.atsScoreBefore && (
+        <div className="rounded-md border p-2 text-sm">
+          <p className="text-muted-foreground">{t('aiPanel.tailor.atsScoreBefore')}</p>
+          <p className="text-lg font-semibold">{result.atsScoreBefore.overallScore}</p>
+        </div>
+      )}
+      {result.atsScoreAfter && (
+        <div className="rounded-md border p-2 text-sm">
+          <p className="text-muted-foreground">{t('aiPanel.tailor.atsScoreAfter')}</p>
+          <p className="text-lg font-semibold text-primary">{result.atsScoreAfter.overallScore}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TailorResumeResultView({ result }: { result: TailoringResultData }): React.JSX.Element {
   const { t } = useTranslation();
   return (
     <div className="space-y-3">
+      {result.hallucinationCheck && result.hallucinationCheck.overallRisk !== 'low' && (
+        <p className="text-sm text-warning-foreground bg-warning/10 rounded-md p-2">
+          {t('aiPanel.tailor.hallucinationWarning')}
+        </p>
+      )}
+      <AtsScoreCompare result={result} />
       <pre className="whitespace-pre-wrap text-sm font-mono bg-muted p-3 rounded-lg max-h-64 overflow-y-auto">
-        {result.tailoredResume}
+        {result.tailoredResumeText}
       </pre>
-      {result.emphasizedSkills.length > 0 && (
+      {result.skillMatrix && result.skillMatrix.matchedSkills.length > 0 && (
         <div>
-          <p className="text-sm font-medium">{t('aiPanel.tailor.addedSkills')}</p>
+          <p className="text-sm font-medium">{t('aiPanel.tailor.matchedSkills')}</p>
           <div className="mt-1 flex flex-wrap gap-2">
-            {result.emphasizedSkills.map((skill) => (
+            {result.skillMatrix.matchedSkills.map((skill) => (
               <Badge key={skill} variant="success">{skill}</Badge>
             ))}
           </div>
         </div>
       )}
-      {result.reorderedExperience.length > 0 && (
+      {result.skillMatrix && result.skillMatrix.missingSkills.length > 0 && (
         <div>
-          <p className="text-sm font-medium">{t('aiPanel.tailor.changedSections')}</p>
-          <div className="mt-1 space-y-2">
-            {result.reorderedExperience.map((exp, i) => (
-              <div key={i} className="rounded-md border p-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{exp.position} · {exp.company}</span>
-                  <Badge variant={exp.relevanceScore >= 70 ? 'default' : 'secondary'}>{exp.relevanceScore}%</Badge>
-                </div>
-                <p className="mt-1 text-muted-foreground line-clamp-2">{exp.description}</p>
-              </div>
+          <p className="text-sm font-medium">{t('aiPanel.tailor.missingSkills')}</p>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {result.skillMatrix.missingSkills.map((skill) => (
+              <Badge key={skill} variant="secondary">{skill}</Badge>
             ))}
           </div>
         </div>
       )}
-      {result.keywordOptimizations.length > 0 && (
+      {result.changesApplied.length > 0 && (
         <div>
-          <p className="text-sm font-medium">{t('aiPanel.tailor.recommendations')}</p>
-          <div className="mt-1 flex flex-wrap gap-2">
-            {result.keywordOptimizations.map((keyword) => (
-              <Badge key={keyword}>{keyword}</Badge>
+          <p className="text-sm font-medium">{t('aiPanel.tailor.changesApplied')}</p>
+          <div className="mt-1 space-y-1">
+            {result.changesApplied.slice(0, 10).map((change, i) => (
+              <p key={i} className="text-sm text-muted-foreground line-clamp-1">{change.description}</p>
+            ))}
+          </div>
+        </div>
+      )}
+      {result.changesRejected.length > 0 && (
+        <div>
+          <p className="text-sm font-medium">{t('aiPanel.tailor.changesRejected')}</p>
+          <div className="mt-1 space-y-1">
+            {result.changesRejected.map((rejected, i) => (
+              <p key={i} className="text-sm text-muted-foreground">
+                <span className="line-through">{rejected.text}</span> — {rejected.reason}
+              </p>
             ))}
           </div>
         </div>
@@ -474,15 +589,19 @@ function InterviewPrepTab({ vacancyId, applicationId }: { vacancyId: string; app
 
   return (
     <div className="space-y-4">
-      <select
+      <Select
         value={interviewType}
-        onChange={(e) => setInterviewType(e.target.value as (typeof INTERVIEW_TYPES)[number])}
-        className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 outline-none"
+        onValueChange={(value) => value && setInterviewType(value as (typeof INTERVIEW_TYPES)[number])}
       >
+        <SelectTrigger className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
         {INTERVIEW_TYPES.map((type) => (
-          <option key={type} value={type}>{type}</option>
+          <SelectItem key={type} value={type}>{type}</SelectItem>
         ))}
-      </select>
+        </SelectContent>
+      </Select>
       <Button onClick={handleGenerate} disabled={isGenerating}>
         {isGenerating ? (
           <>
@@ -569,9 +688,10 @@ function HistoryTab({ vacancyId }: { vacancyId: string }): React.JSX.Element {
     <ul className="space-y-2">
       {jobs.map((job) => (
         <li key={job.id} className="rounded-md border p-3">
-          <button
+          <Button
             type="button"
-            className="flex w-full items-center justify-between gap-2 text-left text-sm"
+            variant="ghost"
+            className="h-auto w-full justify-between px-0 text-left text-sm hover:bg-transparent"
             onClick={() => setExpandedId(expandedId === job.id ? null : job.id)}
           >
             <span className="font-medium">{t(FEATURE_LABEL_KEYS[job.feature] ?? job.feature)}</span>
@@ -581,7 +701,7 @@ function HistoryTab({ vacancyId }: { vacancyId: string }): React.JSX.Element {
                 {new Date(job.createdAt).toLocaleString(locale)}
               </span>
             </div>
-          </button>
+          </Button>
           {expandedId === job.id && (
             <div className="mt-2 border-t pt-2">
               <HistoryResultView feature={job.feature} result={job.result} error={job.error} />
@@ -602,7 +722,7 @@ function HistoryResultView({ feature, result, error }: { feature: string; result
     case 'analyze_vacancy':
       return <AnalyzeResultView result={result as AnalyzeVacancyResult} />;
     case 'tailor_resume':
-      return <TailorResumeResultView result={result as TailorResumeResultData} />;
+      return <TailorResumeResultView result={result as TailoringResultData} />;
     case 'interview_prep':
       return <InterviewPrepResultView result={result as InterviewPrepResultData} />;
     case 'cover_letter': {

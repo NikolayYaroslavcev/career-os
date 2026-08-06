@@ -1,145 +1,87 @@
 import type { AtsAdapter, AtsConfig, AtsJob } from './base-adapter.js';
+import { extractTechnologies } from './technology-keywords.js';
+import {
+  TeamtailorAdapter as SharedTeamtailorAdapter,
+  AtsHttpError,
+  type AtsRawJob,
+  type TeamtailorAdapterConfig,
+} from '@careeros/ats-adapters';
 
-interface TeamtailorJob {
-  id: string;
-  type: string;
-  attributes: {
-    title: string;
-    description: string;
-    'description-html': string;
-    location: string;
-    'remote': boolean;
-    'pitch': string;
-    'published-at': string;
-    'created-at': string;
-    'updated-at': string;
-  };
-  relationships: {
-    department?: { data?: { id: string } };
-    role?: { data?: { id: string } };
-  };
-}
-
-interface TeamtailorResponse {
-  data: TeamtailorJob[];
-  included?: {
-    departments?: { id: string; attributes: { name: string } }[];
-    roles?: { id: string; attributes: { name: string } }[];
-  };
-}
-
+/**
+ * ADR-033 Teamtailor migration: this **replaces**, rather than diffs
+ * against, the prior company-watch `TeamtailorAdapter`. That implementation
+ * authenticated with an `X-Api-Key` header — not a header Teamtailor's real
+ * API documents or recognizes (the actual scheme is `Authorization: Token
+ * token=...` plus `X-Api-Version`, confirmed by providers' fetcher and its
+ * passing tests). It also read job fields under names that don't exist on
+ * the real Teamtailor Job resource (`description`/`description-html` instead
+ * of `body`/`pitch`; `remote` instead of `remote-status`) and hardcoded a
+ * career-site URL pattern (`jobs.teamtailor.com/jobs/{id}`) instead of using
+ * the real `careersite-job-url` link Teamtailor's API actually returns. It
+ * had zero test coverage. See ADR-033 addendum "Teamtailor migration".
+ *
+ * Its `included`-relationship resolution for department/role *was* the
+ * right JSON:API pattern — just built on the wrong request. The shared
+ * adapter now does that resolution correctly (see `teamtailor-parser.ts`),
+ * so `departments` here is a real capability, not a placeholder.
+ */
 export class TeamtailorAdapter implements AtsAdapter {
   readonly atsType = 'TEAMTAILOR' as const;
+  private readonly adapter = new SharedTeamtailorAdapter();
 
   async fetchJobs(config: AtsConfig): Promise<AtsJob[]> {
-    const url = this.buildUrl(config);
-    const response = await fetch(url, {
-      headers: {
-        Accept: 'application/vnd.api+json',
-        'X-Api-Key': this.getApiKey(config),
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Teamtailor API error: ${response.status} ${response.statusText}`);
+    try {
+      const jobs = await this.adapter.fetchJobs(this.toAdapterConfig(config));
+      return jobs.map((job) => this.toAtsJob(job));
+    } catch (error) {
+      throw toTeamtailorError(error);
     }
-
-    const data = (await response.json()) as TeamtailorResponse;
-    return data.data.map((job) => this.mapJob(job, data.included));
   }
 
   async fetchJob(config: AtsConfig, externalId: string): Promise<AtsJob | null> {
-    const baseUrl = this.buildBaseUrl(config);
-    const url = `${baseUrl}/jobs/${externalId}`;
-    const response = await fetch(url, {
-      headers: {
-        Accept: 'application/vnd.api+json',
-        'X-Api-Key': this.getApiKey(config),
-      },
-    });
-
-    if (response.status === 404) return null;
-    if (!response.ok) {
-      throw new Error(`Teamtailor API error: ${response.status} ${response.statusText}`);
+    try {
+      const job = await this.adapter.fetchJob(this.toAdapterConfig(config), externalId);
+      return job ? this.toAtsJob(job) : null;
+    } catch (error) {
+      throw toTeamtailorError(error);
     }
-
-    const data = (await response.json()) as { data: TeamtailorJob; included?: TeamtailorResponse['included'] };
-    return this.mapJob(data.data, data.included);
   }
 
   async ping(config: AtsConfig): Promise<boolean> {
     try {
-      const url = `${this.buildBaseUrl(config)}/jobs?page[size]=1`;
-      const response = await fetch(url, {
-        method: 'HEAD',
-        headers: {
-          Accept: 'application/vnd.api+json',
-          'X-Api-Key': this.getApiKey(config),
-        },
-      });
-      return response.ok;
+      return await this.adapter.ping(this.toAdapterConfig(config));
     } catch {
       return false;
     }
   }
 
-  private buildUrl(config: AtsConfig): string {
-    return `${this.buildBaseUrl(config)}/jobs`;
-  }
-
-  private buildBaseUrl(_config: AtsConfig): string {
-    return 'https://api.teamtailor.com/v1';
-  }
-
-  private getApiKey(config: AtsConfig): string {
+  private toAdapterConfig(config: AtsConfig): TeamtailorAdapterConfig {
     const metadata = config.metadata as { apiKey?: string } | undefined;
     const apiKey = metadata?.apiKey;
     if (!apiKey) {
       throw new Error('Teamtailor adapter requires apiKey in metadata');
     }
-    return apiKey;
+    return { apiKey };
   }
 
-  private mapJob(job: TeamtailorJob, included?: TeamtailorResponse['included']): AtsJob {
-    const departmentId = job.relationships.department?.data?.id;
-    const department = departmentId
-      ? included?.departments?.find((d) => d.id === departmentId)?.attributes.name
-      : undefined;
-
-    const roleId = job.relationships.role?.data?.id;
-    const role = roleId
-      ? included?.roles?.find((r) => r.id === roleId)?.attributes.name
-      : undefined;
-
+  private toAtsJob(job: AtsRawJob): AtsJob {
     return {
-      externalId: job.id,
-      title: job.attributes.title,
-      description: job.attributes['description-html'] || job.attributes.description || '',
-      url: `https://jobs.teamtailor.com/jobs/${job.id}`,
-      location: job.attributes.location,
-      technologies: this.extractTechnologies(job.attributes.description),
-      publishedAt: job.attributes['published-at'] ? new Date(job.attributes['published-at']) : undefined,
-      departments: [department, role].filter(Boolean) as string[],
+      externalId: job.externalId,
+      title: job.title,
+      description: job.description,
+      url: job.url,
+      location: job.location,
+      technologies: extractTechnologies(job.description),
+      publishedAt: job.publishedAt,
+      departments: job.departments ? [...job.departments] : undefined,
     };
   }
+}
 
-  private extractTechnologies(description: string): string[] {
-    const techPatterns = [
-      /typescript|javascript|python|java|golang|go|rust|ruby|php|c\+\+|c#|swift|kotlin/i,
-      /react|vue|angular|svelte|next\.?js|nuxt/i,
-      /node\.?js|deno|bun/i,
-      /aws|gcp|azure|docker|kubernetes|k8s/i,
-      /postgresql|mysql|mongodb|redis|elasticsearch/i,
-    ];
-
-    const technologies: string[] = [];
-    for (const pattern of techPatterns) {
-      const matches = description.match(pattern);
-      if (matches) {
-        technologies.push(...matches.map((m) => m.toLowerCase()));
-      }
-    }
-
-    return [...new Set(technologies)];
+/** Preserves this adapter's own thrown-error message format at the boundary (ADR-033: adapters throw typed errors; consumers compose their own message). */
+function toTeamtailorError(error: unknown): Error {
+  if (error instanceof AtsHttpError) {
+    return new Error(`Teamtailor API error: ${error.status} ${error.statusText}`);
   }
+  return error instanceof Error ? error : new Error(String(error));
 }

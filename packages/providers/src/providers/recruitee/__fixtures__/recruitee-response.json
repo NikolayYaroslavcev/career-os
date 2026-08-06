@@ -1,0 +1,55 @@
+{
+  "offers": [
+    {
+      "id": 1001,
+      "title": "Senior Backend Engineer",
+      "description": "Building APIs with Node.js and PostgreSQL on a React-based platform.",
+      "location": "Berlin, Germany",
+      "remote": false,
+      "salary_from": 50000,
+      "salary_to": 70000,
+      "employment_type": "full_time",
+      "created_at": "2026-07-01T10:00:00.000Z",
+      "updated_at": "2026-07-05T10:00:00.000Z",
+      "apply_url": "https://acme.recruitee.com/o/senior-backend-engineer",
+      "department": "Engineering",
+      "team": "Platform"
+    },
+    {
+      "id": 1002,
+      "title": "Product Designer",
+      "description": "Design end-to-end user experiences for our product.",
+      "location": "",
+      "remote": true,
+      "salary_from": null,
+      "salary_to": null,
+      "employment_type": "full_time",
+      "created_at": "2026-07-02T10:00:00.000Z",
+      "updated_at": "2026-07-02T10:00:00.000Z",
+      "apply_url": "https://acme.recruitee.com/o/product-designer",
+      "department": "Design",
+      "team": null
+    },
+    {
+      "id": 1003,
+      "title": "Sales Intern",
+      "description": "Support the sales team with outreach and reporting.",
+      "location": "Remote",
+      "remote": true,
+      "salary_from": 0,
+      "salary_to": 0,
+      "employment_type": "internship",
+      "created_at": "2026-07-03T10:00:00.000Z",
+      "updated_at": "2026-07-03T10:00:00.000Z",
+      "apply_url": "https://acme.recruitee.com/o/sales-intern",
+      "department": null,
+      "team": null
+    }
+  ],
+  "meta": {
+    "total": 3,
+    "per_page": 50,
+    "current_page": 1,
+    "total_pages": 1
+  }
+}

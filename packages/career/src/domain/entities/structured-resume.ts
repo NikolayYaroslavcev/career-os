@@ -7,6 +7,13 @@ export interface StructuredResumeExperience {
   readonly startDate: Date;
   readonly endDate?: Date;
   readonly description: string;
+  /**
+   * Individual achievement/responsibility lines, extracted separately from
+   * `description` (ADR-031) so the resume-tailoring pipeline can trace each
+   * generated bullet back to a specific source line instead of only a
+   * job-level blob. Empty when extracted before this field existed.
+   */
+  readonly bullets: readonly string[];
   readonly technologies: readonly string[];
 }
 
@@ -35,6 +42,10 @@ export interface StructuredResumeProps {
   technologies: readonly string[];
   experience: readonly StructuredResumeExperience[];
   education: readonly StructuredResumeEducation[];
+  /** ADR-031 — empty on rows extracted before this field existed. */
+  certifications: readonly string[];
+  /** ADR-031 — empty on rows extracted before this field existed. */
+  languages: readonly string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -65,6 +76,8 @@ export class StructuredResume extends AggregateRoot<StructuredResumeId> {
       technologies: [],
       experience: [],
       education: [],
+      certifications: [],
+      languages: [],
       createdAt: now,
       updatedAt: now,
     });
@@ -130,6 +143,14 @@ export class StructuredResume extends AggregateRoot<StructuredResumeId> {
     return this.props.education;
   }
 
+  get certifications(): readonly string[] {
+    return this.props.certifications;
+  }
+
+  get languages(): readonly string[] {
+    return this.props.languages;
+  }
+
   get createdAt(): Date {
     return this.props.createdAt;
   }
@@ -154,6 +175,8 @@ export class StructuredResume extends AggregateRoot<StructuredResumeId> {
     technologies: readonly string[];
     experience: readonly StructuredResumeExperience[];
     education: readonly StructuredResumeEducation[];
+    certifications?: readonly string[];
+    languages?: readonly string[];
     extractionModel?: string;
   }): void {
     this.props.extractionStatus = 'completed';
@@ -164,6 +187,8 @@ export class StructuredResume extends AggregateRoot<StructuredResumeId> {
     this.props.technologies = data.technologies;
     this.props.experience = data.experience;
     this.props.education = data.education;
+    this.props.certifications = data.certifications ?? [];
+    this.props.languages = data.languages ?? [];
     this.props.extractedAt = new Date();
     if (data.extractionModel) {
       this.props.extractionModel = data.extractionModel;

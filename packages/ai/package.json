@@ -19,7 +19,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@careeros/career": "workspace:*"
+    "@careeros/career": "workspace:*",
+    "zod": "3.24.4"
   },
   "devDependencies": {
     "typescript": "^5.8.0",

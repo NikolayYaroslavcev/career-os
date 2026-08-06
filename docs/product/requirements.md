@@ -39,7 +39,7 @@ CareerOS is a personal AI career assistant that operates continuously on behalf 
 | FR-01.5 | Add new providers without code changes | Adding provider requires only config + adapter |
 
 **Sources (MVP):** HH.ru, LinkedIn, Habr Career
-**Sources (Future):** RemoteOK, Wellfound, Otta, RSS, Telegram channels, company career pages
+**Sources (Future):** Wellfound, Otta, RSS, Telegram channels, company career pages
 
 ### FR-02: AI Matching Engine
 

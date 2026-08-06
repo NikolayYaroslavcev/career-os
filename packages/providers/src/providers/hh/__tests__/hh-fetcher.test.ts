@@ -119,6 +119,41 @@ describe('HHFetcher', () => {
       expect(result.error).toBe('RATE_LIMITED');
       expect(result.retryable).toBe(true);
     });
+
+    it('should return a provider-unavailable error on HTTP 403', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(null, { ok: false, status: 403 }));
+
+      const result = await fetcher.search({});
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toBe('PROVIDER_UNAVAILABLE');
+      expect(result.retryable).toBe(true);
+    });
+  });
+
+  describe('fetchWithCursor', () => {
+    it('should return a provider-unavailable error on HTTP 403', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(null, { ok: false, status: 403 }));
+
+      const result = await fetcher.fetchWithCursor({}, { type: 'page', page: 0, perPage: 100 });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toBe('PROVIDER_UNAVAILABLE');
+      expect(result.retryable).toBe(true);
+    });
+
+    it('should return a rate-limited error on HTTP 429', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(null, { ok: false, status: 429 }));
+
+      const result = await fetcher.fetchWithCursor({}, { type: 'page', page: 0, perPage: 100 });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toBe('RATE_LIMITED');
+      expect(result.retryable).toBe(true);
+    });
   });
 
   describe('getVacancy', () => {
@@ -142,6 +177,28 @@ describe('HHFetcher', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.data).toBeNull();
+    });
+
+    it('should return a provider-unavailable error on HTTP 403, like search does', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(null, { ok: false, status: 403 }));
+
+      const result = await fetcher.getVacancy('98765432');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toBe('PROVIDER_UNAVAILABLE');
+      expect(result.retryable).toBe(true);
+    });
+
+    it('should return a rate-limited error on HTTP 429, like search does', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(null, { ok: false, status: 429 }));
+
+      const result = await fetcher.getVacancy('98765432');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toBe('RATE_LIMITED');
+      expect(result.retryable).toBe(true);
     });
   });
 

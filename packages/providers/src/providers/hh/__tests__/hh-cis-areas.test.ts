@@ -72,7 +72,7 @@ describe('HH CIS multi-country coverage', () => {
   });
 
   describe('HH_CIS_AREA_IDS', () => {
-    it('should list the six CIS countries the sync defaults to', () => {
+    it('should list the ten CIS/diaspora countries the sync defaults to', () => {
       expect(HH_CIS_AREA_IDS).toEqual({
         RU: '113',
         BY: '16',
@@ -80,6 +80,10 @@ describe('HH CIS multi-country coverage', () => {
         UZ: '97',
         KG: '48',
         AZ: '9',
+        GE: '28',
+        AM: '13',
+        TJ: '86',
+        MD: '62',
       });
     });
   });
@@ -140,6 +144,10 @@ describe('HH CIS multi-country coverage', () => {
         vacancy({ id: 'uz-1', areaId: HH_CIS_AREA_IDS.UZ, areaName: 'Ташкент', employerName: 'Uzbek Co' }),
         vacancy({ id: 'kg-1', areaId: HH_CIS_AREA_IDS.KG, areaName: 'Бишкек', employerName: 'Kyrgyz Co' }),
         vacancy({ id: 'az-1', areaId: HH_CIS_AREA_IDS.AZ, areaName: 'Баку', employerName: 'Azeri Co' }),
+        vacancy({ id: 'ge-1', areaId: HH_CIS_AREA_IDS.GE, areaName: 'Тбилиси', employerName: 'Georgian Co' }),
+        vacancy({ id: 'am-1', areaId: HH_CIS_AREA_IDS.AM, areaName: 'Ереван', employerName: 'Armenian Co' }),
+        vacancy({ id: 'tj-1', areaId: HH_CIS_AREA_IDS.TJ, areaName: 'Душанбе', employerName: 'Tajik Co' }),
+        vacancy({ id: 'md-1', areaId: HH_CIS_AREA_IDS.MD, areaName: 'Кишинёв', employerName: 'Moldovan Co' }),
       ];
 
       const fetcher = new HHFetcher({ baseUrl: 'https://api.hh.ru', areas: defaultAreas, logger, metrics, tracer });
@@ -150,7 +158,7 @@ describe('HH CIS multi-country coverage', () => {
       const result = await fetcher.search({});
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.data).toHaveLength(6);
+      expect(result.data).toHaveLength(10);
 
       const mapper = new HHMapper();
       const normalizer = new HHNormalizer();
@@ -169,6 +177,10 @@ describe('HH CIS multi-country coverage', () => {
       expect(byCity.get('uz-1')?.location.city).toBe('Ташкент');
       expect(byCity.get('kg-1')?.location.city).toBe('Бишкек');
       expect(byCity.get('az-1')?.location.city).toBe('Баку');
+      expect(byCity.get('ge-1')?.location.city).toBe('Тбилиси');
+      expect(byCity.get('am-1')?.location.city).toBe('Ереван');
+      expect(byCity.get('tj-1')?.location.city).toBe('Душанбе');
+      expect(byCity.get('md-1')?.location.city).toBe('Кишинёв');
 
       for (const [, normalized] of byCity) {
         expect(normalized.source).toBe('hh');

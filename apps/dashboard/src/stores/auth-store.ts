@@ -6,6 +6,7 @@ import {
   getStoredUser,
   type AuthUser,
 } from '@/api/auth';
+import { ApiError } from '@/api/client';
 import { translate } from '@/lib/i18n/translate';
 
 interface AuthState {
@@ -35,7 +36,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       const response = await apiLogin({ email, password });
       set({ user: response.user, isLoading: false });
     } catch (error) {
-      const message = error instanceof Error ? error.message : translate('auth.errors.loginFailed');
+      const message =
+        error instanceof ApiError && error.status === 401
+          ? translate('auth.errors.invalidCredentials')
+          : translate('auth.errors.loginFailed');
       set({ error: message, isLoading: false });
       throw error;
     }
@@ -47,7 +51,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       const response = await apiRegister(data);
       set({ user: response.user, isLoading: false });
     } catch (error) {
-      const message = error instanceof Error ? error.message : translate('auth.errors.registrationFailed');
+      const message =
+        error instanceof ApiError && error.status === 409
+          ? translate('auth.errors.emailTaken')
+          : translate('auth.errors.registrationFailed');
       set({ error: message, isLoading: false });
       throw error;
     }

@@ -17,6 +17,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+const DASHBOARD_REFRESH_INTERVAL_MS = 30_000;
+
 function formatNumber(num: number): string {
   if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
   if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
@@ -47,24 +49,49 @@ export function AIDashboard(): React.JSX.Element | null {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchData(): Promise<void> {
+    let isMounted = true;
+
+    async function fetchData(isInitialLoad = false): Promise<void> {
+      if (isInitialLoad) {
+        setIsLoading(true);
+      }
+
       try {
         const [dashboardData, cache, mode] = await Promise.all([
           getDashboardData(),
           getCacheStats(),
           getAIMode(),
         ]);
+
+        if (!isMounted) {
+          return;
+        }
+
         setDashboard(dashboardData);
         setCacheStats(cache);
         setAiModeState(mode.mode);
+        setError(null);
       } catch (err) {
         console.error('Failed to fetch AI data:', err);
-        setError('Failed to load AI dashboard data');
+        if (isMounted) {
+          setError('Failed to load AI dashboard data');
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     }
-    fetchData();
+
+    void fetchData(true);
+    const intervalId = setInterval(() => {
+      void fetchData(false);
+    }, DASHBOARD_REFRESH_INTERVAL_MS);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
   }, []);
 
   const handleModeChange = async (newMode: 'manual' | 'smart' | 'automatic'): Promise<void> => {
@@ -93,7 +120,9 @@ export function AIDashboard(): React.JSX.Element | null {
           <span className="text-sm text-muted-foreground">{t('ai.mode')}:</span>
           <Select value={aiMode} onValueChange={(v) => { if (v) handleModeChange(v as 'manual' | 'smart' | 'automatic'); }}>
             <SelectTrigger className="h-8 w-auto" size="sm">
-              <SelectValue />
+              <SelectValue>
+                {(value: string) => t(`ai.mode${value.charAt(0).toUpperCase()}${value.slice(1)}`)}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="manual">{t('ai.modeManual')}</SelectItem>
@@ -131,8 +160,8 @@ export function AIDashboard(): React.JSX.Element | null {
             <CardTitle className="text-sm font-medium">{t('ai.monthlyCost')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">{formatCost(dashboard.estimatedMonthlyCost)}</div>
-            <p className="text-xs text-muted-foreground">{t('ai.estimated')}</p>
+            <div className="text-2xl font-bold text-foreground">{formatCost(dashboard.monthlyCost)}</div>
+            <p className="text-xs text-muted-foreground">{t('ai.thisMonth')}</p>
           </CardContent>
         </Card>
 

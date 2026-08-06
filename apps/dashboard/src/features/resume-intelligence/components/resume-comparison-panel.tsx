@@ -77,9 +77,11 @@ export function ResumeComparisonPanel({ versions }: ResumeComparisonPanelProps):
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Select value={resumeIdA} onValueChange={(value) => setResumeIdA(value ?? '')}>
             <SelectTrigger>
-              <SelectValue placeholder={t('resumeIntelligencePage.selectVersionA')} />
+              <SelectValue placeholder={t('resumeIntelligencePage.selectVersionA')}>
+                {(value: string) => (value ? titleFor(value) : t('resumeIntelligencePage.selectVersionA'))}
+              </SelectValue>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent alignItemWithTrigger={false}>
               {versions.map((v) => (
                 <SelectItem key={v.id} value={v.id}>
                   {v.title}
@@ -89,9 +91,11 @@ export function ResumeComparisonPanel({ versions }: ResumeComparisonPanelProps):
           </Select>
           <Select value={resumeIdB} onValueChange={(value) => setResumeIdB(value ?? '')}>
             <SelectTrigger>
-              <SelectValue placeholder={t('resumeIntelligencePage.selectVersionB')} />
+              <SelectValue placeholder={t('resumeIntelligencePage.selectVersionB')}>
+                {(value: string) => (value ? titleFor(value) : t('resumeIntelligencePage.selectVersionB'))}
+              </SelectValue>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent alignItemWithTrigger={false}>
               {versions.map((v) => (
                 <SelectItem key={v.id} value={v.id}>
                   {v.title}

@@ -1,4 +1,3 @@
-import { fetchWithTimeout } from '../../resilience/resilient-fetch.js';
 import type { Fetcher, FetchResult } from '../../interfaces/fetcher.js';
 import type { ProviderResult, ResultMeta } from '../../interfaces/result.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
@@ -9,7 +8,13 @@ import type { MetricsCollector } from '../../observability/metrics.js';
 import type { Tracer } from '../../observability/tracer.js';
 import { PROVIDER_METRICS } from '../../observability/metrics.js';
 import { ProviderErrorType } from '../../errors/provider-errors.js';
-import type { ComeetResponse } from './comeet-types.js';
+import {
+  fetchComeetPositions,
+  pingComeetPositions,
+  parseComeetJobsResponse,
+  type AtsRawJob,
+  type ComeetJobPayload,
+} from '@careeros/ats-adapters';
 
 export interface ComeetFetcherConfig {
   readonly token: string;
@@ -37,10 +42,10 @@ export class ComeetFetcher implements Fetcher {
     this.tracer = config.tracer;
   }
 
-  async search(criteria: SearchCriteria): Promise<ProviderResult<RawJob[]>> {
+  async search(_criteria: SearchCriteria): Promise<ProviderResult<RawJob[]>> {
     const span = this.tracer.startSpan('comeet.fetcher.search', {
       providerId: 'comeet',
-      query: criteria.query ?? '',
+      query: _criteria.query ?? '',
     });
 
     const startTime = Date.now();
@@ -49,20 +54,11 @@ export class ComeetFetcher implements Fetcher {
       this.logger.info('Fetching Comeet jobs', {
         providerId: 'comeet',
         operation: 'search',
-        query: criteria.query,
+        query: _criteria.query,
       });
 
-      const url = this.buildSearchUrl(criteria);
-      const response = await fetchWithTimeout(url);
-
-      if (!response.ok) {
-        span.setAttribute('error', true);
-        span.setAttribute('http.status', response.status);
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data: ComeetResponse = await response.json() as ComeetResponse;
-      const jobs = this.parseResponse(data);
+      const payload = await fetchComeetPositions(this.transportConfig());
+      const jobs = parseComeetJobsResponse(payload).map((raw) => this.toRawJob(raw));
 
       const durationMs = Date.now() - startTime;
       this.metrics.recordHistogram(PROVIDER_METRICS.FETCH_DURATION, durationMs, {
@@ -235,14 +231,13 @@ export class ComeetFetcher implements Fetcher {
         operation: 'ping',
       });
 
-      const url = `${this.baseUrl}/company/${this.companyUid}/positions?token=${this.token}`;
-      const response = await fetchWithTimeout(url);
+      const ok = await pingComeetPositions(this.transportConfig());
       const durationMs = Date.now() - startTime;
 
-      span.setAttribute('http.status', response.status);
+      span.setAttribute('http.status', ok ? 200 : 0);
       span.end();
 
-      return { ok: true, data: response.ok, meta: { durationMs } };
+      return { ok: true, data: ok, meta: { durationMs } };
     } catch (error) {
       const durationMs = Date.now() - startTime;
       span.setAttribute('error', true);
@@ -258,65 +253,29 @@ export class ComeetFetcher implements Fetcher {
     }
   }
 
-  private buildSearchUrl(_criteria: SearchCriteria): string {
-    // Comeet's Careers API has no server-side keyword filter; `details=true`
-    // is required to get the job description (omitted by default to keep
-    // the list-all-positions response small).
-    return `${this.baseUrl}/company/${this.companyUid}/positions?token=${this.token}&details=true`;
+  private transportConfig(): { token: string; companyUid: string; baseUrl: string } {
+    return { token: this.token, companyUid: this.companyUid, baseUrl: this.baseUrl };
   }
 
-  private parseResponse(data: ComeetResponse): RawJob[] {
-    if (!Array.isArray(data)) {
-      return [];
-    }
+  private toRawJob(raw: AtsRawJob): RawJob {
+    const job = raw.rawMetadata as ComeetJobPayload;
+    const isRemote = job.workplace_type?.toLowerCase() === 'remote' || job.location?.is_remote === true;
 
-    const jobs: RawJob[] = [];
-    const now = new Date();
-
-    for (const job of data) {
-      if (!this.isValidJob(job)) {
-        continue;
-      }
-
-      const isRemote = job.workplace_type?.toLowerCase() === 'remote' || job.location?.is_remote === true;
-
-      const rawJob: RawJob = {
-        sourceId: job.uid,
-        title: job.name,
-        description: this.extractDescription(job.details),
-        companyName: job.company_name ?? 'Unknown',
-        location: job.location?.name ?? 'Unknown',
-        technologies: [],
-        url: job.url_active_page || job.position_url,
-        publishedAt: new Date(job.time_updated),
-        fetchedAt: now,
-        remote: isRemote,
-        extensions: {
-          department: job.department,
-          employmentType: job.employment_type,
-        },
-      };
-
-      jobs.push(rawJob);
-    }
-
-    return jobs;
-  }
-
-  private extractDescription(details: ComeetResponse[number]['details']): string {
-    if (!details) return '';
-    return details
-      .map((section) => section.value)
-      .filter((value): value is string => Boolean(value))
-      .join('\n\n');
-  }
-
-  private isValidJob(job: Record<string, unknown>): boolean {
-    return (
-      typeof job === 'object' &&
-      job !== null &&
-      typeof job['uid'] === 'string' &&
-      typeof job['name'] === 'string'
-    );
+    return {
+      sourceId: raw.externalId,
+      title: raw.title,
+      description: raw.description,
+      companyName: job.company_name ?? 'Unknown',
+      location: raw.location ?? 'Unknown',
+      technologies: [],
+      url: raw.url,
+      publishedAt: raw.publishedAt ?? new Date(job.time_updated),
+      fetchedAt: new Date(),
+      remote: isRemote,
+      extensions: {
+        department: job.department,
+        employmentType: job.employment_type,
+      },
+    };
   }
 }

@@ -1,5 +1,5 @@
-import type { CompanyWatchData, CompanyWatchRepository } from '@careeros/company-watch';
-import type { AtsType } from '@prisma/client';
+import type { CompanyWatchData, CompanyWatchRepository, CompanyWatchHealthStatus } from '@careeros/company-watch';
+import type { AtsType, CompanyWatchHealthStatus as PrismaCompanyWatchHealthStatus } from '@prisma/client';
 import { prisma } from '../client.js';
 import { toNullableJsonInput } from '../json.js';
 
@@ -22,6 +22,10 @@ interface CompanyWatchRow {
   workspaceId: string;
   createdAt: Date;
   updatedAt: Date;
+  consecutiveFailureCount: number;
+  healthStatus: string;
+  priorityScore: number;
+  lastSuccessfulSyncAt: Date | null;
 }
 
 export class PrismaCompanyWatchRepository implements CompanyWatchRepository {
@@ -112,6 +116,10 @@ export class PrismaCompanyWatchRepository implements CompanyWatchRepository {
         workspaceId: data.where.workspaceId_name.workspaceId,
         createdAt: new Date(),
         updatedAt: new Date(),
+        consecutiveFailureCount: data.create.consecutiveFailureCount ?? 0,
+        healthStatus: (data.create.healthStatus ?? 'ACTIVE') as PrismaCompanyWatchHealthStatus,
+        priorityScore: data.create.priorityScore ?? 50,
+        lastSuccessfulSyncAt: data.create.lastSuccessfulSyncAt,
       },
       update: {
         ...(data.update.name !== undefined ? { name: data.update.name } : {}),
@@ -128,6 +136,16 @@ export class PrismaCompanyWatchRepository implements CompanyWatchRepository {
         ...(data.update.lastSyncStatus !== undefined ? { lastSyncStatus: data.update.lastSyncStatus } : {}),
         ...(data.update.lastSyncError !== undefined ? { lastSyncError: data.update.lastSyncError } : {}),
         ...(data.update.metadata !== undefined ? { metadata: toNullableJsonInput(data.update.metadata) } : {}),
+        ...(data.update.consecutiveFailureCount !== undefined
+          ? { consecutiveFailureCount: data.update.consecutiveFailureCount }
+          : {}),
+        ...(data.update.healthStatus !== undefined
+          ? { healthStatus: data.update.healthStatus as PrismaCompanyWatchHealthStatus }
+          : {}),
+        ...(data.update.priorityScore !== undefined ? { priorityScore: data.update.priorityScore } : {}),
+        ...(data.update.lastSuccessfulSyncAt !== undefined
+          ? { lastSuccessfulSyncAt: data.update.lastSuccessfulSyncAt }
+          : {}),
         updatedAt: new Date(),
       },
     });
@@ -155,6 +173,10 @@ export class PrismaCompanyWatchRepository implements CompanyWatchRepository {
       workspaceId: record.workspaceId,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
+      consecutiveFailureCount: record.consecutiveFailureCount,
+      healthStatus: record.healthStatus as CompanyWatchHealthStatus,
+      priorityScore: record.priorityScore,
+      lastSuccessfulSyncAt: record.lastSuccessfulSyncAt ?? undefined,
     };
   }
 
@@ -174,6 +196,10 @@ export class PrismaCompanyWatchRepository implements CompanyWatchRepository {
     lastSyncError: string | undefined;
     metadata: ReturnType<typeof toNullableJsonInput>;
     workspaceId: string;
+    consecutiveFailureCount: number;
+    healthStatus: PrismaCompanyWatchHealthStatus;
+    priorityScore: number;
+    lastSuccessfulSyncAt: Date | undefined;
   } {
     return {
       name: data.name,
@@ -191,6 +217,10 @@ export class PrismaCompanyWatchRepository implements CompanyWatchRepository {
       lastSyncError: data.lastSyncError,
       metadata: toNullableJsonInput(data.metadata ?? null),
       workspaceId: data.workspaceId,
+      consecutiveFailureCount: data.consecutiveFailureCount,
+      healthStatus: data.healthStatus as PrismaCompanyWatchHealthStatus,
+      priorityScore: data.priorityScore,
+      lastSuccessfulSyncAt: data.lastSuccessfulSyncAt,
     };
   }
 }

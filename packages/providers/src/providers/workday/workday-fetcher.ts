@@ -1,4 +1,3 @@
-import { fetchWithTimeout } from '../../resilience/resilient-fetch.js';
 import type { Fetcher, FetchResult } from '../../interfaces/fetcher.js';
 import type { ProviderResult, ResultMeta } from '../../interfaces/result.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
@@ -9,6 +8,13 @@ import type { MetricsCollector } from '../../observability/metrics.js';
 import type { Tracer } from '../../observability/tracer.js';
 import { PROVIDER_METRICS } from '../../observability/metrics.js';
 import { ProviderErrorType } from '../../errors/provider-errors.js';
+import {
+  fetchWorkdayJobsPage,
+  pingWorkdayJobs,
+  parseWorkdayJobsResponse,
+  AtsHttpError,
+  type AtsRawJob,
+} from '@careeros/ats-adapters';
 
 const DEFAULT_PAGE_SIZE = 20;
 // Safety cap on total jobs fetched in a single search() call, to avoid an
@@ -24,27 +30,6 @@ export interface WorkdayFetcherConfig {
   readonly logger: Logger;
   readonly metrics: MetricsCollector;
   readonly tracer: Tracer;
-}
-
-export interface WorkdayJobPosting {
-  readonly title: string;
-  readonly externalPath: string;
-  readonly locationsText: string;
-  readonly postedOn?: string;
-  readonly bulletFields?: readonly string[];
-  readonly jobReqId: string;
-}
-
-export interface WorkdayJobsResponse {
-  readonly total: number;
-  readonly jobPostings: readonly WorkdayJobPosting[];
-}
-
-export interface WorkdayRequestBody {
-  readonly appliedFacets: Record<string, unknown>;
-  readonly limit: number;
-  readonly offset: number;
-  readonly searchText: string;
 }
 
 export class WorkdayFetcher implements Fetcher {
@@ -89,31 +74,8 @@ export class WorkdayFetcher implements Fetcher {
       let hasMore = true;
 
       while (hasMore && allJobs.length < MAX_JOBS_SAFETY_CAP) {
-        const response = await fetchWithTimeout(this.buildApiUrl(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify(this.buildRequestBody(criteria, offset, limit)),
-        });
-
-        if (!response.ok) {
-          span.setAttribute('error', true);
-          span.setAttribute('http.status', response.status);
-
-          if (response.status === 429) {
-            return {
-              ok: false,
-              error: ProviderErrorType.RATE_LIMITED,
-              message: `HTTP ${response.status}: Rate limited by Workday API`,
-              retryable: true,
-              meta: { durationMs: Date.now() - startTime },
-            };
-          }
-
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = (await response.json()) as WorkdayJobsResponse;
-        const jobs = this.parseResponse(data);
+        const payload = await fetchWorkdayJobsPage(this.transportConfig(), offset, limit, criteria.query ?? '');
+        const jobs = parseWorkdayJobsResponse(this.transportConfig(), payload).map((raw) => this.toRawJob(raw));
 
         for (const job of jobs) {
           if (!seenIds.has(job.sourceId)) {
@@ -123,7 +85,7 @@ export class WorkdayFetcher implements Fetcher {
         }
 
         offset += limit;
-        hasMore = jobs.length > 0 && offset < data.total;
+        hasMore = jobs.length > 0 && offset < payload.total;
       }
 
       const durationMs = Date.now() - startTime;
@@ -160,17 +122,27 @@ export class WorkdayFetcher implements Fetcher {
       span.setAttribute('error', true);
       span.end();
 
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      if (error instanceof AtsHttpError) {
+        if (error.status === 429) {
+          return {
+            ok: false,
+            error: ProviderErrorType.RATE_LIMITED,
+            message: `HTTP ${error.status}: Rate limited by Workday API`,
+            retryable: true,
+            meta: { durationMs },
+          };
+        }
 
-      if (message.startsWith('HTTP')) {
         return {
           ok: false,
           error: ProviderErrorType.NETWORK_ERROR,
-          message,
+          message: `HTTP ${error.status}: ${error.statusText}`,
           retryable: true,
           meta: { durationMs },
         };
       }
+
+      const message = error instanceof Error ? error.message : 'Unknown error';
 
       if (message.includes('JSON')) {
         return {
@@ -255,28 +227,18 @@ export class WorkdayFetcher implements Fetcher {
         limit = cursor.limit;
       }
 
-      const response = await fetchWithTimeout(this.buildApiUrl(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(this.buildRequestBody(criteria, offset, limit)),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = (await response.json()) as WorkdayJobsResponse;
-      const jobs = this.parseResponse(data);
+      const payload = await fetchWorkdayJobsPage(this.transportConfig(), offset, limit, criteria.query ?? '');
+      const jobs = parseWorkdayJobsResponse(this.transportConfig(), payload).map((raw) => this.toRawJob(raw));
       const durationMs = Date.now() - startTime;
 
-      const hasMore = offset + data.jobPostings.length < data.total;
+      const hasMore = offset + payload.jobPostings.length < payload.total;
 
       const cursorState: CursorState = {
         cursor: {
           type: 'offset',
           offset: offset + limit,
           limit,
-          totalResults: data.total,
+          totalResults: payload.total,
         },
         strategy: 'offset',
         exhausted: !hasMore,
@@ -287,7 +249,7 @@ export class WorkdayFetcher implements Fetcher {
         jobs,
         cursor: cursorState,
         hasMore,
-        meta: { totalJobs: data.total },
+        meta: { totalJobs: payload.total },
       };
 
       span.setAttribute('jobs.fetched', jobs.length);
@@ -322,19 +284,13 @@ export class WorkdayFetcher implements Fetcher {
         operation: 'ping',
       });
 
-      // The CXS jobs endpoint only accepts POST; there is no lighter HEAD
-      // route available, so we send a minimal single-result request.
-      const response = await fetchWithTimeout(this.buildApiUrl(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ appliedFacets: {}, limit: 1, offset: 0, searchText: '' }),
-      });
+      const ok = await pingWorkdayJobs(this.transportConfig());
       const durationMs = Date.now() - startTime;
 
-      span.setAttribute('http.status', response.status);
+      span.setAttribute('http.status', ok ? 200 : 0);
       span.end();
 
-      return { ok: true, data: response.ok, meta: { durationMs } };
+      return { ok: true, data: ok, meta: { durationMs } };
     } catch (error) {
       const durationMs = Date.now() - startTime;
       span.setAttribute('error', true);
@@ -350,87 +306,29 @@ export class WorkdayFetcher implements Fetcher {
     }
   }
 
-  private buildApiUrl(): string {
-    return `https://${this.tenant}.${this.host}/wday/cxs/${this.tenant}/${this.site}/jobs`;
+  private transportConfig(): { tenant: string; site: string; host: string } {
+    return { tenant: this.tenant, site: this.site, host: this.host };
   }
 
-  private buildPublicUrl(externalPath: string): string {
-    return `https://${this.tenant}.${this.host}${externalPath}`;
-  }
-
-  private buildRequestBody(criteria: SearchCriteria, offset: number, limit: number): WorkdayRequestBody {
-    return {
-      appliedFacets: {},
-      limit,
-      offset,
-      searchText: criteria.query ?? '',
-    };
-  }
-
-  private parseResponse(data: WorkdayJobsResponse): RawJob[] {
-    if (!data || !Array.isArray(data.jobPostings)) {
-      throw new Error('Response is not a valid Workday jobs payload');
-    }
-
-    const fetchedAt = new Date();
-    const jobs: RawJob[] = [];
-    for (const item of data.jobPostings) {
-      const job = this.parseSingleJobPosting(item, fetchedAt);
-      if (job) jobs.push(job);
-    }
-    return jobs;
-  }
-
-  private parseSingleJobPosting(item: WorkdayJobPosting, fetchedAt: Date): RawJob | null {
-    if (!this.isValidJobPosting(item)) {
-      return null;
-    }
-
-    const locationsText = item.locationsText ?? '';
-    const sourceId = item.jobReqId || item.externalPath;
+  private toRawJob(raw: AtsRawJob): RawJob {
+    const item = raw.rawMetadata as { bulletFields?: readonly string[]; jobReqId: string } | undefined;
+    const locationsText = raw.location ?? '';
 
     return {
-      sourceId,
-      title: item.title,
-      description: `${locationsText} — full description available at the listing page (req ${item.jobReqId}).`,
+      sourceId: raw.externalId,
+      title: raw.title,
+      description: raw.description,
       companyName: this.companyName,
       location: locationsText,
       technologies: [],
-      url: this.buildPublicUrl(item.externalPath),
-      publishedAt: this.parsePostedDate(item.postedOn, fetchedAt),
-      fetchedAt,
+      url: raw.url,
+      publishedAt: raw.publishedAt ?? new Date(),
+      fetchedAt: new Date(),
       remote: /remote/i.test(locationsText),
       extensions: {
-        bulletFields: item.bulletFields ?? [],
-        jobReqId: item.jobReqId,
+        bulletFields: item?.bulletFields ?? [],
+        jobReqId: item?.jobReqId,
       },
     };
-  }
-
-  private isValidJobPosting(item: unknown): item is WorkdayJobPosting {
-    return (
-      typeof item === 'object' &&
-      item !== null &&
-      'title' in item &&
-      'externalPath' in item
-    );
-  }
-
-  private parsePostedDate(postedOn: string | undefined, fetchedAt: Date): Date {
-    if (!postedOn) {
-      return fetchedAt;
-    }
-
-    if (/Posted Today/i.test(postedOn)) {
-      return fetchedAt;
-    }
-
-    const match = /Posted (\d+)\+? Days? Ago/i.exec(postedOn);
-    if (match) {
-      const days = Number(match[1]);
-      return new Date(fetchedAt.getTime() - days * 24 * 60 * 60 * 1000);
-    }
-
-    return fetchedAt;
   }
 }

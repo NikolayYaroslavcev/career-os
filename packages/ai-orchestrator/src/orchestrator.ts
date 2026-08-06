@@ -1,7 +1,9 @@
-import { estimateCost } from '@careeros/ai';
-import type {
-  AIJobRepository,
-  AIUsageRepository,
+import { estimateCost, getModelPricing } from '@careeros/ai';
+import {
+  DuplicateAIJobError,
+  type AIJobRepository,
+  type AIJobData,
+  type AIUsageRepository,
 } from '@careeros/database';
 import type {
   AIFeature,
@@ -17,7 +19,6 @@ import { PersistentCache } from './cache/persistent-cache.js';
 import type { CacheKeyInput } from './cache/cache-key.js';
 import { UsageTracker } from './usage/usage-tracker.js';
 import { BudgetEnforcer } from './usage/budget-enforcer.js';
-import { getModelPricing } from './usage/pricing.js';
 import { ProviderRouter } from './provider-router/provider-router.js';
 import { AIModeManager } from './modes/ai-mode-manager.js';
 import { AIJobQueue } from './queue/ai-job-queue.js';
@@ -151,20 +152,44 @@ export class AIOrchestrator {
       }
     }
 
-    // 4. Create job record
-    const job = await this.jobRepository.create({
-      userId,
-      feature,
-      inputHash,
-      cacheKey: inputHash,
-      priority: options?.priority ?? 0,
-      input,
-      maxRetries: this.config.maxRetries ?? 3,
-    });
+    // 4. Duplicate-request check: an identical request (same user/feature/
+    // input) may already be in flight -- double-click, parallel tabs, or a
+    // client retry after a timeout. Return the existing job instead of
+    // paying for a second execution.
+    const inFlightJob = await this.jobRepository.findActiveByKey(userId, feature, inputHash);
+    if (inFlightJob) {
+      this.logger.info('Duplicate request, returning in-flight job', { jobId: inFlightJob.id, feature, userId });
+      return this.duplicateResult<T>(inFlightJob);
+    }
+
+    // 5. Create job record. The active-job check above is a fast path, not
+    // the correctness guarantee -- two requests can both pass it before
+    // either inserts. The AIJob_active_dedup_key partial unique index is
+    // the actual guard: create() throws DuplicateAIJobError if this insert
+    // lost that race, and the existing job is returned the same way.
+    let job: AIJobData;
+    try {
+      job = await this.jobRepository.create({
+        userId,
+        feature,
+        inputHash,
+        cacheKey: inputHash,
+        priority: options?.priority ?? 0,
+        input,
+        maxRetries: this.config.maxRetries ?? 3,
+      });
+    } catch (error) {
+      if (error instanceof DuplicateAIJobError) {
+        this.logger.info('Duplicate request lost insert race, returning in-flight job', { jobId: error.existingJobId, feature, userId });
+        const existing = await this.jobRepository.findById(error.existingJobId);
+        if (existing) return this.duplicateResult<T>(existing);
+      }
+      throw error;
+    }
 
     this.logger.info('Job created', { jobId: job.id, feature, userId });
 
-    // 5. Execute synchronously (for now - can be made async with queue)
+    // 6. Execute synchronously (for now - can be made async with queue)
     const startTime = Date.now();
     try {
       const handler = this.handlers.get(feature);
@@ -195,6 +220,10 @@ export class AIOrchestrator {
       await this.jobRepository.update(job.id, {
         status: 'COMPLETED',
         result,
+        tokensIn,
+        tokensOut,
+        totalTokens,
+        estimatedCost,
         latencyMs,
         completedAt: new Date(),
       });
@@ -315,12 +344,6 @@ export class AIOrchestrator {
       ? featureRequests.reduce((max, [feature, data]) => data.requests > (max[1]?.requests ?? 0) ? [feature, data] : max)[0]
       : 'none';
 
-    // Estimate monthly cost (extrapolate from current month)
-    const now = new Date();
-    const dayOfMonth = now.getDate();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const estimatedMonthlyCost = dayOfMonth > 0 ? (month.totalCost / dayOfMonth) * daysInMonth : 0;
-
     // Get recent jobs
     const recentJobs = await this.jobRepository.findByUserId(userId, { limit: 10 });
 
@@ -328,8 +351,10 @@ export class AIOrchestrator {
       today,
       week,
       month,
-      estimatedMonthlyCost,
-      savedTokens: week.cacheHits > 0 ? week.totalTokens * week.cacheHitRate : 0,
+      monthlyCost: month.totalCost,
+      savedTokens: month.cacheHits > 0
+        ? Math.round(month.cacheHits * (month.totalTokens / month.totalRequests))
+        : 0,
       mostExpensiveFeature,
       mostFrequentFeature,
       recentJobs: recentJobs.map(job => ({
@@ -363,5 +388,16 @@ export class AIOrchestrator {
 
   getHandlers(): Map<AIFeature, JobHandler> {
     return this.handlers;
+  }
+
+  // A duplicate request always resolves to a job that's still PENDING,
+  // QUEUED, or PROCESSING (see ACTIVE_JOB_STATUSES) -- the caller should
+  // poll GET /jobs/:jobId for the outcome, the same as a fresh job.
+  private duplicateResult<T>(job: AIJobData): ExecuteAIResult<T> {
+    return {
+      jobId: job.id,
+      status: 'queued',
+      cached: false,
+    };
   }
 }

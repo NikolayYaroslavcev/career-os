@@ -9,6 +9,7 @@ import {
   updateWatchedCompany,
   removeWatchedCompany,
   discoverCompany,
+  syncCompany,
   type CompanyWatch,
 } from '@/api/company-watch';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -24,7 +25,34 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Building2, CheckCircle, XCircle, Clock, Plus, Pencil, Trash2 } from 'lucide-react';
+import { EmptyState } from '@/components/empty-state';
+import { Building2, CheckCircle, XCircle, Clock, Plus, Pencil, Trash2, RefreshCw } from 'lucide-react';
+
+function healthBadgeVariant(status: CompanyWatch['healthStatus']): 'success' | 'warning' | 'destructive' | 'secondary' {
+  switch (status) {
+    case 'ACTIVE':
+      return 'success';
+    case 'DEGRADED':
+      return 'warning';
+    case 'BROKEN':
+      return 'destructive';
+    case 'RETIRED':
+      return 'secondary';
+  }
+}
+
+function healthLabel(status: CompanyWatch['healthStatus'], t: ReturnType<typeof useTranslation>['t']): string {
+  switch (status) {
+    case 'ACTIVE':
+      return t('companyWatchPage.healthActive');
+    case 'DEGRADED':
+      return t('companyWatchPage.healthDegraded');
+    case 'BROKEN':
+      return t('companyWatchPage.healthBroken');
+    case 'RETIRED':
+      return t('companyWatchPage.healthRetired');
+  }
+}
 
 export default function CompanyWatchPage(): React.JSX.Element {
   const { t } = useTranslation();
@@ -38,6 +66,7 @@ export default function CompanyWatchPage(): React.JSX.Element {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
 
   async function fetchCompanies(): Promise<void> {
     try {
@@ -72,6 +101,18 @@ export default function CompanyWatchPage(): React.JSX.Element {
     setCareerUrl(company.careerUrl);
     setFormError(null);
     setDialogOpen(true);
+  }
+
+  async function handleSync(company: CompanyWatch): Promise<void> {
+    setSyncingId(company.id);
+    try {
+      await syncCompany(company.id);
+      await fetchCompanies();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('companyWatchPage.syncFailed'));
+    } finally {
+      setSyncingId(null);
+    }
   }
 
   async function handleDelete(company: CompanyWatch): Promise<void> {
@@ -181,7 +222,7 @@ export default function CompanyWatchPage(): React.JSX.Element {
           if (!open) resetForm();
         }}
       >
-        <DialogContent>
+        <DialogContent closeLabel={t('common.close')}>
           <form onSubmit={handleSubmit}>
             <DialogHeader>
               <DialogTitle>
@@ -227,11 +268,12 @@ export default function CompanyWatchPage(): React.JSX.Element {
       </Dialog>
 
       {companies.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            {t('companyWatchPage.empty')}
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={Building2}
+          title={t('companyWatchPage.emptyTitle')}
+          description={t('companyWatchPage.emptyDesc')}
+          action={{ label: t('companyWatchPage.emptyCta'), onClick: openAddDialog }}
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {companies.map((company) => (
@@ -241,6 +283,8 @@ export default function CompanyWatchPage(): React.JSX.Element {
               onEdit={openEditDialog}
               onDelete={handleDelete}
               isDeleting={deletingId === company.id}
+              onSync={handleSync}
+              isSyncing={syncingId === company.id}
             />
           ))}
         </div>
@@ -254,11 +298,15 @@ function CompanyCard({
   onEdit,
   onDelete,
   isDeleting,
+  onSync,
+  isSyncing,
 }: {
   company: CompanyWatch;
   onEdit: (company: CompanyWatch) => void;
   onDelete: (company: CompanyWatch) => void;
   isDeleting: boolean;
+  onSync: (company: CompanyWatch) => void;
+  isSyncing: boolean;
 }): React.JSX.Element {
   const { t, locale } = useTranslation();
   return (
@@ -278,6 +326,16 @@ function CompanyCard({
           ) : (
             <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
           )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => onSync(company)}
+            disabled={isSyncing}
+            aria-label={t('companyWatchPage.syncAria')}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -314,6 +372,14 @@ function CompanyCard({
           <div className="flex justify-between">
             <span className="text-muted-foreground">{t('companyWatchPage.lastSync')}</span>
             <span>{company.lastSyncAt ? formatDateTime(company.lastSyncAt, locale) : t('companyWatchPage.never')}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t('companyWatchPage.health')}</span>
+            <Badge variant={healthBadgeVariant(company.healthStatus)}>{healthLabel(company.healthStatus, t)}</Badge>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t('companyWatchPage.priority')}</span>
+            <Badge variant="outline">{company.priorityScore}</Badge>
           </div>
           {company.tags.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-2">

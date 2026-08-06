@@ -106,7 +106,7 @@ Date: 2026-07-24
 ### Accepted for now
 9. Access tokens not invalidated on logout (15-min window, standard JWT tradeoff)
 10. 159 intentional unused exports (public API surface, design system re-exports)
-11. `PUT /me` endpoint is a no-op
+11. ~~`PUT /me` endpoint is a no-op~~ — **correction (2026-07-26):** this was inaccurate. `PUT /me` persists changes via `AuthService.updateProfile` → `userRepository.save`, and now has Zod validation (non-empty, max 100 chars) plus auth-required/validation/partial-update test coverage. The actual gap is that no dashboard UI calls it yet — see `docs/product/CURRENT_FEATURES.md`.
 12. No dead letter queue for permanently failed jobs
 13. InMemoryCostTracker loses data on restart (orchestrator's UsageTracker persists)
 

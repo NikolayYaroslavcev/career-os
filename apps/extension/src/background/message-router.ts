@@ -195,12 +195,40 @@ export class MessageRouter {
       body = { vacancyId, interviewType: 'TECHNICAL' };
     }
 
-    const result = await this.auth.authenticatedRequest<AiActionResult>(`/api/v1/ai/${endpoint}`, {
+    let result = await this.auth.authenticatedRequest<AiActionResult>(`/api/v1/ai/${endpoint}`, {
       method: 'POST',
       body: JSON.stringify(body),
     });
 
+    // Resume tailoring runs asynchronously (ADR-031) — poll internally so the
+    // content script's request/response contract (panel-injector.ts) stays
+    // exactly as it was when this endpoint responded synchronously.
+    if (endpoint === 'tailor-resume' && result.status !== 'completed' && result.status !== 'failed' && result.status !== 'cached') {
+      result = await this.pollTailoringStatus(result.jobId);
+    }
+
     return { ok: true, data: { ...result, vacancyId } };
+  }
+
+  private async pollTailoringStatus(jobId: string): Promise<AiActionResult> {
+    const POLL_INTERVAL_MS = 4000;
+    const MAX_POLL_ATTEMPTS = 30; // ~2 minutes backstop
+
+    for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+      try {
+        const status = await this.auth.authenticatedRequest<AiActionResult>(
+          `/api/v1/ai/tailor-resume/${encodeURIComponent(jobId)}/status`,
+        );
+        if (status.status === 'completed' || status.status === 'failed' || status.status === 'cached') {
+          return status;
+        }
+      } catch {
+        // Transient poll failure — try again next tick.
+      }
+    }
+
+    return { jobId, status: 'failed', cached: false };
   }
 
   private async handleApplyDetected(event: { provider: string; url: string; timestamp: string; method: string }): Promise<BackgroundResponse> {

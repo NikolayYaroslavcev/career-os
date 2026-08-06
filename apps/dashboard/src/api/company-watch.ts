@@ -19,6 +19,10 @@ export interface CompanyWatch {
   workspaceId: string;
   createdAt: string;
   updatedAt: string;
+  consecutiveFailureCount: number;
+  healthStatus: 'ACTIVE' | 'DEGRADED' | 'BROKEN' | 'RETIRED';
+  priorityScore: number;
+  lastSuccessfulSyncAt?: string;
 }
 
 export interface CompanyWatchEvent {

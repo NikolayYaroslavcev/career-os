@@ -78,8 +78,8 @@ describe('SourceLifecycleServiceImpl', () => {
 
       const boardSource = createTestSource({
         id: createVacancySourceId('s2'),
-        providerId: 'remote_ok',
-        applyUrl: 'https://remoteok.com/apply',
+        providerId: 'hh',
+        applyUrl: 'https://hh.ru/apply',
       });
       boardSource.updateStatus('ACTIVE');
 
@@ -111,7 +111,7 @@ describe('SourceLifecycleServiceImpl', () => {
 
       const activeSource = createTestSource({
         id: createVacancySourceId('s2'),
-        providerId: 'remote_ok',
+        providerId: 'hh',
         applyUrl: 'https://active.com',
       });
 

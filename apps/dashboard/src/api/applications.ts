@@ -2,7 +2,7 @@ import { apiClient } from './client';
 import type {
   ExecuteAIResult,
   AnalyzeVacancyResult,
-  TailorResumeResultData,
+  TailoringStatusResult,
   CoverLetterResultData,
   InterviewPrepResultData,
 } from './ai';
@@ -201,12 +201,14 @@ export async function scheduleInterview(applicationId: string, data: ScheduleInt
   });
 }
 
-export type TailorResumeResult = ExecuteAIResult<TailorResumeResultData>;
-
-export async function tailorResumeForApplication(applicationId: string, resumeId: string): Promise<TailorResumeResult> {
+export async function tailorResumeForApplication(
+  applicationId: string,
+  resumeId: string,
+  forceRegenerate?: boolean,
+): Promise<TailoringStatusResult> {
   return apiClient(`/api/v1/applications/${applicationId}/tailor-resume`, {
     method: 'POST',
-    body: { resumeId },
+    body: { resumeId, forceRegenerate },
   });
 }
 

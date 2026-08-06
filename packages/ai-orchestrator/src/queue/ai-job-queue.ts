@@ -1,9 +1,8 @@
 import { Queue, Worker, type Job } from 'bullmq';
 import type { AIProvider } from '@careeros/ai';
-import { estimateCost } from '@careeros/ai';
+import { estimateCost, getModelPricing } from '@careeros/ai';
 import type { AIJobRepository, AIUsageRepository } from '@careeros/database';
 import type { AIFeature, AIOrchestratorConfig, JobHandler } from '../orchestrator-config.js';
-import { getModelPricing } from '../usage/pricing.js';
 
 export const AI_REQUESTS_QUEUE = 'ai-requests';
 export const AI_REQUEST_JOB = 'ai-request';

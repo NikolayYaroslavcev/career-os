@@ -7,6 +7,9 @@ import { ALL_MATCH_CATEGORIES } from '../domain/match-category.js';
 import type { PromptBuilder } from '../prompts/prompt-builder.js';
 import type { AICache } from '../cache/ai-cache.js';
 import type { CostTracker } from '../cost/cost-tracker.js';
+import { estimateCost } from '../cost/cost-tracker.js';
+import { getModelPricing } from '../cost/pricing.js';
+import type { UsageRecorder } from '../cost/usage-recorder.js';
 import type { AILogger } from '../observability/ai-logger.js';
 import type { AIMetricsCollector } from '../observability/ai-metrics.js';
 import type { AITracer } from '../observability/ai-tracer.js';
@@ -34,6 +37,12 @@ export interface MatchingEngineDeps {
   readonly logger: AILogger;
   readonly metrics: AIMetricsCollector;
   readonly tracer: AITracer;
+  /**
+   * Persists usage to AIUsageRepository so vacancy-matching calls (which bypass
+   * AIOrchestrator.execute()) still show up in the AI usage dashboard. Optional
+   * so existing tests/callers that construct MatchingEngine directly keep working.
+   */
+  readonly usageRecorder?: UsageRecorder;
 }
 
 export interface MatchParams {
@@ -270,7 +279,7 @@ export class MatchingEngine {
         inputHash: params.inputHash,
         tokenUsage: response.usage,
         latencyMs: response.latencyMs,
-        estimatedCostUsd: 0,
+        estimatedCostUsd: estimateCost(response.usage, getModelPricing(response.provider, response.model)),
       });
     } catch (error) {
       throw new AIError({
@@ -308,6 +317,35 @@ export class MatchingEngine {
       promptId: request.promptId,
       promptVersion: request.promptVersion,
     });
+
+    this.recordUsage(response, result);
+  }
+
+  private recordUsage(response: AIResponse, result: MatchResult): void {
+    try {
+      const pending = this.deps.usageRecorder?.record({
+        userId: result.userId,
+        provider: response.provider,
+        model: response.model,
+        feature: 'vacancy_matching',
+        tokensIn: response.usage.promptTokens,
+        tokensOut: response.usage.completionTokens,
+        totalTokens: response.usage.totalTokens,
+        estimatedCost: result.estimatedCostUsd,
+        latencyMs: response.latencyMs,
+      });
+      if (pending) {
+        void Promise.resolve(pending).catch((error) => {
+          this.deps.logger.warn('Failed to record vacancy_matching usage', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
+    } catch (error) {
+      this.deps.logger.warn('Failed to record vacancy_matching usage', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }
 

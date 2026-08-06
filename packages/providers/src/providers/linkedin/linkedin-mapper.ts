@@ -1,5 +1,6 @@
 import type { Mapper, MappedJob } from '../../interfaces/mapper.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
+import { decodeHtmlEntities } from '../../shared/html-entities.js';
 
 const TECH_KEYWORDS = [
   'javascript', 'typescript', 'python', 'java', 'c++', 'c#', 'go', 'rust',
@@ -48,26 +49,19 @@ export class LinkedInMapper implements Mapper {
   }
 
   private normalizeTitle(title: string): string {
-    return title
+    return decodeHtmlEntities(title)
       .replace(/\s+/g, ' ')
       .trim();
   }
 
   private normalizeDescription(description: string): string {
-    return description
-      .replace(/<[^>]*>/g, '')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
+    return decodeHtmlEntities(description.replace(/<[^>]*>/g, ''))
       .replace(/\s+/g, ' ')
       .trim();
   }
 
   private normalizeCompanyName(companyName: string): string {
-    return companyName
+    return decodeHtmlEntities(companyName)
       .replace(/\s+/g, ' ')
       .replace(/-\s*LinkedIn$/, '')
       .trim();

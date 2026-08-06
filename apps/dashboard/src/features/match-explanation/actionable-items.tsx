@@ -3,6 +3,7 @@
 import type { ActionableItem } from '@/api/match-explanation';
 import { Badge } from '@/components/ui/badge';
 import { Lightbulb, Zap, TrendingUp, Target } from 'lucide-react';
+import { useTranslation } from '@/lib/i18n/i18n-provider';
 
 const TYPE_ICONS = {
   add_skill: Target,
@@ -17,12 +18,19 @@ const PRIORITY_COLORS = {
   low: 'bg-gray-100 text-gray-800',
 } as const;
 
+const PRIORITY_KEY = {
+  high: 'matchExplanationPage.priorityHigh',
+  medium: 'matchExplanationPage.priorityMedium',
+  low: 'matchExplanationPage.priorityLow',
+} as const;
+
 export function ActionableItems({ items }: { items: ActionableItem[] }): React.JSX.Element | null {
+  const { t } = useTranslation();
   if (items.length === 0) return null;
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-gray-700">Recommended Actions</h3>
+      <h3 className="text-sm font-semibold text-gray-700">{t('matchExplanationPage.recommendedActions')}</h3>
       <div className="space-y-2">
         {items.map((item, i) => {
           const Icon = TYPE_ICONS[item.type] ?? Lightbulb;
@@ -38,12 +46,12 @@ export function ActionableItems({ items }: { items: ActionableItem[] }): React.J
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-medium text-gray-900">{item.title}</p>
                   <Badge className={PRIORITY_COLORS[item.priority]} variant="secondary">
-                    {item.priority}
+                    {t(PRIORITY_KEY[item.priority])}
                   </Badge>
                 </div>
                 <p className="text-xs text-gray-500 mt-1">{item.description}</p>
                 <p className="text-xs text-blue-600 mt-1 font-medium">
-                  +{item.impact}% potential improvement
+                  {t('matchExplanationPage.potentialImprovement', { percent: item.impact })}
                 </p>
               </div>
             </div>

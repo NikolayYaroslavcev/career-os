@@ -22,6 +22,7 @@ You must respond with a JSON object matching this exact schema:
       "startDate": "<YYYY-MM-DD or YYYY-MM>",
       "endDate": "<YYYY-MM-DD or YYYY-MM or null if current>",
       "description": "<brief description of role and achievements>",
+      "bullets": [<string, one per distinct achievement/responsibility line from the resume>],
       "technologies": [<string>]
     }
   ],
@@ -33,7 +34,9 @@ You must respond with a JSON object matching this exact schema:
       "startDate": "<YYYY-MM-DD or YYYY-MM>",
       "endDate": "<YYYY-MM-DD or YYYY-MM or null if current>"
     }
-  ]
+  ],
+  "certifications": [<string, one per named certification/license, empty array if none mentioned>],
+  "languages": [<string, one per spoken/written language mentioned (e.g. "English — fluent"), empty array if none mentioned>]
 }
 
 Rules:
@@ -45,6 +48,8 @@ Rules:
 - skills should capture soft skills, domain expertise, and certifications mentioned.
 - For dates, use the format present in the resume. If only year-month is given, use that. If only year is given, use YYYY-01.
 - description in experience should be a concise summary of the role, not a copy of the full bullet points.
+- bullets should be the individual achievement/responsibility lines from the resume, extracted as close to verbatim as possible — do not paraphrase, merge, or invent bullets. If the resume describes a role in prose rather than bullet points, split it into separate sentences/clauses instead.
+- certifications and languages should only include what is explicitly stated in the resume — do not infer a certification or language proficiency that isn't written.
 ${UNTRUSTED_CONTENT_SYSTEM_RULE}`;
 
 function buildUserPrompt(params: StructuredResumeExtractionParams): string {
@@ -57,7 +62,7 @@ Provide the extracted data as a JSON object.`;
 
 export class StructuredResumeExtractionPromptBuilder implements PromptBuilder<StructuredResumeExtractionParams> {
   readonly promptId = 'structured-resume-extraction';
-  readonly currentVersion = '1.1.0';
+  readonly currentVersion = '1.2.0';
 
   build(params: StructuredResumeExtractionParams): BuiltPrompt {
     const userPrompt = buildUserPrompt(params);

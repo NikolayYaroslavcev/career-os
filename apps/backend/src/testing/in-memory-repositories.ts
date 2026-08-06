@@ -48,10 +48,13 @@ import type {
   UserVacancyInteractionRepository,
   UserVacancyInteractionData,
   InteractionAction,
+  Workspace,
+  WorkspaceRepository,
+  WorkspaceId,
 } from '@careeros/career';
 import type { Source as VacancySourceEntity, VacancySourceRepository, VacancySourceId, SaveVacancySourceOptions } from '@careeros/career';
 import type { Email } from '@careeros/career';
-import type { MatchResult, MatchResultRepository } from '@careeros/ai';
+import type { MatchResult, MatchResultRepository, TailoredResume, TailoredResumeRepository } from '@careeros/ai';
 import type {
   AnalyticsEventRepository,
   AnalyticsEventQueryOptions,
@@ -83,6 +86,34 @@ export class InMemoryUserRepository implements UserRepository {
   }
 
   async exists(id: UserId): Promise<boolean> {
+    return this.records.has(id);
+  }
+}
+
+export class InMemoryWorkspaceRepository implements WorkspaceRepository {
+  private readonly records = new Map<string, Workspace>();
+
+  async findById(id: WorkspaceId): Promise<Workspace | null> {
+    return this.records.get(id) ?? null;
+  }
+
+  async findByOwnerId(ownerId: UserId): Promise<Workspace[]> {
+    return [...this.records.values()].filter((w) => w.isOwner(ownerId));
+  }
+
+  async findByMemberId(memberId: UserId): Promise<Workspace[]> {
+    return [...this.records.values()].filter((w) => w.isMember(memberId));
+  }
+
+  async save(workspace: Workspace): Promise<void> {
+    this.records.set(workspace.id, workspace);
+  }
+
+  async delete(id: WorkspaceId): Promise<void> {
+    this.records.delete(id);
+  }
+
+  async exists(id: WorkspaceId): Promise<boolean> {
     return this.records.has(id);
   }
 }
@@ -146,10 +177,13 @@ export class InMemoryVacancyRepository implements VacancyRepository {
     return [...this.records.values()].filter((v) => v.companyId === companyId);
   }
 
-  async findByTitleAndCompany(title: string, companyId: CompanyId): Promise<Vacancy | null> {
+  async findByTitleAndCompany(title: string, companyId: CompanyId, workspaceId: string): Promise<Vacancy | null> {
     return (
       [...this.records.values()].find(
-        (v) => v.title.toLowerCase() === title.toLowerCase() && v.companyId === companyId
+        (v) =>
+          v.title.toLowerCase() === title.toLowerCase() &&
+          v.companyId === companyId &&
+          this.workspaceIds.get(v.id) === workspaceId
       ) ?? null
     );
   }
@@ -224,6 +258,7 @@ export class InMemoryVacancyRepository implements VacancyRepository {
 
 export class InMemoryVacancySourceRepository implements VacancySourceRepository {
   private readonly records = new Map<string, VacancySourceEntity>();
+  private readonly workspaceIds = new Map<string, string>();
 
   async findById(id: VacancySourceId): Promise<VacancySourceEntity | null> {
     return this.records.get(id) ?? null;
@@ -262,17 +297,24 @@ export class InMemoryVacancySourceRepository implements VacancySourceRepository 
 
   async findByProviderAndExternalId(
     providerId: VacancySource,
-    externalId: string
+    externalId: string,
+    workspaceId: string
   ): Promise<VacancySourceEntity | null> {
     return (
       [...this.records.values()].find(
-        (s) => s.providerId === providerId && s.externalId === externalId
+        (s) =>
+          s.providerId === providerId &&
+          s.externalId === externalId &&
+          this.workspaceIds.get(s.id) === workspaceId
       ) ?? null
     );
   }
 
-  async save(source: VacancySourceEntity, _options?: SaveVacancySourceOptions): Promise<void> {
+  async save(source: VacancySourceEntity, options?: SaveVacancySourceOptions): Promise<void> {
     this.records.set(source.id, source);
+    if (options?.workspaceId) {
+      this.workspaceIds.set(source.id, options.workspaceId);
+    }
   }
 
   async delete(id: VacancySourceId): Promise<void> {
@@ -305,8 +347,12 @@ export class InMemoryCompanyRepository implements CompanyRepository {
     return ids.map((id) => this.records.get(id)).filter((c): c is Company => c !== undefined);
   }
 
-  async findByName(name: string): Promise<Company | null> {
-    return [...this.records.values()].find((c) => c.name === name) ?? null;
+  async findByName(name: string, workspaceId: string): Promise<Company | null> {
+    return (
+      [...this.records.values()].find(
+        (c) => c.name === name && this.workspaceIds.get(c.id) === workspaceId
+      ) ?? null
+    );
   }
 
   async save(company: Company, options: SaveCompanyOptions): Promise<void> {
@@ -572,6 +618,31 @@ export class InMemoryMatchResultRepository implements MatchResultRepository {
   async findByVacancyIds(vacancyIds: readonly string[]): Promise<readonly MatchResult[]> {
     const set = new Set(vacancyIds);
     return [...this.records.values()].filter((m) => set.has(m.vacancyId));
+  }
+}
+
+export class InMemoryTailoredResumeRepository implements TailoredResumeRepository {
+  private readonly records = new Map<string, TailoredResume>();
+
+  async save(tailoredResume: TailoredResume): Promise<void> {
+    // Mirrors the DB's upsert-by-(resumeId, vacancyId) semantics (ADR-031).
+    const existingKey = [...this.records.entries()].find(
+      ([, r]) => r.resumeId === tailoredResume.resumeId && r.vacancyId === tailoredResume.vacancyId
+    )?.[0];
+    if (existingKey && existingKey !== tailoredResume.id) {
+      this.records.delete(existingKey);
+    }
+    this.records.set(tailoredResume.id, tailoredResume);
+  }
+
+  async findById(id: string): Promise<TailoredResume | null> {
+    return this.records.get(id) ?? null;
+  }
+
+  async findByResumeIdAndVacancyId(resumeId: string, vacancyId: string): Promise<TailoredResume | null> {
+    return (
+      [...this.records.values()].find((r) => r.resumeId === resumeId && r.vacancyId === vacancyId) ?? null
+    );
   }
 }
 

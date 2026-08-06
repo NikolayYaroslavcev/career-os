@@ -138,13 +138,17 @@ export class ResumeService {
   }
 
   private async extractPdfText(buffer: Buffer): Promise<string> {
+    let parser: InstanceType<typeof import('pdf-parse').PDFParse> | undefined;
     try {
-      const pdfParse = (await import('pdf-parse')).default;
-      const result = await pdfParse(buffer);
+      const { PDFParse } = await import('pdf-parse');
+      parser = new PDFParse({ data: buffer });
+      const result = await parser.getText();
       return result.text ?? '';
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       throw new ResumeUploadError(`Failed to extract text from PDF: ${message}`);
+    } finally {
+      await parser?.destroy();
     }
   }
 

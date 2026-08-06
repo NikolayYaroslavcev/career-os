@@ -19,6 +19,7 @@ const analyzeVacancySchema = z.object({
 const tailorResumeSchema = z.object({
   vacancyId: z.string().uuid(),
   resumeId: z.string().uuid(),
+  forceRegenerate: z.boolean().optional(),
 });
 
 const coverLetterSchema = z.object({
@@ -166,15 +167,13 @@ export async function aiRoutes(fastify: FastifyInstance): Promise<void> {
     return reply.send(result);
   });
 
-  // Tailor Resume
+  // Tailor Resume (ADR-031: async pipeline, apps/worker — see TailoringRequestService)
   fastify.post('/tailor-resume', async (request, reply) => {
     const userId = requireUserId(request);
     const body = tailorResumeSchema.parse(request.body);
 
-    const orchestrator = fastify.container.aiOrchestrator;
     const vacancyRepo = fastify.container.repositories.vacancy;
     const resumeRepo = fastify.container.repositories.resume;
-    const companyRepo = fastify.container.repositories.company;
 
     const [vacancy, resume] = await Promise.all([
       vacancyRepo.findById(createVacancyId(body.vacancyId)),
@@ -185,45 +184,23 @@ export async function aiRoutes(fastify: FastifyInstance): Promise<void> {
     if (!resume) throw new NotFoundError('Resume');
     if (resume.userId !== userId) throw new UnauthorizedError('Not your resume');
 
-    const company = await companyRepo.findById(vacancy.companyId);
-
-    const inputHash = `${vacancy.id}:${resume.id}:${resume.updatedAt.getTime()}`;
-
-    const result = await orchestrator.execute({
-      feature: 'tailor_resume',
+    const result = await fastify.container.services.tailoringRequest.requestTailoring({
       userId,
-      input: {
-        vacancyId: vacancy.id,
-        vacancyTitle: vacancy.title,
-        vacancyDescription: vacancy.description,
-        companyName: company?.name ?? 'Unknown',
-        technologies: vacancy.requirements,
-        resumeId: resume.id,
-        resumeText: resume.rawText ?? resume.summary,
-        structuredResume: {
-          summary: resume.summary,
-          skills: resume.skills.map((s) => s.name),
-          technologies: resume.technologies.map((t) => t.name),
-          experience: resume.experience.map((e) => ({
-            company: e.company,
-            position: e.position,
-            description: e.description,
-            technologies: e.technologies.map((t) => t.name),
-          })),
-          education: resume.education.map((e) => ({
-            institution: e.institution,
-            degree: e.degree,
-            field: e.field,
-          })),
-        },
-      },
-      inputHash,
+      resumeId: resume.id,
+      resumeUpdatedAt: resume.updatedAt,
+      vacancyId: vacancy.id,
+      vacancyUpdatedAt: vacancy.updatedAt,
+      forceRegenerate: body.forceRegenerate,
     });
 
-    if (result.jobId) {
-      await fastify.container.repositories.aiJob.update(result.jobId, { vacancyId: vacancy.id });
-    }
+    return reply.send(result);
+  });
 
+  // Tailor Resume status (poll target for the queued job above)
+  fastify.get('/tailor-resume/:id/status', async (request, reply) => {
+    const userId = requireUserId(request);
+    const { id } = request.params as { id: string };
+    const result = await fastify.container.services.tailoringRequest.getStatusById(userId, decodeURIComponent(id));
     return reply.send(result);
   });
 

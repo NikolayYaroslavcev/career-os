@@ -16,8 +16,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loading } from '@/components/ui/loading';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { EmptyState } from '@/components/empty-state';
 import { SearchProfileForm } from './search-profile-form';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Search } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
 
 export function SearchProfileList(): React.JSX.Element {
@@ -124,23 +125,26 @@ export function SearchProfileList(): React.JSX.Element {
         <Alert variant="destructive">
           <AlertDescription className="flex items-center justify-between gap-2">
             <span>{error}</span>
-            <button
+            <Button
               type="button"
-              className="text-xs font-medium underline underline-offset-2 hover:no-underline"
+              variant="link"
+              size="xs"
+              className="h-auto px-0"
               onClick={() => setError(null)}
             >
               {t('common.dismiss')}
-            </button>
+            </Button>
           </AlertDescription>
         </Alert>
       )}
 
       {profiles.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            {t('searchProfiles.empty')}
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={Search}
+          title={t('searchProfiles.emptyTitle')}
+          description={t('searchProfiles.emptyDesc')}
+          action={{ label: t('searchProfiles.emptyCta'), onClick: () => setShowForm(true) }}
+        />
       ) : (
         <div className="space-y-3">
           {profiles.map((profile) => (

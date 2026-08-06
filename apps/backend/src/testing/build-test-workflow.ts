@@ -86,7 +86,7 @@ export interface TestWorkflow {
 
 /**
  * Builds the full EPIC-08 service graph against fixture-based, network-free
- * dependencies: an in-memory FakeProvider standing in for RemoteOK, and a
+ * dependencies: an in-memory FakeProvider standing in for a job board, and a
  * deterministic MockAIProvider standing in for the real AI vendor call.
  * Used by both integration tests and the `pnpm demo:intelligence` script.
  */
@@ -110,7 +110,7 @@ export function buildTestWorkflow(providerBehavior?: FakeProviderBehavior, optio
 
   const providerRegistry = new ProviderRegistry();
   const providerMetrics = new ProviderInMemoryMetricsCollector();
-  providerRegistry.register(new FakeProvider('remote_ok', providerBehavior));
+  providerRegistry.register(new FakeProvider('hh', providerBehavior));
 
   const aiMetrics = new InMemoryAIMetricsCollector();
   const matchingEngine = new MatchingEngine({

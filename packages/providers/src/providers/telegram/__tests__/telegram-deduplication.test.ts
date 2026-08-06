@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { TelegramMapper } from '../telegram-mapper.js';
-import { TelegramNormalizer } from '../telegram-normalizer.js';
+import { SocialMessageMapper } from '../social-message-mapper.js';
+import { SocialMessageNormalizer } from '../social-message-normalizer.js';
 import { DeduplicationEngine } from '../../../deduplication/deduplication-engine.js';
 import type { RawJob } from '../../../interfaces/raw-job.js';
 
@@ -26,8 +26,8 @@ function rawJob(overrides: Partial<RawJob> = {}): RawJob {
 }
 
 describe('Telegram vacancy deduplication', () => {
-  const mapper = new TelegramMapper();
-  const normalizer = new TelegramNormalizer();
+  const mapper = new SocialMessageMapper();
+  const normalizer = new SocialMessageNormalizer();
 
   it('flags a reposted vacancy (different message id/url, same title+company) as a duplicate', () => {
     const original = normalizer.normalize(mapper.map(rawJob()));

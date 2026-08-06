@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { UnauthorizedError, NotFoundError } from '../../middleware/error-handler.js';
-import { createUserId, createVacancyId } from '@careeros/career';
+import { createUserId, createVacancyId, SourceLifecycleServiceImpl } from '@careeros/career';
 import type { VacancyId } from '@careeros/career';
 import { computePreferenceBoosts } from '../../services/ranking/preference-boost.js';
 import { calculateVacancyQualityScore } from '../../services/ranking/vacancy-quality-score.js';
+
+const sourceLifecycleService = new SourceLifecycleServiceImpl();
 
 const recommendationsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(50).default(20),
@@ -104,10 +106,12 @@ export async function recommendationRoutes(fastify: FastifyInstance): Promise<vo
       interactionData,
     );
 
-    const hiddenVacancyIds = new Set(
-      interactions.filter((i) => i.action === 'HIDE').map((i) => i.vacancyId as string),
+    const excludedVacancyIds = new Set(
+      interactions
+        .filter((i) => i.action === 'HIDE' || i.action === 'APPLY')
+        .map((i) => i.vacancyId as string),
     );
-    const visible = ranked.filter(({ vacancy }) => !hiddenVacancyIds.has(vacancy.id.toString()));
+    const visible = ranked.filter(({ vacancy }) => !excludedVacancyIds.has(vacancy.id.toString()));
 
     const total = visible.length;
     const paginated = visible.slice(query.offset, query.offset + query.limit);
@@ -146,6 +150,8 @@ export async function recommendationRoutes(fastify: FastifyInstance): Promise<vo
             currency: vacancy.salary?.currency ?? null,
             technologies: vacancy.technologies.map((t) => t.name),
             publishedAt: vacancy.publishedAt?.toISOString() ?? null,
+            sourceUrl: primarySource?.sourceUrl ?? null,
+            applyUrl: sourceLifecycleService.computePrimaryApplyUrl(sources) ?? null,
           },
           score: result.score,
           tier: result.tier,

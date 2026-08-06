@@ -13,23 +13,16 @@ import {
 import { getVacancyDetail, type VacancyDetail } from '@/api/sync';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Loading } from '@/components/ui/loading';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { EmptyState } from '@/components/empty-state';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
+import { pluralize } from '@/lib/i18n/pluralize';
+import { APPLICATION_STATUS_VARIANT } from '@/lib/application-status';
 import { ApplicationDetail } from './application-detail';
-
-const STATUS_VARIANT: Record<ApplicationStatus, 'default' | 'secondary' | 'success' | 'destructive' | 'warning'> = {
-  saved: 'secondary',
-  started: 'default',
-  submitted: 'default',
-  waiting: 'warning',
-  hr_interview: 'warning',
-  technical_interview: 'warning',
-  final_interview: 'warning',
-  offer: 'success',
-  rejected: 'destructive',
-  archived: 'secondary',
-};
+import { KanbanSquare } from 'lucide-react';
 
 function formatDate(dateString: string | null): string {
   if (!dateString) return '';
@@ -38,7 +31,7 @@ function formatDate(dateString: string | null): string {
 }
 
 export function ApplicationPipeline(): React.JSX.Element {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const searchParams = useSearchParams();
   const [pipeline, setPipeline] = useState<PipelineGroup[]>([]);
   const [vacanciesById, setVacanciesById] = useState<Record<string, VacancyDetail>>({});
@@ -122,24 +115,32 @@ export function ApplicationPipeline(): React.JSX.Element {
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold">{t('applications.title')}</h2>
-        <p className="text-sm text-muted-foreground">{t('applications.subtitle', { count: totalApplications })}</p>
+        <p className="text-sm text-muted-foreground">
+          {t('applications.subtitle', {
+            count: totalApplications,
+            unit: pluralize(locale, totalApplications, { one: t('applications.unit.one'), few: t('applications.unit.few'), many: t('applications.unit.many') }),
+          })}
+        </p>
       </div>
 
       {error && (
         <Alert variant="destructive">
           <AlertDescription className="flex items-center justify-between gap-2">
             <span>{error}</span>
-            <button type="button" onClick={() => setError(null)} className="text-xs font-medium underline underline-offset-2 hover:no-underline">
+            <Button type="button" variant="link" size="xs" className="h-auto px-0" onClick={() => setError(null)}>
               {t('common.dismiss')}
-            </button>
+            </Button>
           </AlertDescription>
         </Alert>
       )}
 
       {totalApplications === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">{t('applications.empty')}</CardContent>
-        </Card>
+        <EmptyState
+          icon={KanbanSquare}
+          title={t('applications.emptyTitle')}
+          description={t('applications.emptyDesc')}
+          action={{ label: t('applications.emptyCta'), href: '/app/search' }}
+        />
       ) : (
         <div className="flex gap-4 overflow-x-auto pb-4">
           {APPLICATION_STATUSES.map((status) => {
@@ -181,23 +182,25 @@ interface ApplicationCardProps {
 
 function ApplicationCard({ application, vacancy, onSelect, onStatusChange }: ApplicationCardProps): React.JSX.Element {
   const { t } = useTranslation();
+  const [nextStatus, setNextStatus] = useState<ApplicationStatus | undefined>(undefined);
 
   const timestamp = application.submittedAt
-    ? `Submitted ${formatDate(application.submittedAt)}`
+    ? t('applications.submittedOn', { date: formatDate(application.submittedAt) })
     : application.startedAt
-      ? `Started ${formatDate(application.startedAt)}`
-      : `Saved ${formatDate(application.createdAt)}`;
+      ? t('applications.startedOn', { date: formatDate(application.startedAt) })
+      : t('applications.savedOn', { date: formatDate(application.createdAt) });
 
   return (
     <Card>
       <CardContent className="space-y-2 py-3">
-        <button
+        <Button
           type="button"
           onClick={onSelect}
-          className="block w-full text-left text-sm font-medium text-foreground hover:text-primary"
+          variant="link"
+          className="h-auto w-full justify-start px-0 text-left text-sm font-medium text-foreground no-underline hover:text-primary hover:no-underline"
         >
           {vacancy?.title ?? t('applications.unknownVacancy')}
-        </button>
+        </Button>
         {vacancy?.company && <p className="text-xs text-muted-foreground">{vacancy.company.name}</p>}
         <p className="text-xs text-muted-foreground">{timestamp}</p>
         {application.coolingDown && (
@@ -206,26 +209,30 @@ function ApplicationCard({ application, vacancy, onSelect, onStatusChange }: App
           </Badge>
         )}
         <div className="flex items-center justify-between">
-          <Badge variant={STATUS_VARIANT[application.status]} className="text-xs">
+          <Badge variant={APPLICATION_STATUS_VARIANT[application.status]} className="text-xs">
             {t(`applications.statuses.${application.status}`)}
           </Badge>
-          <select
-            aria-label={t('applications.moveToAria')}
-            className="rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 outline-none"
-            value=""
-            onChange={(e) => {
-              if (e.target.value) {
-                onStatusChange(e.target.value as ApplicationStatus);
-              }
+          <Select
+            value={nextStatus}
+            onValueChange={(value) => {
+              if (!value) return;
+              setNextStatus(undefined);
+              onStatusChange(value as ApplicationStatus);
             }}
           >
-            <option value="">{t('applications.moveTo')}</option>
+            <SelectTrigger aria-label={t('applications.moveToAria')} className="h-7 w-auto text-xs" size="sm">
+              <SelectValue placeholder={t('applications.moveTo')}>
+                {(value: ApplicationStatus | undefined) => (value ? t(`applications.statuses.${value}`) : t('applications.moveTo'))}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
             {APPLICATION_STATUSES.filter((s) => s !== application.status).map((s) => (
-              <option key={s} value={s}>
+              <SelectItem key={s} value={s}>
                 {t(`applications.statuses.${s}`)}
-              </option>
+              </SelectItem>
             ))}
-          </select>
+            </SelectContent>
+          </Select>
         </div>
       </CardContent>
     </Card>

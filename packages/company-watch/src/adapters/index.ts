@@ -5,5 +5,7 @@ export { LeverAdapter } from './lever-adapter.js';
 export { AshbyAdapter } from './ashby-adapter.js';
 export { WorkdayAdapter } from './workday-adapter.js';
 export { TeamtailorAdapter } from './teamtailor-adapter.js';
+export { SmartRecruitersAdapter } from './smartrecruiters-adapter.js';
+export { RecruiteeAdapter } from './recruitee-adapter.js';
 export { CustomHtmlAdapter } from './custom-html-adapter.js';
 export { JsonLdAdapter } from './json-ld-adapter.js';

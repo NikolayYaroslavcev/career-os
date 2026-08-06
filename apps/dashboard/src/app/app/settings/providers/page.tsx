@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Loading } from '@/components/ui/loading';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -82,8 +83,14 @@ const CATEGORY_OPTIONS = [
   'CIS',
 ];
 
+const NO_CATEGORY_VALUE = '__none__';
+
+function normalizeTelegramUsername(username: string): string {
+  return username.trim().toLowerCase().replace(/^@/, '');
+}
+
 export default function ProviderSettingsPage(): React.JSX.Element {
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [channels, setChannels] = useState<TelegramChannel[]>([]);
   const [qualities, setQualities] = useState<QualityMetrics[]>([]);
@@ -91,6 +98,7 @@ export default function ProviderSettingsPage(): React.JSX.Element {
   const [syncingProvider, setSyncingProvider] = useState<string | null>(null);
   const [addChannelOpen, setAddChannelOpen] = useState(false);
   const [newChannel, setNewChannel] = useState({ username: '', category: '', description: '' });
+  const [addChannelError, setAddChannelError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'providers' | 'telegram'>('providers');
 
   const fetchData = useCallback(async (): Promise<void> => {
@@ -115,6 +123,12 @@ export default function ProviderSettingsPage(): React.JSX.Element {
     fetchData();
   }, [fetchData]);
 
+  const normalizedNewChannelUsername = normalizeTelegramUsername(newChannel.username);
+  const duplicateChannel = channels.find(
+    (channel) => normalizeTelegramUsername(channel.username) === normalizedNewChannelUsername
+  );
+  const isDuplicateChannel = normalizedNewChannelUsername.length > 0 && duplicateChannel !== undefined;
+
   async function handleToggleProvider(providerId: string, enabled: boolean): Promise<void> {
     try {
       await updateProvider(providerId, { enabled });
@@ -137,19 +151,33 @@ export default function ProviderSettingsPage(): React.JSX.Element {
   }
 
   async function handleAddChannel(): Promise<void> {
-    if (!newChannel.username.trim()) return;
+    if (!normalizedNewChannelUsername) {
+      setAddChannelError(t('providerSettingsPage.channelUsernameRequired'));
+      return;
+    }
+    if (isDuplicateChannel) {
+      setAddChannelError(
+        t('providerSettingsPage.channelAlreadyExists', {
+          username: duplicateChannel?.username ?? normalizedNewChannelUsername,
+        })
+      );
+      return;
+    }
     try {
+      setAddChannelError(null);
       await addTelegramChannel({
-        username: newChannel.username.trim(),
+        username: normalizedNewChannelUsername,
         enabled: true,
         category: newChannel.category || undefined,
         description: newChannel.description || undefined,
       });
       setAddChannelOpen(false);
       setNewChannel({ username: '', category: '', description: '' });
+      setAddChannelError(null);
       await fetchData();
     } catch (error) {
       console.error('Failed to add channel:', error);
+      setAddChannelError(error instanceof Error ? error.message : t('providerSettingsPage.addChannelFailed'));
     }
   }
 
@@ -192,15 +220,15 @@ export default function ProviderSettingsPage(): React.JSX.Element {
             <Settings className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Provider Settings</h1>
+            <h1 className="text-2xl font-bold text-foreground">{t('providerSettingsPage.title')}</h1>
             <p className="text-muted-foreground">
-              Manage job sources and Telegram channels globally
+              {t('providerSettingsPage.subtitle')}
             </p>
           </div>
         </div>
         <Button variant="outline" onClick={fetchData} disabled={isLoading}>
           <RefreshCw className={cn('mr-2 h-4 w-4', isLoading && 'animate-spin')} />
-          Refresh
+          {t('providerSettingsPage.refresh')}
         </Button>
       </div>
 
@@ -209,47 +237,49 @@ export default function ProviderSettingsPage(): React.JSX.Element {
           <Card>
             <CardContent className="py-4 text-center">
               <div className="text-2xl font-bold text-foreground">{providers.length}</div>
-              <div className="text-sm text-muted-foreground">Total Providers</div>
+              <div className="text-sm text-muted-foreground">{t('providerSettingsPage.totalProviders')}</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="py-4 text-center">
               <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{enabledCount}</div>
-              <div className="text-sm text-muted-foreground">Enabled</div>
+              <div className="text-sm text-muted-foreground">{t('providerSettingsPage.enabled')}</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="py-4 text-center">
               <div className="text-2xl font-bold text-muted-foreground">{disabledCount}</div>
-              <div className="text-sm text-muted-foreground">Disabled</div>
+              <div className="text-sm text-muted-foreground">{t('providerSettingsPage.disabled')}</div>
             </CardContent>
           </Card>
         </div>
       )}
 
       <div className="flex gap-1 rounded-lg border border-border p-1 w-fit">
-        <button
+        <Button
+          type="button"
+          variant={activeTab === 'providers' ? 'default' : 'ghost'}
+          size="sm"
           onClick={() => setActiveTab('providers')}
           className={cn(
-            'rounded-md px-4 py-2 text-sm font-medium transition-colors',
-            activeTab === 'providers'
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:text-foreground'
+            'h-auto px-4 py-2',
+            activeTab !== 'providers' && 'text-muted-foreground hover:text-foreground'
           )}
         >
-          Providers ({providers.length})
-        </button>
-        <button
+          {t('providerSettingsPage.tabProviders', { count: providers.length })}
+        </Button>
+        <Button
+          type="button"
+          variant={activeTab === 'telegram' ? 'default' : 'ghost'}
+          size="sm"
           onClick={() => setActiveTab('telegram')}
           className={cn(
-            'rounded-md px-4 py-2 text-sm font-medium transition-colors',
-            activeTab === 'telegram'
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:text-foreground'
+            'h-auto px-4 py-2',
+            activeTab !== 'telegram' && 'text-muted-foreground hover:text-foreground'
           )}
         >
-          Telegram Channels ({enabledChannels}/{channels.length})
-        </button>
+          {t('providerSettingsPage.tabTelegram', { enabled: enabledChannels, total: channels.length })}
+        </Button>
       </div>
 
       {isLoading ? (
@@ -283,7 +313,7 @@ export default function ProviderSettingsPage(): React.JSX.Element {
                       <h3 className="font-medium text-foreground">{provider.name}</h3>
                     </div>
                     <Badge variant={statusStyle.badge as 'success' | 'destructive' | 'warning' | 'secondary' | 'default'}>
-                      {status}
+                      {t(`providerSettingsPage.status.${status}`)}
                     </Badge>
                   </div>
 
@@ -292,7 +322,7 @@ export default function ProviderSettingsPage(): React.JSX.Element {
                       <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
                       <div className="flex-1">
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>Quality</span>
+                          <span>{t('providerSettingsPage.quality')}</span>
                           <span>{quality.qualityScore}/100</span>
                         </div>
                         <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
@@ -312,41 +342,41 @@ export default function ProviderSettingsPage(): React.JSX.Element {
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>
                       {provider.lastSync
-                        ? `Last sync: ${formatDateTime(provider.lastSync, locale)}`
-                        : 'Never synced'}
+                        ? t('providerSettingsPage.lastSync', { date: formatDateTime(provider.lastSync, locale) })
+                        : t('providerSettingsPage.neverSynced')}
                     </span>
-                    <span>{Math.round(provider.syncInterval / 60000)}min interval</span>
+                    <span>{t('providerSettingsPage.intervalMinutes', { minutes: Math.round(provider.syncInterval / 60000) })}</span>
                   </div>
 
                   {provider.lastSyncResult === 'failed' && provider.lastError && (
                     <p className="text-xs text-destructive truncate" title={provider.lastError}>
-                      Error: {provider.lastError}
+                      {t('providerSettingsPage.errorLabel', { error: provider.lastError })}
                     </p>
                   )}
 
                   {provider.totalSynced > 0 && (
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span>{provider.totalSynced} synced</span>
-                      {provider.importedCount > 0 && <span>{provider.importedCount} imported</span>}
-                      {provider.failedCount > 0 && <span className="text-destructive">{provider.failedCount} failed</span>}
+                      <span>{t('providerSettingsPage.syncedCount', { count: provider.totalSynced })}</span>
+                      {provider.importedCount > 0 && <span>{t('providerSettingsPage.importedCount', { count: provider.importedCount })}</span>}
+                      {provider.failedCount > 0 && <span className="text-destructive">{t('providerSettingsPage.failedCount', { count: provider.failedCount })}</span>}
                     </div>
                   )}
 
                   {provider.ingestionMode && (
                     <p className="text-xs text-blue-600 dark:text-blue-400">
                       {provider.ingestionMode}
-                      {provider.bulkSyncStatus === 'NOT_SUPPORTED_FOR_BULK_SYNC' && ' (not available for bulk sync)'}
+                      {provider.bulkSyncStatus === 'NOT_SUPPORTED_FOR_BULK_SYNC' && ` ${t('providerSettingsPage.notAvailableForBulkSync')}`}
                     </p>
                   )}
 
                   {!provider.registered && (
                     <div className="space-y-1">
                       <p className="text-xs text-amber-600 dark:text-amber-400">
-                        Not registered — requires configuration
+                        {t('providerSettingsPage.notRegistered')}
                       </p>
                       {provider.requiredConfig && provider.requiredConfig.length > 0 && (
                         <p className="text-xs text-muted-foreground">
-                          Missing: {provider.requiredConfig.join(', ')}
+                          {t('providerSettingsPage.missingLabel', { list: provider.requiredConfig.join(', ') })}
                         </p>
                       )}
                     </div>
@@ -362,12 +392,12 @@ export default function ProviderSettingsPage(): React.JSX.Element {
                       {isEnabled ? (
                         <>
                           <PowerOff className="mr-1.5 h-3.5 w-3.5" />
-                          Disable
+                          {t('providerSettingsPage.disableProvider')}
                         </>
                       ) : (
                         <>
                           <Power className="mr-1.5 h-3.5 w-3.5" />
-                          Enable
+                          {t('providerSettingsPage.enableProvider')}
                         </>
                       )}
                     </Button>
@@ -390,14 +420,14 @@ export default function ProviderSettingsPage(): React.JSX.Element {
           <div className="flex justify-end">
             <Button onClick={() => setAddChannelOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              Add Channel
+              {t('providerSettingsPage.addChannel')}
             </Button>
           </div>
 
           {channels.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center text-muted-foreground">
-                No Telegram channels configured. Add one to start fetching.
+                {t('providerSettingsPage.noChannels')}
               </CardContent>
             </Card>
           ) : (
@@ -424,26 +454,34 @@ export default function ProviderSettingsPage(): React.JSX.Element {
                     </div>
                     <div className="text-right text-xs text-muted-foreground">
                       {channel.lastSyncAt
-                        ? `Last sync: ${formatDateTime(channel.lastSyncAt, locale)}`
-                        : 'Never synced'}
+                        ? t('providerSettingsPage.lastSync', { date: formatDateTime(channel.lastSyncAt, locale) })
+                        : t('providerSettingsPage.neverSynced')}
                     </div>
                     <div className="flex items-center gap-1">
-                      <select
-                        value={channel.category ?? ''}
-                        onChange={(e) => handleUpdateChannelCategory(channel.id, e.target.value)}
-                        className="rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
+                      <Select
+                        value={channel.category ?? NO_CATEGORY_VALUE}
+                        onValueChange={(value) =>
+                          handleUpdateChannelCategory(channel.id, !value || value === NO_CATEGORY_VALUE ? '' : value)
+                        }
                       >
-                        <option value="">No category</option>
+                        <SelectTrigger className="h-7 w-[150px] text-xs" size="sm">
+                          <SelectValue>
+                            {(value: string) => (value === NO_CATEGORY_VALUE || !value ? t('providerSettingsPage.noCategory') : value)}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NO_CATEGORY_VALUE}>{t('providerSettingsPage.noCategory')}</SelectItem>
                         {CATEGORY_OPTIONS.map((cat) => (
-                          <option key={cat} value={cat}>{cat}</option>
+                          <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                         ))}
-                      </select>
+                        </SelectContent>
+                      </Select>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleToggleChannel(channel.id, !channel.enabled)}
                       >
-                        {channel.enabled ? 'Disable' : 'Enable'}
+                        {channel.enabled ? t('providerSettingsPage.disableChannel') : t('providerSettingsPage.enableChannel')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -463,50 +501,79 @@ export default function ProviderSettingsPage(): React.JSX.Element {
       )}
 
       <Dialog open={addChannelOpen} onOpenChange={setAddChannelOpen}>
-        <DialogContent>
+        <DialogContent closeLabel={t('common.close')}>
           <DialogHeader>
-            <DialogTitle>Add Telegram Channel</DialogTitle>
+            <DialogTitle>{t('providerSettingsPage.addDialogTitle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="channel-username">Channel Username</Label>
+              <Label htmlFor="channel-username">{t('providerSettingsPage.channelUsernameLabel')}</Label>
               <Input
                 id="channel-username"
-                placeholder="e.g. remoteit, geekjobs"
+                placeholder={t('providerSettingsPage.channelUsernamePlaceholder')}
                 value={newChannel.username}
-                onChange={(e) => setNewChannel((prev) => ({ ...prev, username: e.target.value }))}
+                error={addChannelError ?? undefined}
+                onChange={(e) => {
+                  setNewChannel((prev) => ({ ...prev, username: e.target.value }));
+                  setAddChannelError(null);
+                }}
               />
               <p className="text-xs text-muted-foreground">
-                Bare username without @ prefix
+                {t('providerSettingsPage.bareUsernameHint')}
               </p>
+              {isDuplicateChannel && !addChannelError && (
+                <p className="text-xs text-destructive">
+                  {t('providerSettingsPage.channelAlreadyExists', { username: duplicateChannel.username })}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="channel-category">Category</Label>
-              <select
-                id="channel-category"
-                value={newChannel.category}
-                onChange={(e) => setNewChannel((prev) => ({ ...prev, category: e.target.value }))}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+              <Label htmlFor="channel-category">{t('providerSettingsPage.categoryLabel')}</Label>
+              <Select
+                value={newChannel.category || NO_CATEGORY_VALUE}
+                onValueChange={(value) =>
+                  setNewChannel((prev) => ({
+                    ...prev,
+                    category: !value || value === NO_CATEGORY_VALUE ? '' : value,
+                  }))
+                }
               >
-                <option value="">No category</option>
+                <SelectTrigger id="channel-category" className="w-full">
+                  <SelectValue>
+                    {(value: string) => (value === NO_CATEGORY_VALUE || !value ? t('providerSettingsPage.noCategory') : value)}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_CATEGORY_VALUE}>{t('providerSettingsPage.noCategory')}</SelectItem>
                 {CATEGORY_OPTIONS.map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
+                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                 ))}
-              </select>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="channel-description">Description (optional)</Label>
+              <Label htmlFor="channel-description">{t('providerSettingsPage.descriptionLabel')}</Label>
               <Input
                 id="channel-description"
-                placeholder="e.g. Backend jobs in Russian"
+                placeholder={t('providerSettingsPage.descriptionPlaceholder')}
                 value={newChannel.description}
                 onChange={(e) => setNewChannel((prev) => ({ ...prev, description: e.target.value }))}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddChannelOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddChannel} disabled={!newChannel.username.trim()}>Add Channel</Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAddChannelOpen(false);
+                setAddChannelError(null);
+              }}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={handleAddChannel} disabled={!normalizedNewChannelUsername || isDuplicateChannel}>
+              {t('providerSettingsPage.addChannel')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

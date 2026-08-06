@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AIProvider } from '@careeros/ai';
+import { DuplicateAIJobError } from '@careeros/database';
 import type {
   AIJobRepository,
   AICacheRepository,
@@ -14,7 +15,7 @@ import type { AIFeature, JobHandler } from '../orchestrator-config.js';
 const mockJobRepository = {
   create: vi.fn(),
   findById: vi.fn(),
-  findByInputHash: vi.fn(),
+  findActiveByKey: vi.fn(),
   findByUserId: vi.fn(),
   update: vi.fn(),
   countByUserAndFeature: vi.fn(),
@@ -99,6 +100,7 @@ describe('AIOrchestrator', () => {
       createdAt: new Date(),
     });
 
+    mockJobRepository.findActiveByKey.mockResolvedValue(null);
     mockCacheRepository.findByKey.mockResolvedValue(null);
     mockCacheRepository.create.mockResolvedValue({});
     mockUsageRepository.create.mockResolvedValue({});
@@ -182,6 +184,64 @@ describe('AIOrchestrator', () => {
       expect(mockCacheRepository.findByKey).not.toHaveBeenCalled();
     });
 
+    it('should return the in-flight job instead of creating a new one on a duplicate submit (double-click / rapid repeat / retry after timeout)', async () => {
+      mockJobRepository.findActiveByKey.mockResolvedValue({
+        id: 'in-flight-job',
+        userId: 'user-1',
+        feature: 'analyze_vacancy',
+        status: 'PROCESSING',
+        createdAt: new Date(),
+      });
+
+      const handler = createMockHandler('analyze_vacancy');
+      const handlers = new Map<AIFeature, JobHandler>([['analyze_vacancy', handler]]);
+      const dupOrchestrator = new AIOrchestrator(
+        {
+          aiProvider: mockProvider as unknown as AIProvider,
+          aiJobRepository: mockJobRepository as unknown as AIJobRepository,
+          aiCacheRepository: mockCacheRepository as unknown as AICacheRepository,
+          aiUsageRepository: mockUsageRepository as unknown as AIUsageRepository,
+          aiProviderConfigRepository: mockProviderConfigRepository as unknown as AIProviderConfigRepository,
+          aiBudgetRepository: mockBudgetRepository as unknown as AIBudgetRepository,
+          logger: mockLogger,
+        },
+        { redisUrl: 'redis://localhost:6379', defaultProvider: 'test-provider', defaultModel: 'test-model', budgetCheckEnabled: false },
+        handlers
+      );
+
+      const result = await dupOrchestrator.execute({
+        feature: 'analyze_vacancy',
+        userId: 'user-1',
+        input: { vacancyId: 'v1' },
+        inputHash: 'hash-1',
+      });
+
+      expect(result).toEqual({ jobId: 'in-flight-job', status: 'queued', cached: false });
+      expect(mockJobRepository.create).not.toHaveBeenCalled();
+      expect(handler.execute).not.toHaveBeenCalled();
+    });
+
+    it('should return the winning job instead of throwing when two parallel identical requests race past the in-flight check and the DB unique constraint rejects the second insert', async () => {
+      mockJobRepository.create.mockRejectedValueOnce(new DuplicateAIJobError('winner-job'));
+      mockJobRepository.findById.mockResolvedValue({
+        id: 'winner-job',
+        userId: 'user-1',
+        feature: 'analyze_vacancy',
+        status: 'PROCESSING',
+        createdAt: new Date(),
+      });
+
+      const result = await orchestrator.execute({
+        feature: 'analyze_vacancy',
+        userId: 'user-1',
+        input: { vacancyId: 'v1' },
+        inputHash: 'hash-1',
+      });
+
+      expect(result).toEqual({ jobId: 'winner-job', status: 'queued', cached: false });
+      expect(mockJobRepository.findById).toHaveBeenCalledWith('winner-job');
+    });
+
     it('should return failed status when handler not found', async () => {
       const result = await orchestrator.execute({
         feature: 'unknown_feature' as AIFeature,
@@ -214,6 +274,26 @@ describe('AIOrchestrator', () => {
         })
       );
       expect(mockUsageRepository.create.mock.calls[0][0].estimatedCost).toBeGreaterThan(0);
+    });
+
+    it('should persist token usage and cost on the AI job record for dashboard recent jobs', async () => {
+      await orchestrator.execute({
+        feature: 'analyze_vacancy',
+        userId: 'user-1',
+        input: { vacancyId: 'v1' },
+        inputHash: 'hash-1',
+      });
+
+      expect(mockJobRepository.update).toHaveBeenCalledWith(
+        'job-1',
+        expect.objectContaining({
+          status: 'COMPLETED',
+          tokensIn: MOCK_USAGE.promptTokens,
+          tokensOut: MOCK_USAGE.completionTokens,
+          totalTokens: MOCK_USAGE.totalTokens,
+          estimatedCost: expect.any(Number),
+        })
+      );
     });
 
     it('should write the result to the persistent cache after a non-cached execution', async () => {

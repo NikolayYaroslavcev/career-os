@@ -1,4 +1,5 @@
 import type { AtsAdapter, AtsConfig, AtsJob } from './base-adapter.js';
+import { extractTechnologies } from './technology-keywords.js';
 
 export class CustomHtmlAdapter implements AtsAdapter {
   readonly atsType = 'CUSTOM_HTML' as const;
@@ -129,7 +130,7 @@ export class CustomHtmlAdapter implements AtsAdapter {
       description,
       url,
       location: typeof location === 'string' ? location : undefined,
-      technologies: this.extractTechnologies(description),
+      technologies: extractTechnologies(description),
       publishedAt: typeof data.datePosted === 'string' ? new Date(data.datePosted) : undefined,
     };
   }
@@ -149,25 +150,5 @@ export class CustomHtmlAdapter implements AtsAdapter {
     if (url.startsWith('http')) return url;
     const base = new URL(baseUrl);
     return new URL(url, base.origin).toString();
-  }
-
-  private extractTechnologies(description: string): string[] {
-    const techPatterns = [
-      /typescript|javascript|python|java|golang|go|rust|ruby|php|c\+\+|c#|swift|kotlin/i,
-      /react|vue|angular|svelte|next\.?js|nuxt/i,
-      /node\.?js|deno|bun/i,
-      /aws|gcp|azure|docker|kubernetes|k8s/i,
-      /postgresql|mysql|mongodb|redis|elasticsearch/i,
-    ];
-
-    const technologies: string[] = [];
-    for (const pattern of techPatterns) {
-      const matches = description.match(pattern);
-      if (matches) {
-        technologies.push(...matches.map((m) => m.toLowerCase()));
-      }
-    }
-
-    return [...new Set(technologies)];
   }
 }

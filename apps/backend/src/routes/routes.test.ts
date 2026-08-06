@@ -18,10 +18,17 @@ const { mockAuthService } = vi.hoisted(() => ({
       refreshToken: 'mock-refresh',
     }),
     logout: vi.fn().mockResolvedValue(undefined),
+    logoutAll: vi.fn().mockResolvedValue(undefined),
     getUserById: vi.fn().mockResolvedValue({
       id: 'user-id',
       email: 'test@example.com',
       firstName: 'John',
+      lastName: 'Doe',
+    }),
+    updateProfile: vi.fn().mockResolvedValue({
+      id: 'user-id',
+      email: 'test@example.com',
+      firstName: 'Jane',
       lastName: 'Doe',
     }),
   },
@@ -93,6 +100,12 @@ vi.mock('../container.js', () => ({
     applicationService: {},
     services: {
       auth: mockAuthService,
+      workspace: {
+        listForUser: vi.fn().mockResolvedValue([{ id: 'workspace-id', name: 'Test Workspace', role: 'OWNER' }]),
+        create: vi.fn().mockResolvedValue({ id: 'workspace-id', name: 'Test Workspace', role: 'OWNER' }),
+        inviteMember: vi.fn().mockResolvedValue(undefined),
+        updateMemberRole: vi.fn().mockResolvedValue(undefined),
+      },
       searchProfile: {},
       providerSearch: {},
       aiMatching: {},
@@ -118,6 +131,10 @@ vi.mock('../container.js', () => ({
       telegramLinking: {},
       careerIntelligence: {},
       resumeVersionIntelligence: {},
+      tailoringRequest: {
+        requestTailoring: vi.fn().mockResolvedValue({ jobId: '', status: 'queued', currentStage: 'QUEUED', cached: false }),
+        getStatusById: vi.fn().mockResolvedValue({ jobId: '', status: 'queued', currentStage: 'QUEUED', cached: false }),
+      },
     },
   }),
 }));
@@ -343,6 +360,30 @@ describe('API Routes', () => {
 
       expect(response.statusCode).toBe(400);
     });
+
+    it('POST /api/v1/auth/logout-all should require authentication', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/logout-all',
+      });
+
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('POST /api/v1/auth/logout-all should revoke all of the authenticated user\'s refresh tokens', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/logout-all',
+        headers: {
+          authorization: 'Bearer valid-token',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body).toEqual({ success: true });
+      expect(mockAuthService.logoutAll).toHaveBeenCalledWith('user-id');
+    });
   });
 
   describe('User endpoints (protected)', () => {
@@ -372,6 +413,66 @@ describe('API Routes', () => {
       });
 
       expect(response.statusCode).toBe(200);
+    });
+
+    it('PUT /api/v1/users/me should apply the submitted profile changes', async () => {
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/users/me',
+        headers: {
+          authorization: 'Bearer valid-token',
+        },
+        payload: { firstName: 'Jane', lastName: 'Doe' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.firstName).toBe('Jane');
+      expect(mockAuthService.updateProfile).toHaveBeenCalledWith('user-id', { firstName: 'Jane', lastName: 'Doe' });
+    });
+
+    it('PUT /api/v1/users/me should require authentication', async () => {
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/users/me',
+        payload: { firstName: 'Jane' },
+      });
+
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('PUT /api/v1/users/me should reject an empty firstName', async () => {
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/users/me',
+        headers: {
+          authorization: 'Bearer valid-token',
+        },
+        payload: { firstName: '' },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('PUT /api/v1/users/me should accept a partial update with only firstName', async () => {
+      mockAuthService.updateProfile.mockResolvedValueOnce({
+        id: 'user-id',
+        email: 'test@example.com',
+        firstName: 'Jane',
+        lastName: 'Doe',
+      });
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/users/me',
+        headers: {
+          authorization: 'Bearer valid-token',
+        },
+        payload: { firstName: 'Jane' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockAuthService.updateProfile).toHaveBeenCalledWith('user-id', { firstName: 'Jane' });
     });
   });
 
@@ -1222,18 +1323,18 @@ describe('API Routes', () => {
       expect(response.statusCode).toBe(401);
     });
 
-    it('POST /api/v1/applications/:id/tailor-resume should persist the result linked to the vacancy and application, and expose it via GET /api/v1/ai/jobs', async () => {
+    it('POST /api/v1/applications/:id/tailor-resume should enqueue the async tailoring pipeline (ADR-031)', async () => {
       const container = (
         app as unknown as {
           container: {
             repositories: {
               vacancy: { findById: ReturnType<typeof vi.fn> };
               resume: { findById: ReturnType<typeof vi.fn> };
-              company: { findById: ReturnType<typeof vi.fn> };
-              aiJob: { update: ReturnType<typeof vi.fn>; findByUserId: ReturnType<typeof vi.fn> };
             };
-            services: { applicationCrm: { getOwned: ReturnType<typeof vi.fn> } };
-            aiOrchestrator: { execute: ReturnType<typeof vi.fn> };
+            services: {
+              applicationCrm: { getOwned: ReturnType<typeof vi.fn> };
+              tailoringRequest: { requestTailoring: ReturnType<typeof vi.fn> };
+            };
           };
         }
       ).container;
@@ -1245,12 +1346,11 @@ describe('API Routes', () => {
       });
       container.repositories.vacancy.findById = vi.fn().mockResolvedValue(vacancyFixture);
       container.repositories.resume.findById = vi.fn().mockResolvedValue(resumeFixture);
-      container.repositories.company.findById = vi.fn().mockResolvedValue(null);
-      container.aiOrchestrator.execute = vi.fn().mockResolvedValue({
-        jobId: 'job-1',
-        status: 'completed',
+      container.services.tailoringRequest.requestTailoring = vi.fn().mockResolvedValue({
+        jobId: `${RESUME_ID}:${VACANCY_ID}`,
+        status: 'queued',
+        currentStage: 'QUEUED',
         cached: false,
-        result: { tailoredResume: 'Tailored text', emphasizedSkills: ['TypeScript'] },
       });
 
       const response = await app.inject({
@@ -1262,20 +1362,30 @@ describe('API Routes', () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
-      expect(body.result.tailoredResume).toBe('Tailored text');
-      expect(container.repositories.aiJob.update).toHaveBeenCalledWith('job-1', {
-        vacancyId: VACANCY_ID,
-        applicationId: APP_ID,
-      });
+      expect(body.status).toBe('queued');
+      expect(body.jobId).toBe(`${RESUME_ID}:${VACANCY_ID}`);
+      expect(container.services.tailoringRequest.requestTailoring).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-id',
+          resumeId: RESUME_ID,
+          vacancyId: VACANCY_ID,
+          applicationId: APP_ID,
+        })
+      );
+    });
+
+    it('GET /api/v1/ai/jobs should list AIJob history for a vacancy (cover-letter/analyze-vacancy features)', async () => {
+      const container = (
+        app as unknown as { container: { repositories: { aiJob: { findByUserId: ReturnType<typeof vi.fn> } } } }
+      ).container;
 
       container.repositories.aiJob.findByUserId = vi.fn().mockResolvedValue([
         {
           id: 'job-1',
-          feature: 'tailor_resume',
+          feature: 'cover_letter',
           status: 'COMPLETED',
-          result: { tailoredResume: 'Tailored text' },
+          result: { coverLetter: 'Dear hiring manager...' },
           vacancyId: VACANCY_ID,
-          applicationId: APP_ID,
           createdAt: new Date('2026-01-01'),
         },
       ]);
@@ -1293,7 +1403,7 @@ describe('API Routes', () => {
       );
       const historyBody = JSON.parse(historyResponse.payload);
       expect(historyBody.jobs).toHaveLength(1);
-      expect(historyBody.jobs[0].result.tailoredResume).toBe('Tailored text');
+      expect(historyBody.jobs[0].result.coverLetter).toBe('Dear hiring manager...');
     });
 
     it('POST /api/v1/applications/:id/tailor-resume should reject a caller who does not own the application', async () => {

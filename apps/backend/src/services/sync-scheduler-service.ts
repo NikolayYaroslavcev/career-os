@@ -54,11 +54,9 @@ export interface SyncAllResult {
 }
 
 const DEFAULT_SYNC_INTERVALS: Record<string, number> = {
-  remote_ok: 60 * 60 * 1000,
   hh: 60 * 60 * 1000,
   adzuna: 60 * 60 * 1000,
   remotive: 60 * 60 * 1000,
-  himalayas: 2 * 60 * 60 * 1000,
   arbeitnow: 60 * 60 * 1000,
   jobicy: 60 * 60 * 1000,
   we_work_remotely: 2 * 60 * 60 * 1000,
@@ -74,6 +72,14 @@ const DEFAULT_SYNC_INTERVALS: Record<string, number> = {
   smartrecruiters: 60 * 60 * 1000,
   recruitee: 60 * 60 * 1000,
   comeet: 60 * 60 * 1000,
+  personio: 60 * 60 * 1000,
+  workable: 60 * 60 * 1000,
+  telegram: 15 * 60 * 1000,
+  linkedin: 60 * 60 * 1000,
+  pyjobs: 60 * 60 * 1000,
+  django_jobs: 2 * 60 * 60 * 1000,
+  speedrun: 60 * 60 * 1000,
+  france_travail: 60 * 60 * 1000,
 };
 
 function statusKey(workspaceId: string, providerId: string): string {
@@ -95,6 +101,14 @@ export class SyncSchedulerService {
     private readonly metrics: MetricsCollector,
     private readonly defaultIntervalMs: number = 60 * 60 * 1000,
     providerConfigRepo?: ProviderConfigRepo,
+    /**
+     * Opt-in, provider-agnostic hook fired after a provider's sync()
+     * completes successfully. Lets the container attach provider-specific
+     * side effects (e.g. Phase 2.5's SocialMessage ingestion for 'telegram',
+     * ADR-035 Phase 3's vacancy discovery bridge).
+     * Receives the providerId and the normalized vacancies from this sync batch.
+     */
+    private readonly onProviderSynced?: (providerId: string, vacancies: readonly NormalizedVacancy[]) => Promise<void>,
   ) {
     this.providerConfigRepo = providerConfigRepo ?? null;
   }
@@ -216,6 +230,20 @@ export class SyncSchedulerService {
       this.metrics.incrementCounter('careeros.sync.success', 1, { providerId });
       this.logger.info('Provider sync completed', { providerId, jobsSynced, durationMs });
 
+      if (this.onProviderSynced) {
+        try {
+          await this.onProviderSynced(providerId, result.data.imported);
+        } catch (hookError) {
+          // Best-effort side effect — must never turn a successful Vacancy
+          // sync into a reported failure.
+          this.logger.warn('onProviderSynced hook failed', {
+            providerId,
+            operation: 'onProviderSynced',
+            error: hookError instanceof Error ? hookError.message : String(hookError),
+          });
+        }
+      }
+
       return { status: 'success', jobsSynced, durationMs };
     } catch (error) {
       const durationMs = Date.now() - startTime;
@@ -289,7 +317,7 @@ export class SyncSchedulerService {
     const providerId = normalized.source as VacancySource;
     const externalId = normalized.sourceId;
 
-    const existingSource = await this.vacancySourceRepository.findByProviderAndExternalId(providerId, externalId);
+    const existingSource = await this.vacancySourceRepository.findByProviderAndExternalId(providerId, externalId, workspaceId);
     if (existingSource) {
       existingSource.updateLastSeen();
       await this.vacancySourceRepository.save(existingSource);
@@ -297,7 +325,7 @@ export class SyncSchedulerService {
     }
 
     const company = await this.findOrCreateCompany(normalized.companyName, workspaceId);
-    const canonical = await this.vacancyRepository.findByTitleAndCompany(normalized.title, company.id);
+    const canonical = await this.vacancyRepository.findByTitleAndCompany(normalized.title, company.id, workspaceId);
 
     if (canonical) {
       const source = VacancySourceEntity.create({
@@ -317,7 +345,7 @@ export class SyncSchedulerService {
         await this.vacancySourceRepository.save(source);
       }
 
-      await this.mergeVacancyData(canonical.id, normalized, providerId);
+      await this.mergeVacancyData(canonical.id, normalized, providerId, workspaceId);
       return true;
     }
 
@@ -342,6 +370,7 @@ export class SyncSchedulerService {
     vacancyId: VacancyId,
     normalized: NormalizedVacancy,
     newSource: VacancySource,
+    workspaceId: string,
   ): Promise<void> {
     const vacancy = await this.vacancyRepository.findById(vacancyId);
     if (!vacancy) return;
@@ -368,7 +397,7 @@ export class SyncSchedulerService {
         }));
       }
 
-      await this.vacancyRepository.save(vacancy, { workspaceId: '' });
+      await this.vacancyRepository.save(vacancy, { workspaceId });
     }
   }
 
@@ -394,7 +423,7 @@ export class SyncSchedulerService {
   }
 
   private async findOrCreateCompany(name: string, workspaceId: string): Promise<Company> {
-    const existing = await this.companyRepository.findByName(name);
+    const existing = await this.companyRepository.findByName(name, workspaceId);
     if (existing) return existing;
     const { Company } = await import('@careeros/career');
     const company = Company.create({ id: createCompanyId(crypto.randomUUID()), name });

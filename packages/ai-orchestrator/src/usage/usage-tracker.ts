@@ -42,9 +42,9 @@ export class UsageTracker {
   }
 
   async getMonthUsage(userId: string): Promise<UsageStats> {
-    const monthAgo = new Date();
-    monthAgo.setMonth(monthAgo.getMonth() - 1);
-    const summary = await this.repository.getUsageSummary(userId, monthAgo);
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const summary = await this.repository.getUsageSummary(userId, monthStart);
     return this.mapToUsageStats(summary);
   }
 
@@ -55,15 +55,15 @@ export class UsageTracker {
   }
 
   async getTotalTokensThisMonth(userId: string): Promise<number> {
-    const monthAgo = new Date();
-    monthAgo.setMonth(monthAgo.getMonth() - 1);
-    return this.repository.getTotalTokensSince(userId, monthAgo);
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    return this.repository.getTotalTokensSince(userId, monthStart);
   }
 
   async getTotalCostThisMonth(userId: string): Promise<number> {
-    const monthAgo = new Date();
-    monthAgo.setMonth(monthAgo.getMonth() - 1);
-    return this.repository.getTotalCostSince(userId, monthAgo);
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    return this.repository.getTotalCostSince(userId, monthStart);
   }
 
   async getTotalTokensSince(userId: string, since: Date): Promise<number> {

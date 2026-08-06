@@ -12,13 +12,16 @@ import { RefreshCw, CheckCircle2, XCircle, Clock, Zap, Globe } from 'lucide-reac
 import { cn } from '@/lib/utils';
 
 const PROVIDER_NAMES: Record<string, string> = {
-  remote_ok: 'RemoteOK', hh: 'HeadHunter', adzuna: 'Adzuna', greenhouse: 'Greenhouse', lever: 'Lever',
+  hh: 'HeadHunter', adzuna: 'Adzuna', greenhouse: 'Greenhouse', lever: 'Lever',
   ashby: 'Ashby', workday: 'Workday', teamtailor: 'Teamtailor', remotive: 'Remotive',
-  himalayas: 'Himalayas', arbeitnow: 'Arbeitnow', jobicy: 'Jobicy',
+  arbeitnow: 'Arbeitnow', jobicy: 'Jobicy',
   we_work_remotely: 'We Work Remotely', working_nomads: 'Working Nomads',
   nodesk: 'NoDesk', hn_hiring: 'HN Who Is Hiring',
   smartrecruiters: 'SmartRecruiters', recruitee: 'Recruitee', comeet: 'Comeet',
   habr_career: 'Habr Career', superjob: 'SuperJob', telegram: 'Telegram',
+  personio: 'Personio', workable: 'Workable',
+  pyjobs: 'PyJobs', django_jobs: 'Django Jobs', speedrun: 'a16z Speedrun',
+  france_travail: 'France Travail',
 };
 
 const STATUS_STYLES = {

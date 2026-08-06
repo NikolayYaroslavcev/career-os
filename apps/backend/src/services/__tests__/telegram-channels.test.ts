@@ -263,12 +263,12 @@ describe('ProviderManagementService - Provider Enable/Disable', () => {
   });
 
   it('should check if provider is enabled', async () => {
-    const enabled = await service.isProviderEnabled('remote_ok');
+    const enabled = await service.isProviderEnabled('hh');
     expect(enabled).toBe(true);
   });
 
   it('should list all providers', async () => {
-    const providers = await service.getAllProviders();
+    const providers = await service.getAllProviders('workspace-1');
     expect(Array.isArray(providers)).toBe(true);
   });
 });

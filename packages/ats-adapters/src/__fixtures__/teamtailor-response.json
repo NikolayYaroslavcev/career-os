@@ -1,0 +1,45 @@
+{
+  "data": [
+    {
+      "id": "998877",
+      "type": "jobs",
+      "attributes": {
+        "title": "Backend Engineer",
+        "body": "<p>Join our backend team building the core platform.</p>",
+        "pitch": "Join our backend team",
+        "created-at": "2026-07-02T08:00:00.000Z",
+        "locationName": "Remote - Sweden",
+        "remote-status": "fully-remote",
+        "employment-type": "full_time",
+        "employment-level": "senior",
+        "status": "published"
+      },
+      "relationships": {
+        "department": { "data": { "id": "dep-1" } },
+        "role": { "data": { "id": "role-1" } }
+      },
+      "links": { "careersite-job-url": "https://careers.acme.com/jobs/998877-backend-engineer" }
+    },
+    {
+      "id": "998878",
+      "type": "jobs",
+      "attributes": {
+        "title": "Office Coordinator",
+        "body": "<p>Coordinate day-to-day office operations at our Stockholm HQ.</p>",
+        "created-at": "2026-07-01T08:00:00.000Z",
+        "locationName": "",
+        "remote-status": "hybrid",
+        "employment-type": "full_time",
+        "employment-level": "junior",
+        "status": "published"
+      },
+      "links": { "careersite-job-url": "https://careers.acme.com/jobs/998878-office-coordinator" }
+    }
+  ],
+  "included": [
+    { "id": "dep-1", "type": "departments", "attributes": { "name": "Engineering" } },
+    { "id": "role-1", "type": "roles", "attributes": { "name": "Backend" } }
+  ],
+  "meta": { "record-count": 2 },
+  "links": {}
+}

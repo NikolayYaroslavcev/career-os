@@ -5,7 +5,28 @@ export interface ResumeExperienceContext {
   readonly company: string;
   readonly position: string;
   readonly description: string;
+  readonly bullets: readonly string[];
   readonly technologies: readonly string[];
+}
+
+/**
+ * Best-effort split of a job-level description blob into bullet-like lines,
+ * for the fallback_raw path only (where no AI-extracted `bullets` array
+ * exists). Strips common bullet markers; each non-empty line becomes one
+ * "bullet" heuristically — not as reliable as real extraction, but good
+ * enough for evidence tracing until StructuredResume extraction runs.
+ */
+function splitDescriptionIntoBullets(description: string): readonly string[] {
+  return description
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[\s•\-*·]+/, '').trim())
+    .filter((line) => line.length > 0);
+}
+
+export interface ResumeEducationContext {
+  readonly institution: string;
+  readonly degree: string;
+  readonly field: string;
 }
 
 export interface ResumeAIContext {
@@ -14,6 +35,10 @@ export interface ResumeAIContext {
   readonly skills: readonly string[];
   readonly technologies: readonly string[];
   readonly experience: readonly ResumeExperienceContext[];
+  readonly education: readonly ResumeEducationContext[];
+  readonly seniorityLevel?: string;
+  readonly certifications: readonly string[];
+  readonly languages: readonly string[];
   readonly totalYearsOfExperience: number;
   readonly promptText: string;
   readonly estimatedTokens: number;
@@ -138,6 +163,7 @@ export class ResumeContextProviderImpl implements ResumeContextProvider {
       company: exp.company,
       position: exp.position,
       description: exp.description,
+      bullets: exp.bullets.length > 0 ? exp.bullets : splitDescriptionIntoBullets(exp.description),
       technologies: exp.technologies,
     }));
 
@@ -149,6 +175,14 @@ export class ResumeContextProviderImpl implements ResumeContextProvider {
       skills: structured.skills,
       technologies: structured.technologies,
       experience,
+      education: structured.education.map((edu) => ({
+        institution: edu.institution,
+        degree: edu.degree,
+        field: edu.field,
+      })),
+      seniorityLevel: structured.seniorityLevel,
+      certifications: structured.certifications,
+      languages: structured.languages,
       totalYearsOfExperience: structured.totalYearsOfExperience ?? estimateExperienceYears(structured.experience),
       promptText,
       estimatedTokens: this.deps.tokenEstimator(promptText),
@@ -171,8 +205,16 @@ export class ResumeContextProviderImpl implements ResumeContextProvider {
         company: exp.company,
         position: exp.position,
         description: exp.description,
+        bullets: splitDescriptionIntoBullets(exp.description),
         technologies: exp.technologies.map((t) => t.name),
       })),
+      education: resume.education.map((edu) => ({
+        institution: edu.institution,
+        degree: edu.degree,
+        field: edu.field,
+      })),
+      certifications: [],
+      languages: [],
       totalYearsOfExperience: resume.totalYearsOfExperience,
       promptText,
       estimatedTokens: this.deps.tokenEstimator(promptText),

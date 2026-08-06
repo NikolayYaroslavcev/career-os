@@ -1,5 +1,6 @@
 import type { Mapper, MappedJob } from '../../interfaces/mapper.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
+import { decodeHtmlEntities } from '../../shared/html-entities.js';
 
 export class SJMapper implements Mapper {
   readonly providerId = 'superjob';
@@ -32,24 +33,17 @@ export class SJMapper implements Mapper {
   }
 
   private normalizeTitle(title: string): string {
-    return title.replace(/\s+/g, ' ').trim();
+    return decodeHtmlEntities(title).replace(/\s+/g, ' ').trim();
   }
 
   private normalizeDescription(description: string): string {
-    return description
-      .replace(/<[^>]*>/g, '')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
+    return decodeHtmlEntities(description.replace(/<[^>]*>/g, ''))
       .replace(/\s+/g, ' ')
       .trim();
   }
 
   private normalizeCompanyName(companyName: string): string {
-    return companyName.replace(/\s+/g, ' ').trim();
+    return decodeHtmlEntities(companyName).replace(/\s+/g, ' ').trim();
   }
 
   private normalizeLocation(location: string): MappedJob['location'] {

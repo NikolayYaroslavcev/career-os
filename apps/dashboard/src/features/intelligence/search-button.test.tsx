@@ -111,7 +111,7 @@ describe('SearchButton', () => {
       id: 'v1',
       title: 'Backend Engineer',
       companyId: 'c1',
-      source: 'remote_ok',
+      source: 'hh',
       sourceUrl: null,
       location: 'Remote',
       remote: 'REMOTE',
@@ -192,7 +192,7 @@ describe('SearchButton', () => {
       id: 'v2',
       title: 'Frontend Engineer',
       companyId: 'c2',
-      source: 'remote_ok',
+      source: 'hh',
       sourceUrl: null,
       location: 'Remote',
       remote: 'REMOTE',
@@ -262,6 +262,103 @@ describe('SearchButton', () => {
     expect(screen.getByText('Solid frontend fit.')).toBeInTheDocument();
   }, 10000);
 
+  it('updates the summary stats panel as polling resolves pending vacancies into matches', async () => {
+    mockListSearchProfiles.mockResolvedValue({
+      searchProfiles: [
+        {
+          id: '1',
+          name: 'Test Profile',
+          isActive: true,
+          desiredPositions: ['Developer'],
+          desiredTechnologies: ['TypeScript'],
+          experienceLevel: 'senior',
+          desiredSalary: null,
+          desiredLocations: [],
+          isRemoteOnly: false,
+          userId: 'user-1',
+          createdAt: '2024-01-01',
+          updatedAt: '2024-01-01',
+        },
+      ],
+    });
+
+    const vacancy = {
+      id: 'v4',
+      title: 'Stats Panel Engineer',
+      companyId: 'c4',
+      source: 'hh',
+      sourceUrl: null,
+      location: 'Remote',
+      remote: 'REMOTE',
+      salaryMin: null,
+      salaryMax: null,
+      currency: null,
+      publishedAt: null,
+    };
+
+    vi.mocked(runSearch).mockResolvedValue({
+      searchProfileId: 'profile-1',
+      vacancies: [{ status: 'pending', vacancy, recommendation: null }],
+      stats: { totalVacancies: 1, matchedVacancies: 0, pendingVacancies: 1, averageScore: 0 },
+      aiEnabled: true,
+    });
+
+    renderWithI18n(<SearchButton />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /run ai matching/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /run ai matching/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Stats Panel Engineer')).toBeInTheDocument();
+    });
+    // Initial snapshot from runSearch: 1 pending, 0 matched.
+    expect(screen.getByText('Pending').previousSibling?.textContent).toBe('1');
+    expect(screen.getByText('Matched').previousSibling?.textContent).toBe('0');
+
+    vi.mocked(pollMatchStatus).mockResolvedValue({
+      vacancies: [
+        {
+          vacancyId: 'v4',
+          status: 'matched',
+          recommendation: {
+            matchResultId: 'match-4',
+            vacancy,
+            score: 0.5,
+            confidence: '0.7',
+            recommendation: 'good_match',
+            summary: 'Decent fit.',
+            strengths: [],
+            weaknesses: [],
+            requiredSkills: [],
+            missingSkills: [],
+            seniorityEstimation: 'Middle',
+            remotePolicy: 'Remote',
+            salaryObservations: null,
+            reasoning: '',
+            generatedAt: '2026-07-20T00:00:00.000Z',
+            matchingAlgorithmVersion: '1.0.0',
+          },
+        },
+      ],
+    });
+
+    await waitFor(
+      () => {
+        expect(screen.getByText('Decent fit.')).toBeInTheDocument();
+      },
+      { timeout: 6000 }
+    );
+
+    // Once polling resolves the pending vacancy, the summary panel must
+    // reflect it — not stay frozen at the initial runSearch() snapshot.
+    expect(screen.getByText('Pending').previousSibling?.textContent).toBe('0');
+    expect(screen.getByText('Matched').previousSibling?.textContent).toBe('1');
+    expect(screen.getByText('Avg Score').previousSibling?.textContent).toBe('50%');
+  }, 10000);
+
   it('restores the last search results after the component remounts (e.g. navigating away and back)', async () => {
     mockListSearchProfiles.mockResolvedValue({
       searchProfiles: [
@@ -286,7 +383,7 @@ describe('SearchButton', () => {
       id: 'v3',
       title: 'Platform Engineer',
       companyId: 'c3',
-      source: 'remote_ok',
+      source: 'hh',
       sourceUrl: null,
       location: 'Remote',
       remote: 'REMOTE',

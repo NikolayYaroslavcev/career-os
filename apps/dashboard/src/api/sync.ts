@@ -124,3 +124,15 @@ export async function syncAllProviders(): Promise<SyncAllResult> {
 export async function syncProvider(providerId: string): Promise<{ status: string; jobsSynced: number; error?: string; durationMs: number }> {
   return apiClient(`/api/v1/sync/${providerId}`, { method: 'POST' });
 }
+
+export async function recordVacancyView(vacancyId: string): Promise<void> {
+  await apiClient(`/api/v1/vacancies/${vacancyId}/view`, { method: 'POST' });
+}
+
+export async function recordVacancySave(vacancyId: string): Promise<void> {
+  await apiClient(`/api/v1/vacancies/${vacancyId}/save`, { method: 'POST' });
+}
+
+export async function recordVacancyHide(vacancyId: string): Promise<void> {
+  await apiClient(`/api/v1/vacancies/${vacancyId}/hide`, { method: 'POST' });
+}

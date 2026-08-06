@@ -107,7 +107,7 @@ describe('PrismaVacancyRepository', () => {
       publishedAt: persisted.publishedAt ?? null,
     });
 
-    const found = await repository.findByTitleAndCompany('Senior Platform Engineer', createCompanyId('22222222-2222-4222-8222-222222222222'));
+    const found = await repository.findByTitleAndCompany('Senior Platform Engineer', createCompanyId('22222222-2222-4222-8222-222222222222'), 'workspace-1');
 
     expect(found?.id).toBe(vacancy.id);
   });

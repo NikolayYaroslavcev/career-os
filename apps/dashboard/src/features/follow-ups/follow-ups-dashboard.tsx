@@ -16,8 +16,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loading } from '@/components/ui/loading';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CheckCircle, ExternalLink } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
+import { pluralize } from '@/lib/i18n/pluralize';
 
 type FilterKey = 'all' | 'overdue' | 'today' | 'upcoming' | 'completed';
 const FILTERS: readonly FilterKey[] = ['all', 'overdue', 'today', 'upcoming', 'completed'];
@@ -117,9 +119,9 @@ export function FollowUpsDashboard(): React.JSX.Element {
         <Alert variant="destructive">
           <AlertDescription className="flex items-center justify-between gap-2">
             <span>{error}</span>
-            <button type="button" onClick={() => setError(null)} className="text-xs font-medium underline underline-offset-2 hover:no-underline">
+            <Button type="button" variant="link" size="xs" className="h-auto px-0" onClick={() => setError(null)}>
               {t('common.dismiss')}
-            </button>
+            </Button>
           </AlertDescription>
         </Alert>
       )}
@@ -163,17 +165,20 @@ export function FollowUpsDashboard(): React.JSX.Element {
             </div>
             <div>
               <p className="mb-1 text-xs text-muted-foreground">{t('followUpsPage.typeLabel')}</p>
-              <select
-                className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none"
-                value={type}
-                onChange={(e) => setType(e.target.value as FollowUpType)}
-              >
+              <Select value={type} onValueChange={(value) => value && setType(value as FollowUpType)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue>
+                    {(value: FollowUpType) => t(`followUpsPage.types.${value}`)}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
                 {TYPE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
+                  <SelectItem key={option} value={option}>
                     {t(`followUpsPage.types.${option}`)}
-                  </option>
+                  </SelectItem>
                 ))}
-              </select>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <p className="mb-1 text-xs text-muted-foreground">{t('followUpsPage.messageLabel')}</p>
@@ -271,7 +276,10 @@ function FollowUpCard({ item, locale, showComplete, onComplete, isCompleting, t 
           <p className="text-xs text-muted-foreground">
             {item.daysSinceApplied === 1
               ? t('followUpsPage.appliedOneDayAgo')
-              : t('followUpsPage.appliedDaysAgo', { count: item.daysSinceApplied })}
+              : t('followUpsPage.appliedDaysAgo', {
+                  count: item.daysSinceApplied,
+                  unit: pluralize(locale, item.daysSinceApplied, { one: t('followUpsPage.daysUnit.one'), few: t('followUpsPage.daysUnit.few'), many: t('followUpsPage.daysUnit.many') }),
+                })}
           </p>
         )}
 

@@ -1,11 +1,12 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Primary smoke test for the whole platform. Runs against a fully running
- * stack (dashboard + backend + worker + Postgres + Redis) — see the `e2e`
- * job in .github/workflows/ci.yml, which brings the stack up via
- * docker-compose before invoking this config. Locally, point
- * E2E_BASE_URL/E2E_API_URL at your own `docker compose up` stack.
+ * Playwright configuration for CareerOS E2E tests.
+ *
+ * Runs against a fully running stack (dashboard + backend + worker + Postgres + Redis).
+ * See the `e2e` job in .github/workflows/ci.yml, which brings the stack up via
+ * docker-compose.full.yml before invoking this config. Locally, point
+ * E2E_BASE_URL at your own `docker compose up` stack.
  */
 export default defineConfig({
   testDir: './tests',

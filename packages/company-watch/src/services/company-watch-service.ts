@@ -3,6 +3,9 @@ import { AtsAdapterRegistry } from '../adapters/adapter-registry.js';
 import { NormalizationService } from './normalization-service.js';
 import { DeduplicationService } from './deduplication-service.js';
 import { assertSafeUrl } from '../utils/url-safety.js';
+import { AtsHttpError } from '@careeros/ats-adapters';
+import { CompanyWatch } from '../domain/entities/company-watch.js';
+import { isRetirementDue, COMPANY_WATCH_PRIORITY_TRAILING_WINDOW_MS } from '../domain/health.js';
 
 export interface SyncResult {
   companyWatchId: string;
@@ -80,15 +83,20 @@ export class CompanyWatchService {
       // Create sync log
       await deduplicationService.createSyncLog(companyWatchId, stats);
 
-      // Update company sync status
-      const updatedCompany: CompanyWatchData = {
-        ...company,
-        lastSyncStatus: 'success',
-        lastSyncAt: new Date(),
-        lastSyncError: undefined,
-        updatedAt: new Date(),
-      };
-      await this.companyWatchRepo.update(updatedCompany);
+      // ADR-035 Phase 1: recompute health/priority on the reconstituted entity
+      // (previously unused at runtime — CompanyWatchService operated only on
+      // the CompanyWatchData DTO) rather than duplicating VacancySource's
+      // failure-counting logic inline.
+      const trailingWindowStart = new Date(Date.now() - COMPANY_WATCH_PRIORITY_TRAILING_WINDOW_MS);
+      const newJobsInTrailingWindow = await this.eventRepo.countByCompanyWatch(
+        companyWatchId,
+        'NEW_JOB',
+        trailingWindowStart
+      );
+      const entity = CompanyWatch.reconstitute({ ...company, atsType: company.atsType as AtsType });
+      entity.recordSyncSuccess(newJobsInTrailingWindow);
+      entity.updateSyncStatus('success');
+      await this.companyWatchRepo.update(entity.toProps());
 
       return {
         companyWatchId,
@@ -103,17 +111,20 @@ export class CompanyWatchService {
       const deduplicationService = new DeduplicationService(this.eventRepo, this.syncLogRepo);
       await deduplicationService.createFailedSyncLog(companyWatchId, errorMessage, durationMs);
 
-      // Update company sync status
+      // Update company sync status + health lifecycle (ADR-035 §7/§8).
+      // AtsHttpError is a transient, HTTP-level failure (rate limit, 5xx,
+      // network); anything else is treated as structural (adapter couldn't
+      // parse/understand the response) and fast-tracks to DEGRADED per §8.
       const company = await this.companyWatchRepo.findById(companyWatchId);
       if (company) {
-        const updatedCompany: CompanyWatchData = {
-          ...company,
-          lastSyncStatus: 'failed',
-          lastSyncAt: new Date(),
-          lastSyncError: errorMessage,
-          updatedAt: new Date(),
-        };
-        await this.companyWatchRepo.update(updatedCompany);
+        const isStructuralFailure = !(error instanceof AtsHttpError);
+        const entity = CompanyWatch.reconstitute({ ...company, atsType: company.atsType as AtsType });
+        entity.recordSyncFailure(isStructuralFailure);
+        entity.updateSyncStatus('failed', errorMessage);
+        if (isRetirementDue(entity.healthStatus, company.lastSuccessfulSyncAt)) {
+          entity.retire();
+        }
+        await this.companyWatchRepo.update(entity.toProps());
       }
 
       return {
@@ -127,26 +138,6 @@ export class CompanyWatchService {
         error: errorMessage,
       };
     }
-  }
-
-  async syncAll(): Promise<SyncResult[]> {
-    const activeCompanies = await this.companyWatchRepo.findAllActive();
-    const results: SyncResult[] = [];
-
-    for (const company of activeCompanies) {
-      if (this.shouldSync(company)) {
-        const result = await this.syncCompany(company.id);
-        results.push(result);
-      }
-    }
-
-    return results;
-  }
-
-  private shouldSync(company: CompanyWatchData): boolean {
-    if (!company.lastSyncAt) return true;
-    const elapsed = Date.now() - company.lastSyncAt.getTime();
-    return elapsed >= company.pollingInterval * 1000;
   }
 
   async getCompanyEvents(
@@ -174,7 +165,13 @@ export class CompanyWatchService {
     return this.companyWatchRepo.findAllByWorkspace(workspaceId);
   }
 
-  async addCompany(data: Omit<CompanyWatchData, 'id' | 'createdAt' | 'updatedAt'>) {
+  async addCompany(
+    data: Omit<
+      CompanyWatchData,
+      'id' | 'createdAt' | 'updatedAt' | 'consecutiveFailureCount' | 'healthStatus' | 'priorityScore'
+    > &
+      Partial<Pick<CompanyWatchData, 'consecutiveFailureCount' | 'healthStatus' | 'priorityScore'>>
+  ) {
     await assertSafeUrl(data.careerUrl);
     if (data.atsEndpoint) {
       await assertSafeUrl(data.atsEndpoint);
@@ -187,6 +184,9 @@ export class CompanyWatchService {
       id,
       createdAt: now,
       updatedAt: now,
+      consecutiveFailureCount: data.consecutiveFailureCount ?? 0,
+      healthStatus: data.healthStatus ?? 'ACTIVE',
+      priorityScore: data.priorityScore ?? 50,
     };
     return this.companyWatchRepo.create(company);
   }

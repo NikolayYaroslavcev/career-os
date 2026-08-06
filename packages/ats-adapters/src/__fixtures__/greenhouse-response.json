@@ -1,0 +1,43 @@
+{
+  "jobs": [
+    {
+      "id": 4028547,
+      "title": "Senior Backend Engineer",
+      "updated_at": "2026-07-10T12:00:00-04:00",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4028547",
+      "location": { "name": "Remote - US" },
+      "content": "<p>We are looking for a Senior Backend Engineer to join our platform team.</p><p>Requirements:</p><ul><li>5+ years of experience with distributed systems</li><li>Strong Go or Java skills</li></ul>",
+      "departments": [{ "id": 1, "name": "Engineering" }],
+      "metadata": [
+        { "id": 1, "name": "Technologies", "value": "Go, Kubernetes, PostgreSQL" }
+      ],
+      "pay_input_ranges": [
+        { "min_cents": 15000000, "max_cents": 19000000, "currency_type": "USD" }
+      ]
+    },
+    {
+      "id": 4028548,
+      "title": "Product Designer",
+      "updated_at": "2026-07-09T09:30:00-04:00",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4028548",
+      "location": { "name": "New York, NY" },
+      "content": "<p>Join our design team to shape the product experience.</p>",
+      "departments": [{ "id": 2, "name": "Design" }],
+      "metadata": [
+        { "id": 2, "name": "Skills", "value": "Figma, Prototyping" }
+      ],
+      "pay_input_ranges": null
+    },
+    {
+      "id": 4028549,
+      "title": "Junior Frontend Developer",
+      "updated_at": "2026-07-08T15:45:00-04:00",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4028549",
+      "location": { "name": "Remote - EU" },
+      "content": "<p>Entry-level frontend role, great for a junior developer.</p><p>You will work with React and TypeScript.</p>",
+      "departments": [{ "id": 1, "name": "Engineering" }],
+      "metadata": null,
+      "pay_input_ranges": null
+    }
+  ]
+}

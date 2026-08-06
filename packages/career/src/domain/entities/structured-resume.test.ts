@@ -63,6 +63,7 @@ describe('StructuredResume', () => {
             position: 'Engineer',
             startDate: new Date('2020-01-01'),
             description: 'Built stuff',
+            bullets: ['Built stuff'],
             technologies: ['TypeScript'],
           },
         ],
@@ -75,6 +76,8 @@ describe('StructuredResume', () => {
             endDate: new Date('2016-06-01'),
           },
         ],
+        certifications: ['AWS Certified'],
+        languages: ['English — fluent'],
         createdAt: now,
         updatedAt: now,
       });
@@ -103,6 +106,8 @@ describe('StructuredResume', () => {
         technologies: [],
         experience: [],
         education: [],
+        certifications: [],
+        languages: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -133,6 +138,8 @@ describe('StructuredResume', () => {
         technologies: [],
         experience: [],
         education: [],
+        certifications: [],
+        languages: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -150,6 +157,8 @@ describe('StructuredResume', () => {
         technologies: [],
         experience: [],
         education: [],
+        certifications: [],
+        languages: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       });

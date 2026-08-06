@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CompanyWatchService } from '../company-watch-service.js';
 import { AtsAdapterRegistry } from '../../adapters/adapter-registry.js';
+import { AtsHttpError } from '@careeros/ats-adapters';
+import type { AtsAdapter, AtsJob } from '../../adapters/base-adapter.js';
 import type { CompanyWatchRepository, CompanyWatchData } from '../../domain/repositories/index.js';
-import type { CompanyWatchEventRepository } from '../../domain/repositories/company-watch-event-repository.js';
-import type { CompanyWatchSyncLogRepository } from '../../domain/repositories/company-watch-sync-log-repository.js';
+import type { CompanyWatchEventRepository, CompanyWatchEventData } from '../../domain/repositories/company-watch-event-repository.js';
+import type { CompanyWatchSyncLogRepository, CompanyWatchSyncLogData } from '../../domain/repositories/company-watch-sync-log-repository.js';
 
 class InMemoryCompanyWatchRepository implements CompanyWatchRepository {
   private readonly records = new Map<string, CompanyWatchData>();
@@ -157,5 +159,253 @@ describe('CompanyWatchService — SSRF protection', () => {
     await expect(
       service.updateCompany(company.id, workspaceId, { careerUrl: 'https://127.0.0.1/careers' })
     ).rejects.toThrow();
+  });
+});
+
+class InMemoryCompanyWatchEventRepository implements CompanyWatchEventRepository {
+  private readonly records = new Map<string, CompanyWatchEventData>();
+
+  async findById(id: string): Promise<CompanyWatchEventData | null> {
+    return this.records.get(id) ?? null;
+  }
+
+  async findAllByCompanyWatch(
+    companyWatchId: string,
+    options?: { type?: string; limit?: number; offset?: number }
+  ): Promise<CompanyWatchEventData[]> {
+    return [...this.records.values()].filter(
+      (e) => e.companyWatchId === companyWatchId && (!options?.type || e.type === options.type)
+    );
+  }
+
+  async create(event: CompanyWatchEventData): Promise<CompanyWatchEventData> {
+    this.records.set(event.id, event);
+    return event;
+  }
+
+  async update(event: CompanyWatchEventData): Promise<CompanyWatchEventData> {
+    this.records.set(event.id, event);
+    return event;
+  }
+
+  async delete(id: string): Promise<void> {
+    this.records.delete(id);
+  }
+
+  async countByCompanyWatch(companyWatchId: string, type?: string, since?: Date): Promise<number> {
+    return [...this.records.values()].filter(
+      (e) =>
+        e.companyWatchId === companyWatchId &&
+        (!type || e.type === type) &&
+        (!since || e.detectedAt >= since)
+    ).length;
+  }
+}
+
+class InMemoryCompanyWatchSyncLogRepository implements CompanyWatchSyncLogRepository {
+  private readonly records = new Map<string, CompanyWatchSyncLogData>();
+
+  async findById(id: string): Promise<CompanyWatchSyncLogData | null> {
+    return this.records.get(id) ?? null;
+  }
+
+  async findAllByCompanyWatch(companyWatchId: string): Promise<CompanyWatchSyncLogData[]> {
+    return [...this.records.values()].filter((l) => l.companyWatchId === companyWatchId);
+  }
+
+  async create(log: CompanyWatchSyncLogData): Promise<CompanyWatchSyncLogData> {
+    this.records.set(log.id, log);
+    return log;
+  }
+
+  async update(log: CompanyWatchSyncLogData): Promise<CompanyWatchSyncLogData> {
+    this.records.set(log.id, log);
+    return log;
+  }
+
+  async delete(id: string): Promise<void> {
+    this.records.delete(id);
+  }
+
+  async findLatestByCompanyWatch(): Promise<CompanyWatchSyncLogData | null> {
+    // Every test in this suite only ever runs one sync per company, so "no
+    // previous sync" (all jobs treated as NEW_JOB) is always the right answer.
+    return null;
+  }
+}
+
+function makeFakeAdapterRegistry(behavior: () => Promise<AtsJob[]>): AtsAdapterRegistry {
+  const adapter: AtsAdapter = {
+    atsType: 'CUSTOM_HTML',
+    fetchJobs: behavior,
+    fetchJob: async () => null,
+    ping: async () => true,
+  };
+  return { get: () => adapter } as unknown as AtsAdapterRegistry;
+}
+
+describe('CompanyWatchService — sync health lifecycle (ADR-035 Phase 1)', () => {
+  let repository: InMemoryCompanyWatchRepository;
+  let eventRepo: InMemoryCompanyWatchEventRepository;
+  let syncLogRepo: InMemoryCompanyWatchSyncLogRepository;
+  const workspaceId = 'workspace-1';
+
+  async function createCompany(): Promise<CompanyWatchData> {
+    const service = new CompanyWatchService(repository, eventRepo, syncLogRepo, new AtsAdapterRegistry());
+    return service.addCompany({
+      name: 'Acme',
+      aliases: [],
+      languages: ['en'],
+      tags: [],
+      atsType: 'CUSTOM_HTML',
+      careerUrl: 'https://93.184.216.34/careers',
+      pollingInterval: 3600,
+      active: true,
+      workspaceId,
+    });
+  }
+
+  beforeEach(() => {
+    repository = new InMemoryCompanyWatchRepository();
+    eventRepo = new InMemoryCompanyWatchEventRepository();
+    syncLogRepo = new InMemoryCompanyWatchSyncLogRepository();
+  });
+
+  it('a successful sync keeps healthStatus ACTIVE and resets consecutiveFailureCount', async () => {
+    const company = await createCompany();
+    const service = new CompanyWatchService(
+      repository,
+      eventRepo,
+      syncLogRepo,
+      makeFakeAdapterRegistry(async () => [])
+    );
+
+    const result = await service.syncCompany(company.id);
+
+    expect(result.success).toBe(true);
+    const updated = await repository.findById(company.id);
+    expect(updated?.healthStatus).toBe('ACTIVE');
+    expect(updated?.consecutiveFailureCount).toBe(0);
+  });
+
+  it('a transient (AtsHttpError) failure moves ACTIVE -> DEGRADED on the first occurrence', async () => {
+    const company = await createCompany();
+    const service = new CompanyWatchService(
+      repository,
+      eventRepo,
+      syncLogRepo,
+      makeFakeAdapterRegistry(async () => {
+        throw new AtsHttpError('rate limited', 429, 'Too Many Requests');
+      })
+    );
+
+    const result = await service.syncCompany(company.id);
+
+    expect(result.success).toBe(false);
+    const updated = await repository.findById(company.id);
+    expect(updated?.consecutiveFailureCount).toBe(1);
+    expect(updated?.healthStatus).toBe('DEGRADED');
+  });
+
+  it('3 consecutive transient failures move DEGRADED -> BROKEN', async () => {
+    const company = await createCompany();
+    const service = new CompanyWatchService(
+      repository,
+      eventRepo,
+      syncLogRepo,
+      makeFakeAdapterRegistry(async () => {
+        throw new AtsHttpError('server error', 500, 'Internal Server Error');
+      })
+    );
+
+    await service.syncCompany(company.id);
+    await service.syncCompany(company.id);
+    const result = await service.syncCompany(company.id);
+
+    expect(result.success).toBe(false);
+    const updated = await repository.findById(company.id);
+    expect(updated?.consecutiveFailureCount).toBe(3);
+    expect(updated?.healthStatus).toBe('BROKEN');
+  });
+
+  it('a structural (non-AtsHttpError) failure fast-tracks to BROKEN on the 2nd occurrence, not the 3rd', async () => {
+    const company = await createCompany();
+    const service = new CompanyWatchService(
+      repository,
+      eventRepo,
+      syncLogRepo,
+      makeFakeAdapterRegistry(async () => {
+        throw new TypeError('could not parse ATS response shape');
+      })
+    );
+
+    await service.syncCompany(company.id);
+    const result = await service.syncCompany(company.id);
+
+    expect(result.success).toBe(false);
+    const updated = await repository.findById(company.id);
+    expect(updated?.consecutiveFailureCount).toBe(2);
+    expect(updated?.healthStatus).toBe('BROKEN');
+  });
+
+  it('a success after being BROKEN recovers to ACTIVE and resets the failure count', async () => {
+    const company = await createCompany();
+    const failingService = new CompanyWatchService(
+      repository,
+      eventRepo,
+      syncLogRepo,
+      makeFakeAdapterRegistry(async () => {
+        throw new AtsHttpError('server error', 500, 'Internal Server Error');
+      })
+    );
+    await failingService.syncCompany(company.id);
+    await failingService.syncCompany(company.id);
+    await failingService.syncCompany(company.id);
+    const broken = await repository.findById(company.id);
+    expect(broken?.healthStatus).toBe('BROKEN');
+
+    const recoveringService = new CompanyWatchService(
+      repository,
+      eventRepo,
+      syncLogRepo,
+      makeFakeAdapterRegistry(async () => [])
+    );
+    await recoveringService.syncCompany(company.id);
+
+    const recovered = await repository.findById(company.id);
+    expect(recovered?.healthStatus).toBe('ACTIVE');
+    expect(recovered?.consecutiveFailureCount).toBe(0);
+  });
+
+  it('priorityScore/pollingInterval increase when a sync finds NEW_JOB events, vs. a quiet sync', async () => {
+    const quietCompany = await createCompany();
+    const quietService = new CompanyWatchService(
+      repository,
+      eventRepo,
+      syncLogRepo,
+      makeFakeAdapterRegistry(async () => [])
+    );
+    await quietService.syncCompany(quietCompany.id);
+    const quiet = await repository.findById(quietCompany.id);
+
+    const busyCompany = await createCompany();
+    const busyService = new CompanyWatchService(
+      repository,
+      eventRepo,
+      syncLogRepo,
+      makeFakeAdapterRegistry(async () => [
+        {
+          externalId: 'job-1',
+          title: 'Engineer',
+          description: 'Build things',
+          url: 'https://example.com/jobs/1',
+        },
+      ])
+    );
+    await busyService.syncCompany(busyCompany.id);
+    const busy = await repository.findById(busyCompany.id);
+
+    expect(busy!.priorityScore).toBeGreaterThan(quiet!.priorityScore);
+    expect(busy!.pollingInterval).toBeLessThan(quiet!.pollingInterval);
   });
 });

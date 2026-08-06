@@ -51,25 +51,40 @@ export class PrismaWorkspaceRepository implements WorkspaceRepository {
 
   async save(workspace: Workspace): Promise<void> {
     const data = WorkspaceMapper.toPersistence(workspace);
+    const memberIds = data.members.map((m) => m.userId);
 
-    await prisma.workspace.upsert({
-      where: { id: workspace.id },
-      create: {
-        id: data.id,
-        name: data.name,
-        createdAt: data.createdAt,
-        updatedAt: data.updatedAt,
-        members: {
-          create: data.members.map((m) => ({
-            userId: m.userId,
-            role: m.role as 'OWNER' | 'ADMIN' | 'MEMBER',
-          })),
+    await prisma.$transaction(async (tx) => {
+      await tx.workspace.upsert({
+        where: { id: workspace.id },
+        create: {
+          id: data.id,
+          name: data.name,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
         },
-      },
-      update: {
-        name: data.name,
-        updatedAt: data.updatedAt,
-      },
+        update: {
+          name: data.name,
+          updatedAt: data.updatedAt,
+        },
+      });
+
+      await tx.workspaceMember.deleteMany({
+        where: { workspaceId: workspace.id, userId: { notIn: memberIds } },
+      });
+
+      for (const member of data.members) {
+        await tx.workspaceMember.upsert({
+          where: { userId_workspaceId: { userId: member.userId, workspaceId: workspace.id } },
+          create: {
+            userId: member.userId,
+            workspaceId: workspace.id,
+            role: member.role as 'OWNER' | 'ADMIN' | 'MEMBER',
+          },
+          update: {
+            role: member.role as 'OWNER' | 'ADMIN' | 'MEMBER',
+          },
+        });
+      }
     });
   }
 

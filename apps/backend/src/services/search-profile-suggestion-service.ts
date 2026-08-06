@@ -6,8 +6,10 @@ import {
   ResumeContextProviderImpl,
   ResumeExtractionEngine,
   AIError,
+  estimateCost,
+  getModelPricing,
 } from '@careeros/ai';
-import type { AIProvider, AIRequest, ResumeContextProvider } from '@careeros/ai';
+import type { AIProvider, AIRequest, AIResponse, ResumeContextProvider, UsageRecorder } from '@careeros/ai';
 import type { BudgetEnforcer } from '@careeros/ai-orchestrator';
 import { buildCompactResumeContext, estimateTokens } from './resume-context-builder.js';
 
@@ -99,7 +101,10 @@ export class SearchProfileSuggestionService {
     private readonly extractionVersion: string = '1.0.0',
     private readonly promptBuilder: SearchProfileSuggestionPromptBuilder = new SearchProfileSuggestionPromptBuilder(),
     // Optional — when unset, no budget cap is enforced on this call site.
-    private readonly budgetEnforcer?: BudgetEnforcer
+    private readonly budgetEnforcer?: BudgetEnforcer,
+    // Optional — when unset, this call site's usage never reaches the AI dashboard
+    // (see UsageRecorder doc comment for why that matters).
+    private readonly usageRecorder?: UsageRecorder
   ) {
     this.contextProvider = new ResumeContextProviderImpl({
       resumeRepository,
@@ -156,6 +161,7 @@ export class SearchProfileSuggestionService {
     try {
       const response = await this.provider.complete(request);
       content = response.content;
+      this.recordUsage(response, params.userId);
     } catch (error) {
       console.error('Search profile suggestion: AI provider call failed', error);
       const retryable = error instanceof AIError ? error.retryable : false;
@@ -178,7 +184,7 @@ export class SearchProfileSuggestionService {
         }
       }
 
-      const result = await extractionEngine.extract(rawText);
+      const result = await extractionEngine.extract(rawText, userId);
       const sourceHash = this.computeHash(rawText);
       const structuredResume = StructuredResume.create({
         id: createStructuredResumeId(crypto.randomUUID()),
@@ -195,11 +201,36 @@ export class SearchProfileSuggestionService {
         technologies: result.technologies,
         experience: result.experience,
         education: result.education,
+        certifications: result.certifications,
+        languages: result.languages,
       });
 
       await this.structuredResumeRepository.upsert(structuredResume);
     } catch (error) {
       console.error('Search profile suggestion: extraction failed, continuing with fallback', error);
+    }
+  }
+
+  private recordUsage(response: AIResponse, userId: string): void {
+    try {
+      const pending = this.usageRecorder?.record({
+        userId,
+        provider: response.provider,
+        model: response.model,
+        feature: 'search_profile_suggestion',
+        tokensIn: response.usage.promptTokens,
+        tokensOut: response.usage.completionTokens,
+        totalTokens: response.usage.totalTokens,
+        estimatedCost: estimateCost(response.usage, getModelPricing(response.provider, response.model)),
+        latencyMs: response.latencyMs,
+      });
+      if (pending) {
+        void Promise.resolve(pending).catch((error) => {
+          console.error('Search profile suggestion: failed to record usage', error);
+        });
+      }
+    } catch (error) {
+      console.error('Search profile suggestion: failed to record usage', error);
     }
   }
 

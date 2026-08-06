@@ -7,6 +7,7 @@ export const ATS_TYPES = [
   'SMARTRECRUITERS',
   'RECRUITEE',
   'PERSONIO',
+  'WORKABLE',
   'BAMBOOHR',
   'CUSTOM_HTML',
   'JSON_LD',

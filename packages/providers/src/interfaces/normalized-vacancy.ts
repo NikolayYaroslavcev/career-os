@@ -8,6 +8,7 @@ export interface NormalizedVacancy {
   readonly description: string;
   readonly companyName: string;
   readonly companySourceId?: string;
+  readonly companyUrl?: string;
   readonly location: LocationInfo;
   readonly salary?: SalaryInfo;
   readonly experienceLevel?: ExperienceLevel;

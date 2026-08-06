@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { createUserId } from '@careeros/career';
 import { UnauthorizedError, NotFoundError, ValidationError } from '../../middleware/error-handler.js';
 
 function requireUserId(request: { user?: { id: string } }): string {
@@ -6,16 +7,26 @@ function requireUserId(request: { user?: { id: string } }): string {
   return request.user.id;
 }
 
+async function getWorkspaceId(fastify: FastifyInstance, userId: string): Promise<string> {
+  const user = await fastify.container.repositories.user.findById(createUserId(userId));
+  if (!user) throw new NotFoundError('User workspace');
+  const [workspaceId] = user.workspaceIds;
+  if (!workspaceId) throw new NotFoundError('User workspace');
+  return workspaceId;
+}
+
 export async function providerManagementRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get('/providers', async (_request, reply) => {
-    requireUserId(_request);
-    const providers = await fastify.container.services.providerManagement.getAllProviders();
+    const userId = requireUserId(_request);
+    const workspaceId = await getWorkspaceId(fastify, userId);
+    const providers = await fastify.container.services.providerManagement.getAllProviders(workspaceId);
     return reply.send({ providers });
   });
 
   fastify.get<{ Params: { providerId: string } }>('/providers/:providerId', async (request, reply) => {
-    requireUserId(request);
-    const provider = await fastify.container.services.providerManagement.getProvider(request.params.providerId);
+    const userId = requireUserId(request);
+    const workspaceId = await getWorkspaceId(fastify, userId);
+    const provider = await fastify.container.services.providerManagement.getProvider(request.params.providerId, workspaceId);
     if (!provider) throw new NotFoundError('Provider');
     return reply.send({ provider });
   });
@@ -96,8 +107,9 @@ export async function providerManagementRoutes(fastify: FastifyInstance): Promis
   );
 
   fastify.get('/providers/quality', async (_request, reply) => {
-    requireUserId(_request);
-    const qualities = await fastify.container.services.providerManagement.getAllProviderQualities();
+    const userId = requireUserId(_request);
+    const workspaceId = await getWorkspaceId(fastify, userId);
+    const qualities = await fastify.container.services.providerManagement.getAllProviderQualities(workspaceId);
     return reply.send({ qualities });
   });
 

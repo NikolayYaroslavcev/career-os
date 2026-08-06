@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<workzag-jobs>
+
+<position>
+    <id>2731150</id>
+    <subcompany>Acme Tech GmbH</subcompany>
+    <office>Berlin</office>
+    <additionalOffices>
+        <office>Munich</office>
+        <office>Remote</office>
+    </additionalOffices>
+    <department>Engineering</department>
+    <recruitingCategory>Product and Tech</recruitingCategory>
+    <name>Senior Backend Engineer (m/f/d)</name>
+    <jobDescriptions>
+        <jobDescription>
+            <name>Your mission</name>
+            <value><![CDATA[<p>Build and scale our <strong>event-driven</strong> platform.</p>]]></value>
+        </jobDescription>
+        <jobDescription>
+            <name>Your profile</name>
+            <value><![CDATA[<ul><li>5+ years backend experience</li><li>Kotlin &amp; Kafka</li></ul>]]></value>
+        </jobDescription>
+    </jobDescriptions>
+    <employmentType>permanent</employmentType>
+    <seniority>senior</seniority>
+    <schedule>full-time</schedule>
+    <yearsOfExperience>5-7</yearsOfExperience>
+    <keywords>Kotlin, Kafka, Backend, Distributed Systems</keywords>
+    <occupation>software_and_web_development</occupation>
+    <occupationCategory>it_software</occupationCategory>
+    <createdAt>2026-06-25T17:23:34+00:00</createdAt>
+</position>
+
+<position>
+    <id>2731151</id>
+    <office>Remote</office>
+    <department>Engineering</department>
+    <name>Junior Data Engineer</name>
+    <jobDescriptions></jobDescriptions>
+    <employmentType>permanent</employmentType>
+    <seniority>entry_level</seniority>
+    <schedule>full-time</schedule>
+    <occupation>data_engineering</occupation>
+    <occupationCategory>it_software</occupationCategory>
+    <createdAt>2026-07-01T09:00:00+00:00</createdAt>
+</position>
+
+</workzag-jobs>

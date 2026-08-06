@@ -111,4 +111,19 @@ describe('Recommendation Routes', () => {
     const body = response.json();
     expect(body.total).toBe(2);
   });
+
+  it('excludes vacancies the user has already applied to instead of boosting them', async () => {
+    const container = createMockContainer([{ action: 'APPLY', vacancyId: 'v-hidden' }]);
+    app.decorate('container', container);
+    await app.register(recommendationRoutes);
+
+    const response = await app.inject({ method: 'GET', url: '/' });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    const titles = body.recommendations.map((r: { vacancy: { title: string } }) => r.vacancy.title);
+    expect(titles).toContain('Visible Job');
+    expect(titles).not.toContain('Senior Frontend Developer - Brankas');
+    expect(body.total).toBe(1);
+  });
 });

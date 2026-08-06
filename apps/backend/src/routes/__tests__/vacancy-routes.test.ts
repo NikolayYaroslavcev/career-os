@@ -31,7 +31,7 @@ function createMockContainer(): Container {
         getStats: vi.fn().mockResolvedValue({
           totalJobs: 42,
           newToday: 5,
-          sources: [{ source: 'remote_ok', count: 20 }, { source: 'remotive', count: 22 }],
+          sources: [{ source: 'greenhouse', count: 20 }, { source: 'remotive', count: 22 }],
           totalSources: 2,
           lastSyncAt: new Date('2024-01-15'),
         }),
@@ -48,7 +48,7 @@ function createMockContainer(): Container {
     },
     providerRegistry: {
       getAll: vi.fn().mockReturnValue([
-        { info: { id: 'remote_ok' } },
+        { info: { id: 'greenhouse' } },
         { info: { id: 'remotive' } },
         { info: { id: 'hh' } },
       ]),
@@ -74,6 +74,32 @@ describe('Vacancy Routes', () => {
   });
 
   it('GET / returns vacancies list', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/vacancies',
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.payload);
+    expect(body.vacancies).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
+  it('GET / hides persisted non-vacancy rows like resume entries from the catalog', async () => {
+    const fakeVacancy = Vacancy.create({
+      id: createVacancyId('vacancy-1'),
+      title: 'Резюме',
+      description: 'Frontend developer with React and TypeScript',
+      companyId: createCompanyId('company-1'),
+      location: Location.create({ workMode: 'remote' }),
+      experienceLevel: ExperienceLevel.SENIOR,
+    });
+
+    container.repositories.vacancy.findMany = vi.fn().mockResolvedValue({
+      vacancies: [fakeVacancy],
+      total: 1,
+    });
+
     const response = await app.inject({
       method: 'GET',
       url: '/api/v1/vacancies',
@@ -249,5 +275,22 @@ describe('Vacancy Routes', () => {
     expect(body.sources).toEqual([
       expect.objectContaining({ id: 'source-1', providerId: 'linkedin', isPrimary: true }),
     ]);
+  });
+
+  it('GET /:id returns 404 for persisted non-vacancy rows like resume entries', async () => {
+    const fakeVacancy = Vacancy.create({
+      id: createVacancyId('vacancy-resume'),
+      title: 'Резюме',
+      description: 'Frontend developer with React and TypeScript',
+      companyId: createCompanyId('company-1'),
+      location: Location.create({ workMode: 'remote' }),
+      experienceLevel: ExperienceLevel.SENIOR,
+    });
+
+    container.repositories.vacancy.findByIdForWorkspace = vi.fn().mockResolvedValue(fakeVacancy);
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/vacancies/vacancy-resume' });
+
+    expect(response.statusCode).toBe(404);
   });
 });

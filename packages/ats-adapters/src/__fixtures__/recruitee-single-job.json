@@ -1,0 +1,15 @@
+{
+  "id": 1001,
+  "title": "Senior Backend Engineer",
+  "description": "Building APIs with Node.js and PostgreSQL on a React-based platform.",
+  "location": "Berlin, Germany",
+  "remote": false,
+  "salary_from": 50000,
+  "salary_to": 70000,
+  "employment_type": "full_time",
+  "created_at": "2026-07-01T10:00:00.000Z",
+  "updated_at": "2026-07-05T10:00:00.000Z",
+  "apply_url": "https://acme.recruitee.com/o/senior-backend-engineer",
+  "department": "Engineering",
+  "team": "Platform"
+}

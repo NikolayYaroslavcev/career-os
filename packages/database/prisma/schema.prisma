@@ -26,6 +26,7 @@ model User {
   notifications         Notification[]
   notificationPrefs     NotificationPreference?
   matchResults          MatchResult[]
+  tailoredResumes       TailoredResume[]
   telegramConnection    TelegramConnection?
   telegramLinkingTokens TelegramLinkingToken[]
   aiJobs                AIJob[]
@@ -53,14 +54,15 @@ model Workspace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members          WorkspaceMember[]
-  jobs             Vacancy[]
-  companies        Company[]
-  applications     Application[]
-  resumes          Resume[]
-  searchProfiles   SearchProfile[]
-  recruiters       Recruiter[]
-  watchedCompanies CompanyWatch[]
+  members               WorkspaceMember[]
+  jobs                  Vacancy[]
+  companies             Company[]
+  applications          Application[]
+  resumes               Resume[]
+  searchProfiles        SearchProfile[]
+  recruiters            Recruiter[]
+  watchedCompanies      CompanyWatch[]
+  telegramSubscriptions TelegramChannelSubscription[]
 }
 
 model WorkspaceMember {
@@ -121,16 +123,17 @@ model Vacancy {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  workspaceId  String
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  companyId    String
-  company      Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  matches      MatchResult[]
-  applications Application[]
-  sources      VacancySource[]
-  mergeAudits  VacancyMergeAudit[]
-  rankings     VacancyRankingResult[]
-  interactions UserVacancyInteraction[]
+  workspaceId     String
+  workspace       Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  companyId       String
+  company         Company                  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  matches         MatchResult[]
+  applications    Application[]
+  sources         VacancySource[]
+  mergeAudits     VacancyMergeAudit[]
+  rankings        VacancyRankingResult[]
+  interactions    UserVacancyInteraction[]
+  tailoredResumes TailoredResume[]
 
   @@index([workspaceId])
   @@index([companyId])
@@ -144,16 +147,16 @@ model Vacancy {
 }
 
 model VacancyMergeAudit {
-  id          String   @id @default(uuid())
-  vacancyId   String
-  field       String
-  oldValue    Json?
-  newValue    Json?
-  sourceId    String
-  sourceName  String
+  id           String       @id @default(uuid())
+  vacancyId    String
+  field        String
+  oldValue     Json?
+  newValue     Json?
+  sourceId     String
+  sourceName   String
   providerType ProviderType
-  reason      String?
-  mergedAt    DateTime @default(now())
+  reason       String?
+  mergedAt     DateTime     @default(now())
 
   vacancy Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
 
@@ -177,13 +180,13 @@ model VacancySource {
 
   lastSuccessfulSync DateTime?
   lastFailedSync     DateTime?
-  failureCount       Int      @default(0)
+  failureCount       Int       @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   vacancyId String
-  vacancy   Vacancy  @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  vacancy   Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
 
   @@unique([vacancyId, providerId, externalId])
   @@index([vacancyId])
@@ -287,17 +290,122 @@ model MatchResult {
   @@index([userId])
 }
 
+// ==================== RESUME TAILORING (ADR-031) ====================
+//
+// Dedicated, typed persistence for the async resume-tailoring pipeline
+// (packages/ai/src/tailoring). Deliberately NOT the generic AIJob.result
+// JSON blob used by the other ai-orchestrator features — this pipeline
+// needs queryable, versioned columns the same way MatchResult does, plus
+// per-stage checkpoint data so a failed stage can resume without rerunning
+// the whole pipeline. See ADR-031 for the full rationale.
+model TailoredResume {
+  id     String          @id @default(uuid())
+  status TailoringStatus @default(QUEUED)
+
+  // Current pipeline stage, updated in place as the worker advances.
+  // Combined with stageExecutions, this is the checkpoint: a retried job
+  // reads stageExecutions to see which stages already completed and skips
+  // straight to currentStage instead of restarting from the beginning.
+  currentStage TailoringStage @default(QUEUED)
+
+  // Per-stage execution metadata: array of
+  // { stage, status, startedAt, completedAt, durationMs, model?, provider?,
+  //   promptTokens?, completionTokens?, totalTokens?, estimatedCostUsd?,
+  //   retryCount, error? }
+  stageExecutions Json @default("[]")
+
+  // Reuse/idempotency key: sha256 of (resumeId, resume.updatedAt, vacancyId,
+  // vacancy.updatedAt). Unchanged inputHash on a COMPLETED row means the
+  // request is served from cache instead of re-running the pipeline.
+  inputHash String @default("")
+
+  // Stage 2 output — structured vacancy requirement taxonomy.
+  vacancyRequirements Json?
+  // Stage 3 output — matched/missing/weak/strong skills, keyword/tech/
+  // responsibility/experience coverage.
+  skillMatrix         Json?
+  // Stage 4 output — structured tailored content (summary, experience with
+  // per-bullet source references, emphasized skills, keyword optimizations).
+  tailoredContent     Json?
+  // Stage 7 output — deterministically rendered from tailoredContent, never
+  // authored directly by the LLM (single source of truth for the resume text).
+  tailoredResumeText  String?
+
+  // Stage 3 / Stage 5 output — deterministic ATS scores, before and after
+  // tailoring. Never computed by the LLM; see AtsScoringEngine.
+  atsScoreBefore Json?
+  atsScoreAfter  Json?
+
+  // Stage 6 (reviewer) output.
+  changesApplied     Json    @default("[]")
+  changesRejected    Json    @default("[]")
+  hallucinationCheck Json?
+  confidence         Float?
+  recruiterNotes     String?
+
+  // Versioning, so historical rows stay interpretable after the pipeline,
+  // prompts, or ATS weights evolve.
+  tailoringAlgorithmVersion String?
+  atsWeightsVersion         String?
+  promptVersions            Json    @default("{}") // Record<promptId, version>
+
+  error       String?
+  retryCount  Int       @default(0)
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  userId        String
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumeId      String
+  resume        Resume  @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  vacancyId     String
+  vacancy       Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  // Informational only, like AIJob.applicationId — not every tailoring
+  // request originates from an Application-scoped route.
+  applicationId String?
+
+  // One tailored resume per (resume, vacancy) pair — upserted in place on
+  // every request, exactly like MatchResult's (searchProfile, vacancy) key.
+  @@unique([resumeId, vacancyId])
+  @@index([userId])
+  @@index([vacancyId])
+  @@index([applicationId])
+  @@index([status])
+}
+
+enum TailoringStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum TailoringStage {
+  QUEUED
+  PARSING_RESUME
+  PARSING_VACANCY
+  BUILDING_EVIDENCE
+  TAILORING_RESUME
+  ATS_SCORING
+  REVIEWER_VALIDATION
+  SAVING_RESULTS
+  COMPLETED
+  FAILED
+}
+
 // ==================== CAREER CRM ====================
 
 model Application {
-  id        String            @id @default(uuid())
-  status    ApplicationStatus @default(SAVED)
-  notes     String?
+  id          String            @id @default(uuid())
+  status      ApplicationStatus @default(SAVED)
+  notes       String?
   appliedAt   DateTime?
-  startedAt  DateTime?
+  startedAt   DateTime?
   submittedAt DateTime?
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 
   workspaceId    String
   workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -464,6 +572,7 @@ model Resume {
   matchResults     MatchResult[]
   structuredResume StructuredResume?
   applications     Application[]
+  tailoredResumes  TailoredResume[]
 
   @@index([userId, status])
   @@index([userId, tags])
@@ -494,8 +603,10 @@ model StructuredResume {
   totalYearsOfExperience Int?
   skills                 Json // string[]
   technologies           Json // string[]
-  experience             Json // StructuredResumeExperience[]
+  experience             Json // StructuredResumeExperience[] (includes per-job bullets — ADR-031)
   education              Json // StructuredResumeEducation[]
+  certifications         Json    @default("[]") // string[] — ADR-031
+  languages              Json    @default("[]") // string[] — ADR-031
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -620,6 +731,14 @@ model CompanyWatch {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  // ADR-035 Phase 1: failure-driven health/priority lifecycle, mirrors
+  // VacancySource's ACTIVE/BROKEN failureCount model (ADR-030). Safe defaults
+  // keep this backward compatible with every pre-existing CompanyWatch row.
+  consecutiveFailureCount Int                      @default(0)
+  healthStatus            CompanyWatchHealthStatus @default(ACTIVE)
+  priorityScore           Int                      @default(50)
+  lastSuccessfulSyncAt    DateTime?
+
   workspaceId String
   workspace   Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   events      CompanyWatchEvent[]
@@ -629,6 +748,14 @@ model CompanyWatch {
   @@index([workspaceId])
   @@index([atsType])
   @@index([active])
+  @@index([healthStatus])
+}
+
+enum CompanyWatchHealthStatus {
+  ACTIVE
+  DEGRADED
+  BROKEN
+  RETIRED
 }
 
 enum AtsType {
@@ -640,6 +767,7 @@ enum AtsType {
   SMARTRECRUITERS
   RECRUITEE
   PERSONIO
+  WORKABLE
   BAMBOOHR
   CUSTOM_HTML
   JSON_LD
@@ -701,31 +829,93 @@ enum SyncStatus {
   FAILED
 }
 
+// ADR-035 Phase 2: staging row between "a domain was found somewhere" and "a
+// CompanyWatch row exists" — see docs on CompanyCandidate (packages/company-watch).
+// No workspaceId: candidates aren't workspace-scoped until conversion, when
+// CompanyWatchService.addCompany() attaches the target workspace.
+model CompanyCandidate {
+  id              String                 @id @default(uuid())
+  companyName     String
+  careerUrl       String
+  atsType         AtsType?
+  atsEndpoint     String?
+  discoverySource String                 @default("manual")
+  confidenceScore Int?
+  status          CompanyCandidateStatus @default(DISCOVERED)
+  metadata        Json? // confidenceBreakdown, rejectionReason, companyWatchId once CONVERTED
+  firstSeenAt     DateTime?
+  lastSeenAt      DateTime?
+  seenCount       Int                    @default(0)
+  vacancyCount    Int                    @default(0)
+  providerCount   Int                    @default(0)
+  providers       String[]               @default([])
+  lastVacancyTitle String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([status])
+  @@index([discoverySource])
+  @@index([companyName])
+  @@index([firstSeenAt])
+  @@index([lastSeenAt])
+}
+
+enum CompanyCandidateStatus {
+  DISCOVERED
+  AUTO_APPROVED
+  REVIEW_REQUIRED
+  REJECTED
+  CONVERTED
+}
+
+// ADR-035 Phase 4: per-source config/enable/cursor row feeding the bulk
+// DiscoverySource -> CompanyCandidate pipeline (packages/discovery-sources).
+// Mirrors ProviderConfig's shape (enabled, run stats) rather than inventing a
+// new config pattern — sourceId is the DiscoverySourceId string constant
+// (packages/discovery-sources/src/types.ts), not a foreign key.
+model DiscoverySource {
+  id                 String    @id @default(uuid())
+  sourceId           String    @unique
+  enabled            Boolean   @default(true)
+  cursor             Json? // opaque to this table — meaningful only to the fetcher that produced it (DiscoveryCursor)
+  lastRunAt          DateTime?
+  lastRunStatus      String? // "success" | "failed" | "pending"
+  lastRunError       String?
+  candidatesFound    Int       @default(0)
+  candidatesEnrolled Int       @default(0)
+  candidatesRejected Int       @default(0)
+  metadata           Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([enabled])
+}
+
 // ==================== AI ORCHESTRATOR ====================
 
 model AIJob {
-  id              String      @id @default(uuid())
-  userId          String
-  feature         String      // "analyze_vacancy", "tailor_resume", "cover_letter", etc.
-  status          AIJobStatus @default(PENDING)
-  priority        Int         @default(0)
-  inputHash       String      // cache key component
-  cacheKey        String?     // full cache key if cached
-  provider        String?
-  model           String?
-  input           Json?       // feature-specific input data
-  result          Json?       // feature-specific output data
-  error           String?
-  tokensIn        Int         @default(0)
-  tokensOut       Int         @default(0)
-  totalTokens     Int         @default(0)
-  estimatedCost   Float       @default(0)
-  latencyMs       Int?
-  retryCount      Int         @default(0)
-  maxRetries      Int         @default(3)
-  createdAt       DateTime    @default(now())
-  startedAt       DateTime?
-  completedAt     DateTime?
+  id            String      @id @default(uuid())
+  userId        String
+  feature       String // "analyze_vacancy", "tailor_resume", "cover_letter", etc.
+  status        AIJobStatus @default(PENDING)
+  priority      Int         @default(0)
+  inputHash     String // cache key component
+  cacheKey      String? // full cache key if cached
+  provider      String?
+  model         String?
+  input         Json? // feature-specific input data
+  result        Json? // feature-specific output data
+  error         String?
+  tokensIn      Int         @default(0)
+  tokensOut     Int         @default(0)
+  totalTokens   Int         @default(0)
+  estimatedCost Float       @default(0)
+  latencyMs     Int?
+  retryCount    Int         @default(0)
+  maxRetries    Int         @default(3)
+  createdAt     DateTime    @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
 
   // Optional relation to the vacancy/application this result was generated for.
   // Not all features have one (e.g. salary_analysis, career_advice), so plain
@@ -742,6 +932,11 @@ model AIJob {
   @@index([createdAt])
   @@index([vacancyId])
   @@index([applicationId])
+  // Partial unique index on (userId, feature, inputHash) WHERE status IN
+  // (PENDING, QUEUED, PROCESSING) prevents duplicate concurrent execution
+  // of the same request -- see migration 20260805140000_add_aijob_active_dedup_index.
+  // Not expressible in schema.prisma (no WHERE clause support), so it isn't
+  // declared here; @@index above only covers the non-partial case.
 }
 
 enum AIJobStatus {
@@ -754,20 +949,20 @@ enum AIJobStatus {
 }
 
 model AICache {
-  id              String   @id @default(uuid())
-  cacheKey        String   @unique
-  provider        String
-  model           String
-  promptVersion   String
-  feature         String
-  response        Json
-  tokensIn        Int      @default(0)
-  tokensOut       Int      @default(0)
-  estimatedCost   Float    @default(0)
-  hitCount        Int      @default(0)
-  createdAt       DateTime @default(now())
-  lastAccessedAt  DateTime @default(now())
-  expiresAt       DateTime
+  id             String   @id @default(uuid())
+  cacheKey       String   @unique
+  provider       String
+  model          String
+  promptVersion  String
+  feature        String
+  response       Json
+  tokensIn       Int      @default(0)
+  tokensOut      Int      @default(0)
+  estimatedCost  Float    @default(0)
+  hitCount       Int      @default(0)
+  createdAt      DateTime @default(now())
+  lastAccessedAt DateTime @default(now())
+  expiresAt      DateTime
 
   @@index([cacheKey])
   @@index([feature])
@@ -775,20 +970,20 @@ model AICache {
 }
 
 model AIUsage {
-  id              String   @id @default(uuid())
-  userId          String
-  jobId           String?
-  provider        String
-  model           String
-  feature         String
-  tokensIn        Int      @default(0)
-  tokensOut       Int      @default(0)
-  totalTokens     Int      @default(0)
-  estimatedCost   Float    @default(0)
-  latencyMs       Int      @default(0)
-  cacheHit        Boolean  @default(false)
-  cacheMiss       Boolean  @default(false)
-  createdAt       DateTime @default(now())
+  id            String   @id @default(uuid())
+  userId        String
+  jobId         String?
+  provider      String
+  model         String
+  feature       String
+  tokensIn      Int      @default(0)
+  tokensOut     Int      @default(0)
+  totalTokens   Int      @default(0)
+  estimatedCost Float    @default(0)
+  latencyMs     Int      @default(0)
+  cacheHit      Boolean  @default(false)
+  cacheMiss     Boolean  @default(false)
+  createdAt     DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -799,31 +994,31 @@ model AIUsage {
 }
 
 model AIProviderConfiguration {
-  id              String   @id @default(uuid())
-  userId          String?  // null = global config
-  provider        String   // "openai", "anthropic", "gemini", etc.
-  apiKey          String?  // encrypted in production
-  baseUrl         String?  // custom endpoint for Ollama/LM Studio
-  model           String?  // per-feature model override
-  isActive        Boolean  @default(true)
-  priority        Int      @default(0) // fallback order
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id        String   @id @default(uuid())
+  userId    String? // null = global config
+  provider  String // "openai", "anthropic", "gemini", etc.
+  apiKey    String? // encrypted in production
+  baseUrl   String? // custom endpoint for Ollama/LM Studio
+  model     String? // per-feature model override
+  isActive  Boolean  @default(true)
+  priority  Int      @default(0) // fallback order
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([userId, provider])
   @@index([userId])
 }
 
 model AIBudget {
-  id                    String           @id @default(uuid())
-  userId                String?          // null = global
+  id                    String         @id @default(uuid())
+  userId                String? // null = global
   period                AIBudgetPeriod
   maxTokens             Int?
   maxCost               Float?
-  maxRequestsPerFeature Json?            // { "cover_letter": 10, "tailor_resume": 5 }
-  isEnabled             Boolean          @default(true)
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
+  maxRequestsPerFeature Json? // { "cover_letter": 10, "tailor_resume": 5 }
+  isEnabled             Boolean        @default(true)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 
   @@unique([userId, period])
 }
@@ -858,34 +1053,240 @@ model ProviderConfig {
 }
 
 model TelegramChannel {
-  id           String    @id @default(uuid())
-  username     String    @unique
-  enabled      Boolean   @default(true)
-  category     String?
-  description  String?
-  lastSyncAt   DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                    String        @id @default(uuid())
+  username              String        @unique
+  name                  String?
+  transport             TransportType @default(HTML_PREVIEW)
+  chatId                String? // set once the bot is added as channel admin (enables BOT_API)
+  language              String?
+  country               String?
+  category              String?
+  description           String?
+  enabled               Boolean       @default(true)
+  ownerWorkspaceId      String? // null = shared/global channel; set = workspace-private channel
+  defaultPriority       Int           @default(0)
+  defaultSyncIntervalMs Int           @default(900000)
+  defaultAiExtractionOn Boolean       @default(true)
+  defaultMinConfidence  Int           @default(50)
+  lastSyncAt            DateTime?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  // No relation to SocialMessage: TelegramChannel is Telegram-specific
+  // transport configuration only, referenced by the Telegram transport/sync
+  // code (via username as SocialMessage.sourceId) — never by the generic
+  // SocialMessage domain model. See SocialMessage's own comment below.
+  subscriptions TelegramChannelSubscription[]
+  stats         TelegramChannelStats?
 
   @@index([enabled])
   @@index([username])
+  @@index([ownerWorkspaceId])
 }
+
+// Platform-agnostic — not every platform will support every value (MTPROTO/EXPORT are Telegram-only
+// reserved kinds, see ADR-0XX roadmap), but the enum itself must not be named after any one platform
+// since Discord/Slack/Reddit transports will produce SocialMessage rows through this same type.
+enum TransportType {
+  HTML_PREVIEW
+  BOT_API
+  MTPROTO // reserved — ProviderConfigurationError thrown if selected; see ADR-0XX roadmap
+  EXPORT // reserved — same
+}
+
+// ==================== SOCIAL MESSAGE INGESTION PLATFORM ====================
+//
+// Platform-agnostic message ingestion: Telegram ships now; Discord/Slack/Reddit/X/VK/etc. are
+// future SocialMessageTransport implementations feeding the same three layers below without
+// pipeline changes. See adr/ADR-032-social-message-platform-telegram-v2-migration.md.
+
+enum SocialPlatform {
+  TELEGRAM
+  // DISCORD / SLACK / REDDIT / X / FACEBOOK / VK / THREADS — reserved, not implemented
+}
+
+enum MessageProcessingStatus {
+  PENDING
+  SKIPPED_PRECHECK
+  EXTRACTING
+  EXTRACTED
+  LOW_CONFIDENCE
+  SPAM
+  FAILED
+}
+
+enum ExtractionStatus {
+  SUCCESS
+  PARSE_ERROR
+  PROVIDER_ERROR
+  LOW_CONFIDENCE
+  SPAM
+}
+
+// Layer 1 — raw message, platform-agnostic, immutable once written. Never overwritten by
+// extraction/normalization — the original content is always recoverable.
+//
+// Deliberately has NO foreign key to TelegramChannel or any other platform-specific config
+// table: sourceId/sourceName are plain strings (a Telegram channel username, a Discord channel
+// ID, a subreddit, ...) so this model stays constructible for a platform that has no config
+// table of its own yet. Platform-specific transport/sync code is responsible for resolving its
+// own config (e.g. TelegramChannel by username) and passing sourceId/sourceName in here.
+model SocialMessage {
+  id                String                  @id @default(uuid())
+  platform          SocialPlatform          @default(TELEGRAM)
+  sourceId          String // platform-native source identifier, e.g. Telegram channel username
+  sourceName        String? // platform-native display name, e.g. Telegram channel title
+  externalMessageId String
+  authorUsername    String?
+  publishedAt       DateTime
+  rawText           String
+  rawHtml           String?
+  media             Json?
+  links             Json                    @default("[]")
+  language          String?
+  contentHash       String // sha256(normalized rawText) — cache + repost-detection key
+  processingStatus  MessageProcessingStatus @default(PENDING)
+  processingError   String?
+  transport         TransportType
+  fetchedAt         DateTime                @default(now())
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  extractions MessageExtraction[]
+
+  @@unique([platform, sourceId, externalMessageId])
+  @@index([platform])
+  @@index([sourceId])
+  @@index([processingStatus])
+  @@index([publishedAt])
+  @@index([contentHash])
+}
+
+// Layer 2 — AI extraction output, persisted independently of the raw message and versioned: one
+// message can accumulate multiple extraction rows over time (reprocessing with a new prompt
+// version never overwrites history), which is what makes reprocessing/benchmarking possible.
+model MessageExtraction {
+  id        String @id @default(uuid())
+  messageId String
+
+  // ---- Reproducibility: enough to exactly replay this extraction later ----
+  provider       String
+  model          String
+  promptId       String
+  promptVersion  String
+  promptChecksum String
+  temperature    Float?
+  maxTokens      Int?
+
+  // ---- Layer 2 payload: full structured result, always kept ----
+  extractedFields Json // full structured ExtractedVacancyFields
+
+  // ---- Normalized, indexed columns mirroring the hot fields inside extractedFields, so
+  // filtering/analytics never has to scan the JSON blob. extractedFields stays the source
+  // of truth; these are a queryable projection of it, refreshed whenever it is written. ----
+  company    String?
+  title      String?
+  salaryMin  Int?
+  salaryMax  Int?
+  currency   String?
+  country    String?
+  city       String?
+  language   String?
+  category   String? // classification-stage output
+  seniority  String?
+  remoteType String?
+
+  deterministicConfidence  Int // 0-100, rubric-based (confidence-scorer.ts). Authoritative for gating.
+  aiSelfReportedConfidence Float? // 0-1, model's own estimate — stored for analytics only, never blended
+  missingFields            Json             @default("[]")
+  status                   ExtractionStatus @default(SUCCESS)
+  errorMessage             String?
+  tokensIn                 Int              @default(0)
+  tokensOut                Int              @default(0)
+  totalTokens              Int              @default(0)
+  estimatedCost            Float            @default(0)
+  latencyMs                Int              @default(0)
+  contentHash              String // duplicated from SocialMessage for direct cache-hit lookups
+  fromCache                Boolean          @default(false)
+  createdAt                DateTime         @default(now())
+
+  message SocialMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([contentHash])
+  @@index([deterministicConfidence])
+  @@index([category])
+  @@index([company])
+  @@index([country])
+  @@index([city])
+  @@index([seniority])
+  @@index([remoteType])
+  @@index([salaryMin])
+  @@index([salaryMax])
+}
+
+model TelegramChannelSubscription {
+  id                  String   @id @default(uuid())
+  workspaceId         String
+  channelId           String
+  enabled             Boolean  @default(true)
+  priority            Int      @default(0)
+  syncIntervalMs      Int      @default(900000)
+  aiExtractionEnabled Boolean  @default(true)
+  minConfidence       Int      @default(50)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel   TelegramChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, channelId])
+  @@index([workspaceId])
+  @@index([channelId])
+}
+
+model TelegramChannelStats {
+  channelId            String   @id
+  totalMessages        Int      @default(0)
+  vacanciesExtracted   Int      @default(0)
+  extractionRate       Float    @default(0)
+  avgConfidence        Float    @default(0)
+  spamRate             Float    @default(0)
+  duplicateRate        Float    @default(0)
+  avgSalaryMin         Float?
+  avgSalaryMax         Float?
+  avgSeniorityRank     Float?
+  avgTechnologiesCount Float    @default(0)
+  brokenMessages       Int      @default(0)
+  processingErrors     Int      @default(0)
+  successRate          Float    @default(0)
+  topTechnologies      Json     @default("[]")
+  lastComputedAt       DateTime @default(now())
+
+  channel TelegramChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+}
+
+// No standalone feature-flag table: global capability toggles for this platform live in the
+// existing ProviderConfig.settings JSON (providerId = 'telegram' today), the same mechanism
+// already used for provider-level config elsewhere. Per-workspace overrides live on
+// TelegramChannelSubscription (aiExtractionEnabled/enabled/minConfidence above) — the existing
+// per-workspace configuration surface. See packages/providers/src/social/platform-config.ts.
 
 // ==================== VACANCY RANKING ====================
 
 model VacancyRankingResult {
-  id           String   @id @default(uuid())
-  score        Int
-  matchedSkills Json   @default("[]")
-  missingSkills Json   @default("[]")
-  reasons      Json    @default("[]")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String   @id @default(uuid())
+  score         Int
+  matchedSkills Json     @default("[]")
+  missingSkills Json     @default("[]")
+  reasons       Json     @default("[]")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   vacancyId String
-  vacancy   Vacancy  @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  vacancy   Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
 
   @@unique([userId, vacancyId])
   @@index([userId])
@@ -896,11 +1297,11 @@ model VacancyRankingResult {
 // ==================== USER-VACANCY INTERACTIONS ====================
 
 model UserVacancyInteraction {
-  id        String   @id @default(uuid())
+  id        String            @id @default(uuid())
   userId    String
   vacancyId String
   action    InteractionAction
-  createdAt DateTime @default(now())
+  createdAt DateTime          @default(now())
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   vacancy Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
@@ -925,8 +1326,8 @@ enum InteractionAction {
 model AnalyticsEvent {
   id         String   @id @default(uuid())
   userId     String
-  eventType  String   // 'application_created', 'status_changed', 'match_computed', 'vacancy_found', 'vacancy_saved'
-  entityType String   // 'application', 'match_result', 'vacancy', 'resume_version'
+  eventType  String // 'application_created', 'status_changed', 'match_computed', 'vacancy_found', 'vacancy_saved'
+  entityType String // 'application', 'match_result', 'vacancy', 'resume_version'
   entityId   String
   metadata   Json     @default("{}")
   occurredAt DateTime @default(now())
@@ -941,7 +1342,7 @@ model AnalyticsEvent {
 model CareerInsight {
   id          String    @id @default(uuid())
   userId      String
-  insightType String    // 'funnel', 'failure_pattern', 'career_health', 'success_pattern', 'time_analytics', 'match_analytics', 'trend'
+  insightType String // 'funnel', 'failure_pattern', 'career_health', 'success_pattern', 'time_analytics', 'match_analytics', 'trend'
   data        Json
   computedAt  DateTime  @default(now())
   validUntil  DateTime?

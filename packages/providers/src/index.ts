@@ -72,10 +72,31 @@ export type {
 } from './interfaces/provider-diagnostics.js';
 export { DefaultProviderJob } from './interfaces/default-provider-job.js';
 export { DefaultSyncStrategy } from './interfaces/default-sync-strategy.js';
+export type { TransportCapability } from './interfaces/transport-capability.js';
+export type {
+  SocialMessageTransport,
+  TransportSource,
+  TransportCursor,
+  TransportFetchResult,
+  SocialMessageCandidate,
+  SocialMessageValidationError,
+} from './interfaces/social-message-transport.js';
 
 // Registry
 export { ProviderRegistry } from './registry/provider-registry.js';
 export { ProviderNotFoundError as RegistryProviderNotFoundError } from './registry/provider-registry.js';
+export { SocialMessageTransportRegistry, TransportNotFoundError } from './registry/social-message-transport-registry.js';
+
+// Transport
+export { TransportManager } from './transport/transport-manager.js';
+export type {
+  TransportManagerConfig,
+  TransportFetchOptions,
+  TransportLifecycle,
+  TransportHealth,
+  TransportHealthState,
+} from './transport/transport-manager.js';
+export { validateSocialMessageCandidate } from './shared/social-message-validation.js';
 
 // Scheduler
 export type { ScheduleTrigger, ScheduleConfig, SchedulerOutput, Scheduler } from './scheduler/sync-scheduler.js';
@@ -139,21 +160,9 @@ export { STAGE_RETRY_CONFIGS } from './pipeline/stage-retry.js';
 export type { Logger, LogContext, LogLevel } from './observability/logger.js';
 export { ConsoleLogger, NoopLogger } from './observability/logger.js';
 export type { MetricsCollector, MetricTags } from './observability/metrics.js';
-export { InMemoryMetricsCollector, NoopMetricsCollector, PROVIDER_METRICS } from './observability/metrics.js';
+export { InMemoryMetricsCollector, NoopMetricsCollector, PROVIDER_METRICS, TRANSPORT_METRICS } from './observability/metrics.js';
 export type { Tracer, Span, SpanAttributes } from './observability/tracer.js';
 export { InMemoryTracer, NoopTracer } from './observability/tracer.js';
-
-// RemoteOK Provider
-export {
-  createRemoteOKProvider,
-  REMOTE_OK_PROVIDER_INFO,
-  REMOTE_OK_PROVIDER_CAPABILITIES,
-} from './providers/remoteok/remoteok-provider.js';
-export type { RemoteOKProviderConfig } from './providers/remoteok/remoteok-provider.js';
-export { RemoteOKFetcher } from './providers/remoteok/remoteok-fetcher.js';
-export { RemoteOKMapper } from './providers/remoteok/remoteok-mapper.js';
-export { RemoteOKNormalizer } from './providers/remoteok/remoteok-normalizer.js';
-export { RemoteOKSyncStrategy } from './providers/remoteok/remoteok-sync-strategy.js';
 
 // HH Provider
 export {
@@ -229,13 +238,6 @@ export { RemotiveFetcher } from './providers/remotive/remotive-fetcher.js';
 export { RemotiveMapper } from './providers/remotive/remotive-mapper.js';
 export { RemotiveNormalizer } from './providers/remotive/remotive-normalizer.js';
 export { RemotiveSyncStrategy } from './providers/remotive/remotive-sync-strategy.js';
-
-// Himalayas Provider
-export { createHimalayasProvider, HIMALAYAS_PROVIDER_INFO, HIMALAYAS_PROVIDER_CAPABILITIES } from './providers/himalayas/himalayas-provider.js';
-export type { HimalayasProviderConfig } from './providers/himalayas/himalayas-provider.js';
-export { HimalayasFetcher } from './providers/himalayas/himalayas-fetcher.js';
-export { HimalayasMapper } from './providers/himalayas/himalayas-mapper.js';
-export { HimalayasNormalizer } from './providers/himalayas/himalayas-normalizer.js';
 
 // Arbeitnow Provider
 export { createArbeitnowProvider, ARBEITNOW_PROVIDER_INFO, ARBEITNOW_PROVIDER_CAPABILITIES } from './providers/arbeitnow/arbeitnow-provider.js';
@@ -336,10 +338,65 @@ export { SJSyncStrategy } from './providers/superjob/superjob-sync-strategy.js';
 export { createTelegramProvider, TELEGRAM_PROVIDER_INFO, TELEGRAM_PROVIDER_CAPABILITIES } from './providers/telegram/telegram-provider.js';
 export type { TelegramProviderConfig } from './providers/telegram/telegram-provider.js';
 export { TelegramFetcher } from './providers/telegram/telegram-fetcher.js';
-export { TelegramMapper } from './providers/telegram/telegram-mapper.js';
-export { TelegramNormalizer } from './providers/telegram/telegram-normalizer.js';
+export { SocialMessageMapper } from './providers/telegram/social-message-mapper.js';
+export type { TelegramExtractedFields, TelegramExtractionLookup } from './providers/telegram/social-message-mapper.js';
+export { SocialMessageNormalizer } from './providers/telegram/social-message-normalizer.js';
 export { TelegramSyncStrategy } from './providers/telegram/telegram-sync-strategy.js';
-export type { TelegramRawMessage, TelegramExtractedFields, TelegramChannelConfig } from './providers/telegram/telegram-types.js';
+export type { TelegramRawMessage, TelegramChannelConfig } from './providers/telegram/telegram-types.js';
+export { HtmlPreviewTransport } from './providers/telegram/html-preview-transport.js';
+export type { HtmlPreviewTransportConfig } from './providers/telegram/html-preview-transport.js';
+export { BotApiTransport } from './providers/telegram/bot-api-transport.js';
+export type { BotApiTransportConfig, ChannelPostInput } from './providers/telegram/bot-api-transport.js';
+
+// Personio Provider
+export {
+  createPersonioProvider,
+  PERSONIO_PROVIDER_INFO,
+  PERSONIO_PROVIDER_CAPABILITIES,
+} from './providers/personio/personio-provider.js';
+export type { PersonioProviderConfig } from './providers/personio/personio-provider.js';
+export { PersonioFetcher } from './providers/personio/personio-fetcher.js';
+export { PersonioMapper } from './providers/personio/personio-mapper.js';
+export { PersonioNormalizer } from './providers/personio/personio-normalizer.js';
+
+// Workable Provider
+export {
+  createWorkableProvider,
+  WORKABLE_PROVIDER_INFO,
+  WORKABLE_PROVIDER_CAPABILITIES,
+} from './providers/workable/workable-provider.js';
+export type { WorkableProviderConfig } from './providers/workable/workable-provider.js';
+export { WorkableFetcher } from './providers/workable/workable-fetcher.js';
+export { WorkableMapper } from './providers/workable/workable-mapper.js';
+export { WorkableNormalizer } from './providers/workable/workable-normalizer.js';
+
+// PyJobs Provider
+export { createPyJobsProvider, PYJOBS_PROVIDER_INFO, PYJOBS_PROVIDER_CAPABILITIES } from './providers/pyjobs/pyjobs-provider.js';
+export type { PyJobsProviderConfig } from './providers/pyjobs/pyjobs-provider.js';
+export { PyJobsFetcher } from './providers/pyjobs/pyjobs-fetcher.js';
+export { PyJobsMapper } from './providers/pyjobs/pyjobs-mapper.js';
+export { PyJobsNormalizer } from './providers/pyjobs/pyjobs-normalizer.js';
+
+// Django Jobs Provider
+export { createDjangoJobsProvider, DJANGO_JOBS_PROVIDER_INFO, DJANGO_JOBS_PROVIDER_CAPABILITIES } from './providers/djangojobs/djangojobs-provider.js';
+export type { DjangoJobsProviderConfig } from './providers/djangojobs/djangojobs-provider.js';
+export { DjangoJobsFetcher } from './providers/djangojobs/djangojobs-fetcher.js';
+export { DjangoJobsMapper } from './providers/djangojobs/djangojobs-mapper.js';
+export { DjangoJobsNormalizer } from './providers/djangojobs/djangojobs-normalizer.js';
+
+// a16z Speedrun Talent Network Provider
+export { createSpeedrunProvider, SPEEDRUN_PROVIDER_INFO, SPEEDRUN_PROVIDER_CAPABILITIES } from './providers/speedrun/speedrun-provider.js';
+export type { SpeedrunProviderConfig } from './providers/speedrun/speedrun-provider.js';
+export { SpeedrunFetcher } from './providers/speedrun/speedrun-fetcher.js';
+export { SpeedrunMapper } from './providers/speedrun/speedrun-mapper.js';
+export { SpeedrunNormalizer } from './providers/speedrun/speedrun-normalizer.js';
+
+// France Travail Provider
+export { createFranceTravailProvider, FRANCE_TRAVAIL_PROVIDER_INFO, FRANCE_TRAVAIL_PROVIDER_CAPABILITIES } from './providers/francetravail/francetravail-provider.js';
+export type { FranceTravailProviderConfig } from './providers/francetravail/francetravail-provider.js';
+export { FranceTravailFetcher, FRANCE_TRAVAIL_DEFAULT_ROME_CODES } from './providers/francetravail/francetravail-fetcher.js';
+export { FranceTravailMapper } from './providers/francetravail/francetravail-mapper.js';
+export { FranceTravailNormalizer } from './providers/francetravail/francetravail-normalizer.js';
 
 // Resilience
 export { resilientFetch, fetchWithTimeout } from './resilience/resilient-fetch.js';
@@ -347,6 +404,17 @@ export type { ResilientFetchConfig } from './resilience/resilient-fetch.js';
 
 // Shared utilities
 export { TECH_KEYWORDS, extractTechnologiesFromText } from './shared/tech-keywords.js';
+export { decodeHtmlEntities } from './shared/html-entities.js';
+export {
+  isLikelyJobPost,
+  runTelegramPrecheck,
+  classifyDeterministicRejection,
+} from './shared/message-precheck-classifier.js';
+export type {
+  PrecheckDecision,
+  PrecheckRejection,
+  PrecheckRejectionCategory,
+} from './shared/message-precheck-classifier.js';
 
 // Testing (fixture-based, no network — for use by consumer test suites and demo scripts)
 export { FakeProvider } from './__tests__/fake-provider.js';

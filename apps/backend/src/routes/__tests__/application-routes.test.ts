@@ -127,6 +127,20 @@ function createMockContainer(): Container {
           createdAt: new Date(),
         }),
       },
+      tailoringRequest: {
+        requestTailoring: vi.fn().mockResolvedValue({
+          jobId: 'resume-1:vacancy-1',
+          status: 'queued',
+          currentStage: 'QUEUED',
+          cached: false,
+        }),
+        getStatusById: vi.fn().mockResolvedValue({
+          jobId: 'resume-1:vacancy-1',
+          status: 'queued',
+          currentStage: 'QUEUED',
+          cached: false,
+        }),
+      },
     },
     aiOrchestrator: {
       execute: vi.fn().mockResolvedValue({
@@ -153,7 +167,7 @@ describe('Application Routes - AI Integration', () => {
     await app.ready();
   });
 
-  it('POST /:id/tailor-resume creates AI job', async () => {
+  it('POST /:id/tailor-resume enqueues the async tailoring pipeline (ADR-031)', async () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/applications/app-1/tailor-resume',
@@ -162,12 +176,14 @@ describe('Application Routes - AI Integration', () => {
 
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.payload);
-    expect(body.jobId).toBe('job-123');
+    expect(body.jobId).toBe('resume-1:vacancy-1');
     expect(body.status).toBe('queued');
-    expect(container.aiOrchestrator.execute).toHaveBeenCalledWith(
+    expect(container.services.tailoringRequest.requestTailoring).toHaveBeenCalledWith(
       expect.objectContaining({
-        feature: 'tailor_resume',
         userId: 'user-1',
+        resumeId: 'resume-1',
+        vacancyId: 'vacancy-1',
+        applicationId: 'app-1',
       })
     );
   });

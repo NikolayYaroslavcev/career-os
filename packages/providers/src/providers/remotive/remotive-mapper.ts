@@ -1,5 +1,6 @@
 import type { Mapper, MappedJob } from '../../interfaces/mapper.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
+import { decodeHtmlEntities } from '../../shared/html-entities.js';
 
 export class RemotiveMapper implements Mapper {
   readonly providerId = 'remotive';
@@ -7,9 +8,9 @@ export class RemotiveMapper implements Mapper {
   map(raw: RawJob): MappedJob {
     return {
       sourceId: raw.sourceId,
-      title: (raw.title ?? '').replace(/\s+/g, ' ').trim(),
+      title: decodeHtmlEntities(raw.title ?? '').replace(/\s+/g, ' ').trim(),
       description: this.stripHtml(raw.description ?? ''),
-      companyName: (raw.companyName ?? '').replace(/\s+/g, ' ').trim(),
+      companyName: decodeHtmlEntities(raw.companyName ?? '').replace(/\s+/g, ' ').trim(),
       location: this.parseLocation(raw.location),
       salary: raw.salary ? { min: raw.salary.from, max: raw.salary.to, currency: raw.salary.currency, period: raw.salary.period } : undefined,
       experienceLevel: this.inferExperienceLevel(raw.title, raw.description),
@@ -24,7 +25,7 @@ export class RemotiveMapper implements Mapper {
   }
 
   private stripHtml(html: string): string {
-    return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
+    return decodeHtmlEntities(html.replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim();
   }
 
   private parseLocation(location: string): MappedJob['location'] {

@@ -1,0 +1,11 @@
+{
+  "id": 4028547,
+  "title": "Senior Backend Engineer",
+  "updated_at": "2026-07-10T12:00:00-04:00",
+  "absolute_url": "https://boards.greenhouse.io/acme/jobs/4028547",
+  "location": { "name": "Remote - US" },
+  "content": "<p>We are looking for a Senior Backend Engineer to join our platform team.</p>",
+  "departments": [{ "id": 1, "name": "Engineering" }],
+  "metadata": [{ "id": 1, "name": "Technologies", "value": "Go, Kubernetes, PostgreSQL" }],
+  "pay_input_ranges": [{ "min_cents": 15000000, "max_cents": 19000000, "currency_type": "USD" }]
+}

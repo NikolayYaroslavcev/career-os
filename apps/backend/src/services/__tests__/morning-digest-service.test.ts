@@ -67,7 +67,7 @@ function buildWorkflowRunner(recommendations: readonly Recommendation[]): Workfl
     aiEnabled: true,
     stats: {
       providerSearch: {
-        providerIds: ['remote_ok'],
+        providerIds: ['hh'],
         fetched: recommendations.length,
         persisted: recommendations.length,
         reused: 0,

@@ -173,7 +173,7 @@ describe('ProviderManagementService - Quality Score', () => {
       createMockQualityDataRepo(),
     );
 
-    const qualities = await service.getAllProviderQualities();
+    const qualities = await service.getAllProviderQualities('workspace-1');
     expect(Array.isArray(qualities)).toBe(true);
   });
 });
@@ -181,7 +181,7 @@ describe('ProviderManagementService - Quality Score', () => {
 describe('ProviderManagementService - state ownership', () => {
   it('reads health/counts from SyncSchedulerService, not from a frozen registry snapshot', async () => {
     const registry = {
-      getAll: vi.fn().mockReturnValue([{ info: { id: 'remote_ok' } }]),
+      getAll: vi.fn().mockReturnValue([{ info: { id: 'hh' } }]),
       get: vi.fn(),
       getState: vi.fn(() => {
         throw new Error('ProviderRegistry.getState() must not be read as live state');
@@ -190,7 +190,7 @@ describe('ProviderManagementService - state ownership', () => {
 
     const syncScheduler = {
       getStatus: vi.fn((_workspaceId: string, providerId: string) =>
-        providerId === 'remote_ok'
+        providerId === 'hh'
           ? {
               providerId,
               lastSyncAt: new Date('2026-07-25T00:00:00.000Z'),
@@ -216,13 +216,13 @@ describe('ProviderManagementService - state ownership', () => {
       createMockLogger(),
     );
 
-    const providers = await service.getAllProviders();
-    const remoteOk = providers.find((p) => p.providerId === 'remote_ok');
+    const providers = await service.getAllProviders('workspace-1');
+    const hh = providers.find((p) => p.providerId === 'hh');
 
-    expect(remoteOk?.health).toBe('healthy');
-    expect(remoteOk?.importedCount).toBe(15);
-    expect(remoteOk?.failedCount).toBe(1);
-    expect(remoteOk?.totalSynced).toBe(12);
+    expect(hh?.health).toBe('healthy');
+    expect(hh?.importedCount).toBe(15);
+    expect(hh?.failedCount).toBe(1);
+    expect(hh?.totalSynced).toBe(12);
   });
 
   it('falls back to unknown/zero when a registered provider has never synced', async () => {
@@ -245,7 +245,7 @@ describe('ProviderManagementService - state ownership', () => {
       createMockLogger(),
     );
 
-    const provider = await service.getProvider('greenhouse');
+    const provider = await service.getProvider('greenhouse', 'workspace-1');
 
     expect(provider?.health).toBe('unknown');
     expect(provider?.importedCount).toBe(0);

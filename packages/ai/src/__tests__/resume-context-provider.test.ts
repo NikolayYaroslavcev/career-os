@@ -58,6 +58,7 @@ function createMockStructuredResume(
         position: 'Senior Developer',
         startDate: new Date('2020-01-01'),
         description: 'Built things',
+        bullets: ['Built things'],
         technologies: ['TypeScript', 'React'],
       },
     ],

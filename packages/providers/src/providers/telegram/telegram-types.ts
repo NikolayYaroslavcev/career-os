@@ -24,24 +24,6 @@ export interface TelegramRawMessage {
   readonly isServiceMessage: boolean;
 }
 
-/** Rule-based extraction result pulled from a message's free text — no AI involved. */
-export interface TelegramExtractedFields {
-  readonly title: string;
-  readonly companyName: string;
-  readonly location: string;
-  readonly remote: boolean;
-  readonly salary?: {
-    readonly from?: number;
-    readonly to?: number;
-    readonly currency: string;
-  };
-  readonly technologies: readonly string[];
-  /** Best available link for a candidate to act on: explicit apply link > first external link > mailto: > t.me contact > the post's own URL. */
-  readonly applyUrl: string;
-  readonly emails: readonly string[];
-  readonly telegramUsernames: readonly string[];
-}
-
 export interface TelegramChannelConfig {
   /** Bare channel username, no `@` or `t.me/` prefix (e.g. "remoteit"). */
   readonly username: string;

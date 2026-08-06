@@ -1,0 +1,29 @@
+{
+  "total": 3,
+  "jobPostings": [
+    {
+      "title": "Software Engineer II",
+      "externalPath": "/job/Remote---USA/Software-Engineer-II_R-12345",
+      "locationsText": "Remote - USA",
+      "postedOn": "Posted Today",
+      "bulletFields": ["R-12345"],
+      "jobReqId": "R-12345"
+    },
+    {
+      "title": "Staff Accountant",
+      "externalPath": "/job/Chicago-IL/Staff-Accountant_R-12346",
+      "locationsText": "Chicago, IL",
+      "postedOn": "Posted 3 Days Ago",
+      "bulletFields": ["R-12346"],
+      "jobReqId": "R-12346"
+    },
+    {
+      "title": "Senior Product Manager",
+      "externalPath": "/job/Remote---Canada/Senior-Product-Manager_R-12347",
+      "locationsText": "Remote - Canada",
+      "postedOn": "Posted 30+ Days Ago",
+      "bulletFields": ["R-12347"],
+      "jobReqId": "R-12347"
+    }
+  ]
+}

@@ -6,4 +6,6 @@ export { InMemoryTelegramClient } from './in-memory-telegram-client.js';
 export type { RecordedTelegramMessage } from './in-memory-telegram-client.js';
 export { registerTelegramLinkingBot } from './telegram-linking-bot.js';
 export type { LinkingCommandHandler, LinkingCommandInput, LinkingCommandResult } from './telegram-linking-bot.js';
+export { registerChannelPostForwarder } from './channel-post-forwarder.js';
+export type { ChannelPostCandidate, ChannelPostHandler } from './channel-post-forwarder.js';
 

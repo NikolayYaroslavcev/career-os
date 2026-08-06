@@ -1,0 +1,23 @@
+-- EPIC-20 Phase 3.2: prevent duplicate AI job execution.
+--
+-- Two identical requests (double-click, parallel tabs, client retry after a
+-- timeout) can both miss the AICache lookup before either has written a
+-- result, so both fall through to AIOrchestrator.execute() creating an
+-- AIJob row and calling the paid AI provider. The application-level check
+-- added alongside this migration (AIJobRepository.findActiveByKey) closes
+-- this for the common case, but two inserts racing inside the same
+-- millisecond can still both pass that check (TOCTOU). A partial unique
+-- index is the actual race guard: Postgres serializes the second INSERT
+-- into a constraint violation instead of allowing two active rows for the
+-- same (userId, feature, inputHash).
+--
+-- Scoped to PENDING/QUEUED/PROCESSING only (not a full unique index) so a
+-- completed, failed, or cancelled job never blocks a later legitimate
+-- request with the same inputs (e.g. retry after failure, or re-running an
+-- analysis once the underlying vacancy/resume has been re-saved and the
+-- inputHash cycles back to something a completed job already used).
+--
+-- Prisma's schema.prisma cannot express a partial (WHERE-scoped) unique
+-- index, so this constraint is hand-written rather than generated -- same
+-- pattern as 20260724140000_restrict_company_vacancy_delete.
+CREATE UNIQUE INDEX "AIJob_active_dedup_key" ON "AIJob"("userId", "feature", "inputHash") WHERE "status" IN ('PENDING', 'QUEUED', 'PROCESSING');

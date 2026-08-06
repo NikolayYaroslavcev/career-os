@@ -1,5 +1,5 @@
 export { User } from './user.js';
-export { Workspace } from './workspace.js';
+export { Workspace, type WorkspaceRole } from './workspace.js';
 export { Resume } from './resume.js';
 export { Company } from './company.js';
 export { Vacancy } from './vacancy.js';
@@ -38,3 +38,4 @@ export {
   type MergeAuditEntryData,
   type VacancyMergeAuditId,
 } from './vacancy-merge-audit.js';
+export { SocialMessage, type SocialMessageProps } from './social-message.js';

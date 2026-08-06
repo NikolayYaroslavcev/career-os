@@ -29,11 +29,12 @@ export class PrismaVacancyRepository implements VacancyRepository {
     return records.map(VacancyMapper.toDomain);
   }
 
-  async findByTitleAndCompany(title: string, companyId: CompanyId): Promise<Vacancy | null> {
+  async findByTitleAndCompany(title: string, companyId: CompanyId, workspaceId: string): Promise<Vacancy | null> {
     const record = await prisma.vacancy.findFirst({
       where: {
         title: { equals: title, mode: 'insensitive' },
         companyId,
+        workspaceId,
       },
     });
     if (!record) return null;

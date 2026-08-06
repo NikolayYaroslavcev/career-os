@@ -16,12 +16,14 @@ import { StrengthsWeaknesses } from './strengths-weaknesses';
 import { ActionableItems } from './actionable-items';
 import { MissingKeywords } from './missing-keywords';
 import { Target, BarChart3 } from 'lucide-react';
+import { useTranslation } from '@/lib/i18n/i18n-provider';
 
 interface MatchExplanationPageProps {
   matchResultId: string;
 }
 
 export function MatchExplanationPage({ matchResultId }: MatchExplanationPageProps): React.JSX.Element {
+  const { t } = useTranslation();
   const [explanation, setExplanation] = useState<ExplanationResponse | null>(null);
   const [actionable, setActionable] = useState<ActionableItemsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,7 +39,7 @@ export function MatchExplanationPage({ matchResultId }: MatchExplanationPageProp
         setExplanation(explData);
         setActionable(actData);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load explanation');
+        setError(err instanceof Error ? err.message : t('matchExplanationPage.loadFailed'));
       } finally {
         setLoading(false);
       }
@@ -47,7 +49,7 @@ export function MatchExplanationPage({ matchResultId }: MatchExplanationPageProp
 
   if (loading) return <Loading />;
   if (error) return <Alert><AlertDescription>{error}</AlertDescription></Alert>;
-  if (!explanation) return <Alert><AlertDescription>No explanation data available</AlertDescription></Alert>;
+  if (!explanation) return <Alert><AlertDescription>{t('matchExplanationPage.noData')}</AlertDescription></Alert>;
 
   const { explanation: expl, categoryScores } = explanation;
   const overallPercent = expl?.overallPercent ?? 0;
@@ -56,7 +58,7 @@ export function MatchExplanationPage({ matchResultId }: MatchExplanationPageProp
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Target className="h-6 w-6 text-blue-600" />
-        <h1 className="text-2xl font-bold text-gray-900">Match Explanation</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t('matchExplanationPage.title')}</h1>
       </div>
 
       {/* Overall Score */}
@@ -93,7 +95,7 @@ export function MatchExplanationPage({ matchResultId }: MatchExplanationPageProp
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
-              Category Breakdown
+              {t('matchExplanationPage.categoryBreakdown')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -105,7 +107,7 @@ export function MatchExplanationPage({ matchResultId }: MatchExplanationPageProp
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
-              Score Details
+              {t('matchExplanationPage.scoreDetails')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">

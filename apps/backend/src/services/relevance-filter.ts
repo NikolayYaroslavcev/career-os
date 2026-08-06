@@ -1,5 +1,6 @@
 import type { Resume, Vacancy, ExperienceLevel, Location } from '@careeros/career';
 import { EXPERIENCE_LEVEL_ORDER } from '@careeros/career';
+import { containsSearchTerm, extractMeaningfulPositionKeywords } from './search-term-matching.js';
 
 const DEFAULT_MAX_CANDIDATES = 20;
 
@@ -45,7 +46,7 @@ export function calculateRelevanceScore(input: RelevanceScoreInput): number {
       score += WEIGHT_RESUME_TECHNOLOGY;
     } else if (resumeSkillSet.has(tech)) {
       score += WEIGHT_RESUME_SKILL;
-    } else if (resumeTextLower?.includes(tech)) {
+    } else if (resumeTextLower && containsSearchTerm(resumeTextLower, tech)) {
       score += WEIGHT_RESUME_TEXT_MENTION;
     } else if (profileTechSet.has(tech)) {
       score += WEIGHT_SEARCH_PROFILE_TECHNOLOGY;
@@ -54,15 +55,15 @@ export function calculateRelevanceScore(input: RelevanceScoreInput): number {
 
   const vacancyText = `${input.vacancy.title} ${input.vacancy.description}`.toLowerCase();
   for (const tech of resumeTechSet) {
-    if (vacancyText.includes(tech)) {
+    if (containsSearchTerm(vacancyText, tech)) {
       score += WEIGHT_TITLE_OR_DESCRIPTION_OVERLAP;
     }
   }
 
   if (input.desiredPositions?.length) {
-    const positionKeywords = extractPositionKeywords(input.desiredPositions);
+    const positionKeywords = extractMeaningfulPositionKeywords(input.desiredPositions);
     for (const keyword of positionKeywords) {
-      if (vacancyText.includes(keyword)) {
+      if (containsSearchTerm(vacancyText, keyword)) {
         score += WEIGHT_DESIRED_POSITION_MATCH;
       }
     }
@@ -172,19 +173,4 @@ export function selectTopCandidates(params: SelectTopCandidatesParams): SelectTo
 
 function toLowerSet(values: readonly string[]): Set<string> {
   return new Set(values.map((v) => v.trim().toLowerCase()).filter(Boolean));
-}
-
-const STOP_WORDS = new Set(['a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by']);
-
-function extractPositionKeywords(positions: readonly string[]): string[] {
-  const keywords: string[] = [];
-  for (const position of positions) {
-    for (const word of position.split(/\s+/)) {
-      const lower = word.toLowerCase();
-      if (!STOP_WORDS.has(lower) && lower.length > 1) {
-        keywords.push(lower);
-      }
-    }
-  }
-  return [...new Set(keywords)];
 }

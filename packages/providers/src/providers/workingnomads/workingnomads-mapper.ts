@@ -1,5 +1,6 @@
 import type { Mapper, MappedJob } from '../../interfaces/mapper.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
+import { decodeHtmlEntities } from '../../shared/html-entities.js';
 
 export class WorkingNomadsMapper implements Mapper {
   readonly providerId = 'working_nomads';
@@ -7,9 +8,9 @@ export class WorkingNomadsMapper implements Mapper {
   map(raw: RawJob): MappedJob {
     return {
       sourceId: raw.sourceId,
-      title: (raw.title ?? '').replace(/\s+/g, ' ').trim(),
-      description: (raw.description || raw.title || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim(),
-      companyName: (raw.companyName ?? '').replace(/\s+/g, ' ').trim(),
+      title: decodeHtmlEntities(raw.title ?? '').replace(/\s+/g, ' ').trim(),
+      description: decodeHtmlEntities((raw.description || raw.title || '').replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim(),
+      companyName: decodeHtmlEntities(raw.companyName ?? '').replace(/\s+/g, ' ').trim(),
       location: { raw: raw.location || 'Remote' },
       technologies: [...new Set(raw.technologies.map((t) => t.toLowerCase().trim()).filter(Boolean))],
       url: raw.url,

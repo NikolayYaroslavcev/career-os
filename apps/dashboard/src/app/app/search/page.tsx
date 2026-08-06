@@ -8,9 +8,30 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loading } from '@/components/ui/loading';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Search, ExternalLink, MapPin, DollarSign, Building2, Clock, Filter } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
+import { pluralize } from '@/lib/i18n/pluralize';
 import { formatDate, formatNumber } from '@/lib/format';
+
+const ALL_FILTER_VALUE = '__all__';
+
+const SOURCE_LABELS: Record<string, string> = {
+  remotive: 'Remotive',
+  arbeitnow: 'Arbeitnow',
+  jobicy: 'Jobicy',
+  we_work_remotely: 'We Work Remotely',
+  working_nomads: 'Working Nomads',
+  nodesk: 'NoDesk',
+  hn_hiring: 'HN Who Is Hiring',
+  hh: 'HeadHunter',
+  habr_career: 'Habr Career',
+  telegram: 'Telegram',
+  pyjobs: 'PyJobs',
+  django_jobs: 'Django Jobs',
+  speedrun: 'a16z Speedrun',
+  france_travail: 'France Travail',
+};
 
 export default function SearchPage(): React.JSX.Element {
   const { t, locale } = useTranslation();
@@ -59,7 +80,12 @@ export default function SearchPage(): React.JSX.Element {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">{t('searchPage.title')}</h1>
-        <Badge variant="secondary">{t('searchPage.jobsCount', { count: total })}</Badge>
+        <Badge variant="secondary">
+          {t('searchPage.jobsCount', {
+            count: total,
+            unit: pluralize(locale, total, { one: t('searchPage.jobsUnit.one'), few: t('searchPage.jobsUnit.few'), many: t('searchPage.jobsUnit.many') }),
+          })}
+        </Badge>
       </div>
 
       {/* Search Bar */}
@@ -94,16 +120,27 @@ export default function SearchPage(): React.JSX.Element {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">{t('searchPage.remote')}</label>
-                <select
-                  className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                  value={params.remote ?? ''}
-                  onChange={(e) => handleFilterChange('remote', e.target.value)}
+                <Select
+                  value={params.remote ?? ALL_FILTER_VALUE}
+                  onValueChange={(value) => handleFilterChange('remote', !value || value === ALL_FILTER_VALUE ? '' : value)}
                 >
-                  <option value="">{t('searchPage.any')}</option>
-                  <option value="remote">{t('searchPage.remote')}</option>
-                  <option value="hybrid">{t('searchPage.hybrid')}</option>
-                  <option value="onsite">{t('searchPage.onsite')}</option>
-                </select>
+                  <SelectTrigger className="w-full">
+                    <SelectValue>
+                      {(value: string) => {
+                        if (value === 'remote') return t('searchPage.remote');
+                        if (value === 'hybrid') return t('searchPage.hybrid');
+                        if (value === 'onsite') return t('searchPage.onsite');
+                        return t('searchPage.any');
+                      }}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_FILTER_VALUE}>{t('searchPage.any')}</SelectItem>
+                    <SelectItem value="remote">{t('searchPage.remote')}</SelectItem>
+                    <SelectItem value="hybrid">{t('searchPage.hybrid')}</SelectItem>
+                    <SelectItem value="onsite">{t('searchPage.onsite')}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">{t('searchPage.minSalary')}</label>
@@ -133,38 +170,57 @@ export default function SearchPage(): React.JSX.Element {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">{t('searchPage.source')}</label>
-                <select
-                  className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                  value={params.source ?? ''}
-                  onChange={(e) => handleFilterChange('source', e.target.value)}
+                <Select
+                  value={params.source ?? ALL_FILTER_VALUE}
+                  onValueChange={(value) => handleFilterChange('source', !value || value === ALL_FILTER_VALUE ? '' : value)}
                 >
-                  <option value="">{t('searchPage.allProviders')}</option>
-                  <option value="remote_ok">RemoteOK</option>
-                  <option value="remotive">Remotive</option>
-                  <option value="himalayas">Himalayas</option>
-                  <option value="arbeitnow">Arbeitnow</option>
-                  <option value="jobicy">Jobicy</option>
-                  <option value="we_work_remotely">We Work Remotely</option>
-                  <option value="working_nomads">Working Nomads</option>
-                  <option value="nodesk">NoDesk</option>
-                  <option value="hn_hiring">HN Who Is Hiring</option>
-                  <option value="hh">HeadHunter</option>
-                  <option value="habr_career">Habr Career</option>
-                  <option value="telegram">Telegram</option>
-                </select>
+                  <SelectTrigger className="w-full">
+                    <SelectValue>
+                      {(value: string) => SOURCE_LABELS[value] ?? t('searchPage.allProviders')}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_FILTER_VALUE}>{t('searchPage.allProviders')}</SelectItem>
+                    <SelectItem value="remotive">Remotive</SelectItem>
+                    <SelectItem value="arbeitnow">Arbeitnow</SelectItem>
+                    <SelectItem value="jobicy">Jobicy</SelectItem>
+                    <SelectItem value="we_work_remotely">We Work Remotely</SelectItem>
+                    <SelectItem value="working_nomads">Working Nomads</SelectItem>
+                    <SelectItem value="nodesk">NoDesk</SelectItem>
+                    <SelectItem value="hn_hiring">HN Who Is Hiring</SelectItem>
+                    <SelectItem value="hh">HeadHunter</SelectItem>
+                    <SelectItem value="habr_career">Habr Career</SelectItem>
+                    <SelectItem value="telegram">Telegram</SelectItem>
+                    <SelectItem value="pyjobs">PyJobs</SelectItem>
+                    <SelectItem value="django_jobs">Django Jobs</SelectItem>
+                    <SelectItem value="speedrun">a16z Speedrun</SelectItem>
+                    <SelectItem value="france_travail">France Travail</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">{t('searchPage.sortBy')}</label>
-                <select
-                  className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                <Select
                   value={params.sortBy ?? 'newest'}
-                  onChange={(e) => handleFilterChange('sortBy', e.target.value)}
+                  onValueChange={(value) => handleFilterChange('sortBy', value ?? 'newest')}
                 >
-                  <option value="newest">{t('searchPage.sortNewest')}</option>
-                  <option value="salary">{t('searchPage.sortSalary')}</option>
-                  <option value="company">{t('searchPage.sortCompany')}</option>
-                  <option value="title">{t('searchPage.sortTitle')}</option>
-                </select>
+                  <SelectTrigger className="w-full">
+                    <SelectValue>
+                      {(value: string) => {
+                        if (value === 'salary') return t('searchPage.sortSalary');
+                        if (value === 'company') return t('searchPage.sortCompany');
+                        if (value === 'title') return t('searchPage.sortTitle');
+                        return t('searchPage.sortNewest');
+                      }}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">{t('searchPage.sortNewest')}</SelectItem>
+                    <SelectItem value="salary">{t('searchPage.sortSalary')}</SelectItem>
+                    <SelectItem value="company">{t('searchPage.sortCompany')}</SelectItem>
+                    <SelectItem value="title">{t('searchPage.sortTitle')}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">{t('searchPage.technology')}</label>

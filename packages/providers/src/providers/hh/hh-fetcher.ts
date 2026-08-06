@@ -232,6 +232,32 @@ export class HHFetcher implements Fetcher {
           span.end();
           return { ok: true, data: null, meta: { durationMs: Date.now() - startTime } };
         }
+
+        span.setAttribute('error', true);
+        span.setAttribute('http.status', response.status);
+
+        if (response.status === 403) {
+          span.end();
+          return {
+            ok: false,
+            error: ProviderErrorType.PROVIDER_UNAVAILABLE,
+            message: `HTTP 403: Access denied by HH — IP may be blocked by DDoS-Guard`,
+            retryable: true,
+            meta: { durationMs: Date.now() - startTime },
+          };
+        }
+
+        if (response.status === 429) {
+          span.end();
+          return {
+            ok: false,
+            error: ProviderErrorType.RATE_LIMITED,
+            message: `HTTP 429: Rate limited by HH API`,
+            retryable: true,
+            meta: { durationMs: Date.now() - startTime },
+          };
+        }
+
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
@@ -517,6 +543,7 @@ export class HHFetcher implements Fetcher {
       description,
       companyName: vacancy.employer.name,
       companySourceId: vacancy.employer.id,
+      companyUrl: vacancy.employer.alternate_url || vacancy.employer.url || undefined,
       location: this.formatLocation(vacancy.area),
       salary: this.parseSalary(vacancy.salary),
       technologies: this.extractTechnologiesFromText(vacancy.name, description),
@@ -556,6 +583,7 @@ export class HHFetcher implements Fetcher {
       description,
       companyName: vacancy.employer.name,
       companySourceId: vacancy.employer.id,
+      companyUrl: vacancy.employer.alternate_url || vacancy.employer.url || undefined,
       location: this.formatLocation(vacancy.area),
       salary: this.parseSalary(vacancy.salary),
       technologies,

@@ -17,6 +17,8 @@ vi.mock('@careeros/ai', async (importOriginal) => {
     VacancyAnalysisPromptBuilder: vi.fn(),
     StructuredResumeExtractionPromptBuilder: vi.fn(),
     ResumeExtractionEngine: vi.fn().mockImplementation(() => ({ extract: vi.fn() })),
+    MessageExtractionEngine: vi.fn().mockImplementation(() => ({ extract: vi.fn() })),
+    MessageExtractionPromptBuilder: vi.fn(),
     InMemoryAICache: vi.fn(),
     InMemoryCostTracker: vi.fn(),
     ConsoleAILogger: vi.fn(),
@@ -56,8 +58,13 @@ vi.mock('@careeros/database', () => ({
   PrismaCareerInsightRepository: vi.fn(),
   PrismaProviderConfigRepository: vi.fn(),
   PrismaTelegramChannelRepository: vi.fn(),
+  PrismaTelegramChannelStatsRepository: vi.fn(),
   PrismaQualityDataRepository: vi.fn(),
   PrismaUserVacancyInteractionRepository: vi.fn(),
+  PrismaTailoredResumeRepository: vi.fn(),
+  PrismaSocialMessageRepository: vi.fn(),
+  PrismaMessageExtractionRepository: vi.fn(),
+  PrismaCompanyCandidateRepository: vi.fn(),
 }));
 
 vi.mock('@careeros/auth', () => ({
@@ -75,6 +82,10 @@ vi.mock('@careeros/career', async (importOriginal) => {
 vi.mock('@careeros/company-watch', () => ({
   CompanyWatchService: vi.fn(),
   AtsAdapterRegistry: vi.fn(),
+  CompanyDiscoveryService: vi.fn(),
+  CandidateDeduplicationService: vi.fn(),
+  CompanyDiscoveryIntakeService: vi.fn(),
+  VacancyDiscoveryBridge: vi.fn(),
 }));
 
 vi.mock('@careeros/ai-orchestrator', async (importOriginal) => {
@@ -98,7 +109,6 @@ vi.mock('@careeros/providers', () => ({
   ProviderRegistry: vi.fn().mockImplementation(() => ({
     register: vi.fn(),
   })),
-  createRemoteOKProvider: vi.fn(),
   createHHProvider: vi.fn(),
   createGreenhouseProvider: vi.fn(),
   createLeverProvider: vi.fn(),
@@ -106,12 +116,16 @@ vi.mock('@careeros/providers', () => ({
   createWorkdayProvider: vi.fn(),
   createTeamtailorProvider: vi.fn(),
   createRemotiveProvider: vi.fn(),
-  createHimalayasProvider: vi.fn(),
   createArbeitnowProvider: vi.fn(),
   createJobicyProvider: vi.fn(),
   createWWRProvider: vi.fn(),
   createWorkingNomadsProvider: vi.fn(),
   createNoDeskProvider: vi.fn(),
+  createDouProvider: vi.fn(),
+  createPyJobsProvider: vi.fn(),
+  createDjangoJobsProvider: vi.fn(),
+  createSpeedrunProvider: vi.fn(),
+  createFranceTravailProvider: vi.fn(),
   createHNHiringProvider: vi.fn(),
   createLinkedInProvider: vi.fn(),
   createHabrCareerProvider: vi.fn(),
@@ -132,6 +146,28 @@ vi.mock('@careeros/providers', () => ({
   ProviderHealthMonitor: vi.fn().mockImplementation(() => ({
     getStatus: vi.fn(),
     getAllStatuses: vi.fn().mockReturnValue([]),
+  })),
+  SocialMessageTransportRegistry: vi.fn().mockImplementation(() => ({
+    register: vi.fn(),
+    getForProvider: vi.fn().mockReturnValue([]),
+    getByCapability: vi.fn().mockReturnValue([]),
+    resolve: vi.fn(),
+  })),
+  TransportManager: vi.fn().mockImplementation(() => ({
+    fetch: vi.fn(),
+    getHealth: vi.fn(),
+    getAllHealth: vi.fn().mockReturnValue([]),
+    start: vi.fn(),
+    stop: vi.fn(),
+  })),
+  TelegramFetcher: vi.fn(),
+  HtmlPreviewTransport: vi.fn(),
+  BotApiTransport: vi.fn().mockImplementation(() => ({
+    ingest: vi.fn(),
+    fetch: vi.fn(),
+    validate: vi.fn(),
+    transportType: 'BOT_API',
+    capability: 'API',
   })),
 }));
 
@@ -181,6 +217,8 @@ const mockConfig = {
   AI_MIN_TRIAGE_SCORE: 2,
   HH_AREAS: '113',
   ADZUNA_COUNTRY: 'gb',
+  GREENHOUSE_BOARD_TOKEN: 'jetbrains',
+  GREENHOUSE_COMPANY_NAME: 'JetBrains',
 };
 
 describe('Container AI Provider Selection', () => {

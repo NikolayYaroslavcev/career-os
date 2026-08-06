@@ -15,6 +15,7 @@ import { syncRoutes } from './sync/sync-routes.js';
 import { linkedinIngestRoutes } from './providers/linkedin-ingest-routes.js';
 import { dashboardRoutes } from './dashboard/dashboard-routes.js';
 import { companyWatchRoutes } from './company-watch/company-watch-routes.js';
+import { companyDiscoveryRoutes } from './company-discovery/company-discovery-routes.js';
 import { aiRoutes } from './ai/ai-routes.js';
 import { extensionRoutes } from './extension/extension-routes.js';
 import { matchExplanationRoutes } from './match-explanation/match-explanation-routes.js';
@@ -46,6 +47,7 @@ export async function apiRoutes(fastify: FastifyInstance): Promise<void> {
       await fastify.register(linkedinIngestRoutes, { prefix: '/providers/linkedin' });
       await fastify.register(dashboardRoutes, { prefix: '/dashboard' });
       await fastify.register(companyWatchRoutes, { prefix: '/company-watch' });
+      await fastify.register(companyDiscoveryRoutes, { prefix: '/company-discovery' });
       await fastify.register(aiRoutes, { prefix: '/ai' });
       await fastify.register(extensionRoutes, { prefix: '/extension' });
       await fastify.register(matchExplanationRoutes, { prefix: '/match-results' });

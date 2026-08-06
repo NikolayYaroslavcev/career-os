@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import { uploadResume } from '@/api/resumes';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Loading } from '@/components/ui/loading';
 import { Upload, FileText, AlertCircle } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
@@ -65,7 +66,7 @@ export function ResumeUpload({ onUploaded }: ResumeUploadProps): React.JSX.Eleme
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
-        <input
+        <Input
           ref={fileInputRef}
           type="file"
           accept=".pdf"

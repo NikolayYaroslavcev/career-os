@@ -133,7 +133,6 @@ Job providers:
 -   LinkedIn
 -   HH
 -   Habr
--   RemoteOK
 
 AI providers:
 

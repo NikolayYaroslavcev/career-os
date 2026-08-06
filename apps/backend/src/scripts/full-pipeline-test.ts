@@ -4,12 +4,13 @@ dotenv.config({ path: resolve(process.cwd(), '../../.env') });
 
 import { prisma } from '@careeros/database';
 import {
-  createRemoteOKProvider,
   createRemotiveProvider,
-  createHimalayasProvider,
   createArbeitnowProvider,
   createJobicyProvider,
   createWWRProvider,
+  createPyJobsProvider,
+  createDjangoJobsProvider,
+  createSpeedrunProvider,
   createWorkingNomadsProvider,
   createNoDeskProvider,
   createHNHiringProvider,
@@ -224,14 +225,15 @@ async function main(): Promise<void> {
   console.log(`Initial DB state: ${initialVacancies} vacancies, ${initialSources} vacancy sources`);
 
   const providers: Array<[string, string, () => DefaultProviderJob]> = [
-    ['remote_ok', 'RemoteOK', (): DefaultProviderJob => createRemoteOKProvider({ logger, metrics, tracer })],
     ['hh', 'HeadHunter', (): DefaultProviderJob => createHHProvider({ accessToken: process.env.HH_ACCESS_TOKEN, areas: (process.env.HH_AREAS ?? '113,16,40,97,48,9').split(',').map((a) => a.trim()).filter(Boolean), logger, metrics, tracer })],
     ['habr_career', 'Habr Career', (): DefaultProviderJob => createHabrCareerProvider({ logger, metrics, tracer })],
     ['remotive', 'Remotive', (): DefaultProviderJob => createRemotiveProvider({ logger, metrics, tracer })],
-    ['himalayas', 'Himalayas', (): DefaultProviderJob => createHimalayasProvider({ logger, metrics, tracer })],
     ['arbeitnow', 'Arbeitnow', (): DefaultProviderJob => createArbeitnowProvider({ logger, metrics, tracer })],
     ['jobicy', 'Jobicy', (): DefaultProviderJob => createJobicyProvider({ logger, metrics, tracer })],
     ['we_work_remotely', 'WeWorkRemotely', (): DefaultProviderJob => createWWRProvider({ logger, metrics, tracer })],
+    ['pyjobs', 'PyJobs', (): DefaultProviderJob => createPyJobsProvider({ logger, metrics, tracer })],
+    ['django_jobs', 'Django Jobs', (): DefaultProviderJob => createDjangoJobsProvider({ logger, metrics, tracer })],
+    ['speedrun', 'a16z Speedrun', (): DefaultProviderJob => createSpeedrunProvider({ logger, metrics, tracer })],
     ['working_nomads', 'WorkingNomads', (): DefaultProviderJob => createWorkingNomadsProvider({ logger, metrics, tracer })],
     ['nodesk', 'NoDesk', (): DefaultProviderJob => createNoDeskProvider({ logger, metrics, tracer })],
     ['hn_hiring', 'HN Hiring', (): DefaultProviderJob => createHNHiringProvider({ logger, metrics, tracer })],

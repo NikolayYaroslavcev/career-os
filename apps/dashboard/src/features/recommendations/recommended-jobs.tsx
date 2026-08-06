@@ -3,12 +3,16 @@
 import { useState, useEffect } from 'react';
 import { getRecommendations, type Recommendation } from '@/api/recommendations';
 import { RecommendationCard } from './recommendation-card';
+import { EmptyState } from '@/components/empty-state';
 import { Button } from '@/components/ui/button';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw, Star } from 'lucide-react';
+import { useTranslation } from '@/lib/i18n/i18n-provider';
+import { pluralize } from '@/lib/i18n/pluralize';
 
 type SortOption = 'score' | 'newest' | 'salary';
 
 export function RecommendedJobs(): React.JSX.Element {
+  const { t, locale } = useTranslation();
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +30,7 @@ export function RecommendedJobs(): React.JSX.Element {
       setRecommendations(response.recommendations);
       setTotal(response.total);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load recommendations');
+      setError(err instanceof Error ? err.message : t('recommendedJobsPage.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -50,7 +54,7 @@ export function RecommendedJobs(): React.JSX.Element {
         <p className="text-destructive mb-4">{error}</p>
         <Button onClick={fetchRecommendations} variant="outline">
           <RefreshCw className="h-4 w-4 mr-2" />
-          Retry
+          {t('recommendedJobsPage.retry')}
         </Button>
       </div>
     );
@@ -58,11 +62,12 @@ export function RecommendedJobs(): React.JSX.Element {
 
   if (recommendations.length === 0) {
     return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground mb-4">
-          No recommendations available. Create a search profile to get started.
-        </p>
-      </div>
+      <EmptyState
+        icon={Star}
+        title={t('recommendedJobsPage.emptyTitle')}
+        description={t('recommendedJobsPage.emptyDesc')}
+        action={{ label: t('recommendedJobsPage.emptyCta'), href: '/app/search-profiles' }}
+      />
     );
   }
 
@@ -70,19 +75,26 @@ export function RecommendedJobs(): React.JSX.Element {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Recommended Jobs</h2>
+          <h2 className="text-2xl font-bold text-foreground">{t('recommendedJobsPage.title')}</h2>
           <p className="text-muted-foreground">
-            {total} vacancies ranked based on your profile
+            {t('recommendedJobsPage.subtitle', {
+              count: total,
+              unit: pluralize(locale, total, {
+                one: t('recommendedJobsPage.unit.one'),
+                few: t('recommendedJobsPage.unit.few'),
+                many: t('recommendedJobsPage.unit.many'),
+              }),
+            })}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Sort by:</span>
+          <span className="text-sm text-muted-foreground">{t('recommendedJobsPage.sortByLabel')}</span>
           <div className="flex gap-1">
             {([
-              { value: 'score', label: 'Best Match' },
-              { value: 'newest', label: 'Newest' },
-              { value: 'salary', label: 'Salary' },
+              { value: 'score', label: t('recommendedJobsPage.sortScore') },
+              { value: 'newest', label: t('recommendedJobsPage.sortNewest') },
+              { value: 'salary', label: t('recommendedJobsPage.sortSalary') },
             ] as const).map((option) => (
               <Button
                 key={option.value}

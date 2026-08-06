@@ -101,6 +101,11 @@ export class CompanyDiscoveryService {
       return 'PERSONIO';
     }
 
+    // Workable
+    if (url.includes('workable.com') || html.includes('apply.workable.com') || html.includes('jobs.workable.com')) {
+      return 'WORKABLE';
+    }
+
     // BambooHR
     if (html.includes('bamboohr.com') || html.includes('bamboohr')) {
       return 'BAMBOOHR';
@@ -167,6 +172,13 @@ export class CompanyDiscoveryService {
       }
       case 'TEAMTAILOR': {
         return 'https://api.teamtailor.com/v1';
+      }
+      case 'WORKABLE': {
+        const slug = extractWorkableAccountSlug(html, url);
+        if (slug) {
+          return `https://apply.workable.com/api/v1/widget/accounts/${slug}?details=true`;
+        }
+        break;
       }
     }
 
@@ -248,8 +260,29 @@ export class CompanyDiscoveryService {
         }
         break;
       }
+      case 'WORKABLE': {
+        const slug = extractWorkableAccountSlug(html);
+        if (slug) {
+          metadata.accountSlug = slug;
+        }
+        break;
+      }
     }
 
     return metadata;
   }
+}
+
+/**
+ * The widget's embed script (`apply.workable.com/api/v1/widget/accounts/{slug}`)
+ * and the marketplace apply link (`apply.workable.com/{slug}/j/{shortcode}`)
+ * both carry the account slug — checked in that order since the embed script
+ * is the more precise signal when both are present.
+ */
+function extractWorkableAccountSlug(html: string, url?: string): string | undefined {
+  const widgetMatch = html.match(/apply\.workable\.com\/api\/v1\/widget\/accounts\/([a-z0-9-]+)/i);
+  if (widgetMatch?.[1]) return widgetMatch[1];
+
+  const applyLinkMatch = html.match(/apply\.workable\.com\/([a-z0-9-]+)\/j\//i) ?? url?.match(/apply\.workable\.com\/([a-z0-9-]+)\/j\//i);
+  return applyLinkMatch?.[1];
 }

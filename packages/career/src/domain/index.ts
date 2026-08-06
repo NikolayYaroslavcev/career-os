@@ -27,6 +27,9 @@ export {
   SOURCE_STATUS_LABELS,
   SourcePriority,
   PROVIDER_PRIORITY,
+  SocialPlatform,
+  TransportType,
+  MessageProcessingStatus,
 } from './enums/index.js';
 export {
   Source,
@@ -35,6 +38,7 @@ export {
   VacancyMergeAudit,
   User,
   Workspace,
+  type WorkspaceRole,
   Resume,
   Company,
   Vacancy,
@@ -59,6 +63,8 @@ export {
   type StructuredResumeProps,
   type MergeAuditEntryData,
   type VacancyMergeAuditId,
+  SocialMessage,
+  type SocialMessageProps,
 } from './entities/index.js';
 export * from './events/index.js';
 export * from './repositories/index.js';

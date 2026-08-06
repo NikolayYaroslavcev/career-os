@@ -59,12 +59,14 @@ export class PrismaVacancySourceRepository implements VacancySourceRepository {
 
   async findByProviderAndExternalId(
     providerId: VacancySourceEnum,
-    externalId: string
+    externalId: string,
+    workspaceId: string
   ): Promise<VacancySourceEntity | null> {
     const record = await prisma.vacancySource.findFirst({
       where: {
         providerId,
         externalId,
+        vacancy: { workspaceId },
       },
     });
     if (!record) return null;

@@ -6,7 +6,7 @@ describe('StructuredResumeExtractionPromptBuilder', () => {
 
   it('has correct promptId and version', () => {
     expect(builder.promptId).toBe('structured-resume-extraction');
-    expect(builder.currentVersion).toBe('1.1.0');
+    expect(builder.currentVersion).toBe('1.2.0');
   });
 
   it('builds a prompt with system and user parts', () => {
@@ -16,7 +16,7 @@ describe('StructuredResumeExtractionPromptBuilder', () => {
     expect(result.user).toBeTruthy();
     expect(result.version).toBeDefined();
     expect(result.version.id).toBe('structured-resume-extraction');
-    expect(result.version.version).toBe('1.1.0');
+    expect(result.version.version).toBe('1.2.0');
   });
 
   it('includes rawText in the user prompt', () => {

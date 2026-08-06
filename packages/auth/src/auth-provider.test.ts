@@ -114,6 +114,31 @@ describe('AuthProviderImpl', () => {
 
       expect(decodedHeader?.alg).toBe('HS256');
     });
+
+    it('should reject a token whose exp claim is in the past', () => {
+      // Signed with the real secret (so the signature itself is valid) but
+      // with `exp` set before `iat` — proves rejection is driven by jwt's
+      // own expiry check, not just signature verification.
+      const now = Math.floor(Date.now() / 1000);
+      const expired = jwt.sign(
+        { sub: 'user-id', email: 'test@example.com', iat: now - 3600, exp: now - 1800 },
+        config.jwtSecret,
+        { algorithm: 'HS256' }
+      );
+
+      const verified = authProvider.verifyAccessToken(expired);
+      expect(verified).toBeNull();
+    });
+
+    it('should accept a token issued with a short TTL until it actually expires', () => {
+      const shortLivedProvider = new AuthProviderImpl({ ...config, jwtAccessExpiresIn: '1s' });
+      const token = shortLivedProvider.generateAccessToken({ sub: 'user-id', email: 'test@example.com' });
+
+      expect(shortLivedProvider.verifyAccessToken(token)?.sub).toBe('user-id');
+
+      const decoded = jwt.decode(token) as { exp: number };
+      expect(decoded.exp).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 1);
+    });
   });
 
   describe('generateRefreshToken', () => {

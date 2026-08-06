@@ -85,6 +85,29 @@ describe('calculateRelevanceScore', () => {
 
     expect(score).toBeGreaterThan(0);
   });
+
+  it('does not treat generic role words as a meaningful desired-position match', () => {
+    const score = calculateRelevanceScore({
+      vacancy: buildVacancy('v1', 'iOS Developer', ['swift']),
+      resumeTechnologies: [],
+      resumeSkills: [],
+      desiredPositions: ['Frontend Developer'],
+    });
+
+    expect(score).toBe(0);
+  });
+
+  it('does not match short technologies as substrings inside unrelated words', () => {
+    const score = calculateRelevanceScore({
+      vacancy: buildVacancy('v1', 'Python Engineer', ['python']),
+      resumeTechnologies: [],
+      resumeSkills: [],
+      resumeText: 'Built internal tools with Django and PostgreSQL.',
+      searchProfileTechnologies: ['go'],
+    });
+
+    expect(score).toBe(0);
+  });
 });
 
 describe('selectTopCandidates', () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GroqProvider } from '../providers/groq-provider.js';
 import { AIError, AIErrorType } from '../domain/ai-error.js';
+import { AIRetryPolicy } from '../resilience/retry-policy.js';
 
 function createMockFetch(response: unknown, status = 200): ReturnType<typeof vi.fn> {
   return vi.fn().mockResolvedValue({
@@ -10,6 +11,8 @@ function createMockFetch(response: unknown, status = 200): ReturnType<typeof vi.
     json: () => Promise.resolve(response),
   });
 }
+
+const request = { prompt: 'test', promptId: 'test', promptVersion: '1.0', promptChecksum: 'abc' };
 
 describe('GroqProvider', () => {
   let originalFetch: typeof global.fetch;
@@ -193,5 +196,104 @@ describe('GroqProvider', () => {
     expect(sentBody.messages).toEqual([
       { role: 'user', content: 'test' },
     ]);
+  });
+
+  it.each([500, 502, 503])('classifies an HTTP %d response as a retryable NETWORK_ERROR', async (status) => {
+    global.fetch = createMockFetch({ error: 'upstream failure' }, status);
+    const provider = new GroqProvider({ apiKey: 'key' });
+
+    try {
+      await provider.complete(request);
+      expect.fail('Should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(AIError);
+      const aiError = error as AIError;
+      expect(aiError.type).toBe(AIErrorType.NETWORK_ERROR);
+      expect(aiError.retryable).toBe(true);
+    }
+  });
+
+  it('classifies an HTTP 504 response as a retryable TIMEOUT', async () => {
+    global.fetch = createMockFetch({ error: 'upstream connection closed unexpectedly' }, 504);
+    const provider = new GroqProvider({ apiKey: 'key' });
+
+    try {
+      await provider.complete(request);
+      expect.fail('Should have thrown');
+    } catch (error) {
+      const aiError = error as AIError;
+      expect(aiError.type).toBe(AIErrorType.TIMEOUT);
+      expect(aiError.retryable).toBe(true);
+    }
+  });
+
+  it('classifies a connect-timeout failure surfaced via fetch as a retryable NETWORK_ERROR', async () => {
+    const cause = Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' });
+    global.fetch = vi.fn().mockRejectedValue(Object.assign(new TypeError('fetch failed'), { cause }));
+    const provider = new GroqProvider({ apiKey: 'key' });
+
+    try {
+      await provider.complete(request);
+      expect.fail('Should have thrown');
+    } catch (error) {
+      const aiError = error as AIError;
+      expect(aiError.type).toBe(AIErrorType.NETWORK_ERROR);
+      expect(aiError.retryable).toBe(true);
+    }
+  });
+
+  it('classifies a certificate hostname mismatch surfaced via fetch as a non-retryable failure', async () => {
+    const cause = Object.assign(new Error("Hostname/IP does not match certificate's altnames"), { code: 'ERR_TLS_CERT_ALTNAME_INVALID' });
+    global.fetch = vi.fn().mockRejectedValue(Object.assign(new TypeError('fetch failed'), { cause }));
+    const provider = new GroqProvider({ apiKey: 'key' });
+
+    try {
+      await provider.complete(request);
+      expect.fail('Should have thrown');
+    } catch (error) {
+      const aiError = error as AIError;
+      expect(aiError.retryable).toBe(false);
+    }
+  });
+
+  it('classifies an invalid JSON response body as a non-retryable PARSE_ERROR', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve('not json'),
+      json: () => Promise.reject(new SyntaxError('Unexpected token o in JSON at position 1')),
+    });
+    const provider = new GroqProvider({ apiKey: 'key' });
+
+    try {
+      await provider.complete(request);
+      expect.fail('Should have thrown');
+    } catch (error) {
+      const aiError = error as AIError;
+      expect(aiError.type).toBe(AIErrorType.PARSE_ERROR);
+      expect(aiError.retryable).toBe(false);
+    }
+  });
+
+  it('retries a transient 500 and succeeds once the upstream recovers', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 500, text: () => Promise.resolve('{"error":"internal error"}') })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          choices: [{ message: { content: 'ok' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+      });
+    global.fetch = fetchMock;
+
+    const provider = new GroqProvider({ apiKey: 'key' });
+    const policy = new AIRetryPolicy({ maxAttempts: 2, baseDelayMs: 0, maxDelayMs: 0, backoffMultiplier: 1, jitter: false });
+
+    const result = await policy.execute(() => provider.complete(request));
+
+    expect(result.content).toBe('ok');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

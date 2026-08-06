@@ -29,3 +29,4 @@ export type { TelegramConnectionRepository } from './telegram-connection-reposit
 export type { TelegramLinkingTokenRepository } from './telegram-linking-token-repository.js';
 export type { MergeAuditRepository } from './merge-audit-repository.js';
 export type { UserVacancyInteractionRepository, InteractionAction, UserVacancyInteractionData } from './user-vacancy-interaction-repository.js';
+export type { SocialMessageRepository, UpsertRawSocialMessageInput } from './social-message-repository.js';

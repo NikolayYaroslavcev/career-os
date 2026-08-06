@@ -24,12 +24,15 @@
     "db:seed": "tsx src/seed.ts",
     "db:validate": "prisma validate",
     "db:check-drift": "tsx scripts/verify-schema-integrity.ts",
-    "provider-keys:encrypt": "tsx scripts/migrate-provider-keys.ts"
+    "provider-keys:encrypt": "tsx scripts/migrate-provider-keys.ts",
+    "backfill:vacancy-html": "tsx scripts/backfill-vacancy-html-normalization.ts"
   },
   "dependencies": {
     "@careeros/ai": "workspace:*",
     "@careeros/career": "workspace:*",
     "@careeros/company-watch": "workspace:*",
+    "@careeros/discovery-sources": "workspace:*",
+    "@careeros/providers": "workspace:*",
     "@careeros/shared": "workspace:*",
     "@prisma/client": "^6.2.0"
   },

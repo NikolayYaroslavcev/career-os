@@ -5,6 +5,7 @@ export interface AICacheRepository {
   create(input: CreateAICacheInput): Promise<AICacheData>;
   findByKey(cacheKey: string): Promise<AICacheData | null>;
   incrementHitCount(id: string): Promise<void>;
+  deleteByKey(cacheKey: string): Promise<void>;
   deleteExpired(): Promise<number>;
   deleteByFeature(feature: string): Promise<number>;
   deleteAll(): Promise<number>;
@@ -47,6 +48,10 @@ export class PrismaAICacheRepository implements AICacheRepository {
       where: { id },
       data: { hitCount: { increment: 1 }, lastAccessedAt: new Date() },
     });
+  }
+
+  async deleteByKey(cacheKey: string): Promise<void> {
+    await prisma.aICache.deleteMany({ where: { cacheKey } });
   }
 
   async deleteExpired(): Promise<number> {

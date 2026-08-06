@@ -33,9 +33,9 @@ export class PrismaCompanyRepository implements CompanyRepository {
     return records.map(CompanyMapper.toDomain);
   }
 
-  async findByName(name: string): Promise<Company | null> {
+  async findByName(name: string, workspaceId: string): Promise<Company | null> {
     const record = await prisma.company.findFirst({
-      where: { name },
+      where: { name, workspaceId },
     });
 
     if (!record) {

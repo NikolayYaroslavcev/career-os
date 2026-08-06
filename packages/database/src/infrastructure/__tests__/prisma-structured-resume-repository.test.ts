@@ -44,6 +44,8 @@ describe('PrismaStructuredResumeRepository', () => {
       technologies: ['Node.js'],
       experience: [],
       education: [],
+      certifications: [],
+      languages: [],
       createdAt: new Date('2026-01-01'),
       updatedAt: new Date('2026-01-01'),
     });

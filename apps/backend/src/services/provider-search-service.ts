@@ -24,6 +24,8 @@ import type {
   ExperienceLevel as ProviderExperienceLevel,
 } from '@careeros/providers';
 import type { ProviderDiagnosticsService } from './provider-diagnostics-service.js';
+import { containsSearchTerm, extractMeaningfulPositionKeywords } from './search-term-matching.js';
+import { filterNonVacancyContent } from './non-vacancy-content.js';
 
 // Fallback defaults only used if a caller omits the config-sourced constructor
 // args below (e.g. older tests) — production wiring always passes explicit
@@ -161,10 +163,12 @@ export class ProviderSearchService {
     }
 
     const { unique: deduped, duplicateIds } = this.deduplicate(fetchedVacancies);
-    const filtered = filterByRelevance(deduped, profile, this.minRelevanceScore);
+    const contentFiltered = filterNonVacancyContent(deduped);
+    const filtered = filterByRelevance(contentFiltered, profile, this.minRelevanceScore);
 
     this.logger.info('Relevance filtering applied', {
       beforeFilter: deduped.length,
+      afterContentFilter: contentFiltered.length,
       afterFilter: filtered.length,
     });
 
@@ -190,6 +194,7 @@ export class ProviderSearchService {
       providerIds: providers.map((p) => p.info.id).join(','),
       fetched: fetchedVacancies.length,
       deduplicated: fetchedVacancies.length - deduped.length,
+      contentFiltered: deduped.length - contentFiltered.length,
       filtered: filtered.length,
       persisted: persisted.length,
       reused,
@@ -376,7 +381,7 @@ export class ProviderSearchService {
     workspaceId: string
   ): Promise<{ vacancy: Vacancy; wasReused: boolean }> {
     const source = normalized.source as VacancySource;
-    const existingSource = await this.vacancySourceRepository.findByProviderAndExternalId(source, normalized.sourceId);
+    const existingSource = await this.vacancySourceRepository.findByProviderAndExternalId(source, normalized.sourceId, workspaceId);
 
     if (existingSource) {
       const existing = await this.vacancyRepository.findById(existingSource.vacancyId);
@@ -430,7 +435,7 @@ export class ProviderSearchService {
   }
 
   private async findOrCreateCompany(name: string, workspaceId: string): Promise<Company> {
-    const existing = await this.companyRepository.findByName(name);
+    const existing = await this.companyRepository.findByName(name, workspaceId);
     if (existing) {
       return existing;
     }
@@ -485,29 +490,12 @@ function filterByRelevance(
   const desiredPositions = profile.desiredPositions.map((p) => p.toLowerCase());
   const desiredTechs = new Set(profile.desiredTechnologies.map((t) => t.name.toLowerCase()));
 
-  const positionKeywords = extractPositionKeywords(desiredPositions);
+  const positionKeywords = extractMeaningfulPositionKeywords(desiredPositions);
 
   return vacancies.filter((vacancy) => {
     const score = calculateVacancyRelevance(vacancy, positionKeywords, desiredTechs);
     return score >= minRelevanceScore;
   });
-}
-
-function extractPositionKeywords(positions: readonly string[]): string[] {
-  const stopWords = new Set(['a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by']);
-  const keywords: string[] = [];
-
-  for (const position of positions) {
-    const words = position.split(/\s+/);
-    for (const word of words) {
-      const lower = word.toLowerCase();
-      if (!stopWords.has(lower) && lower.length > 1) {
-        keywords.push(lower);
-      }
-    }
-  }
-
-  return [...new Set(keywords)];
 }
 
 function calculateVacancyRelevance(
@@ -519,14 +507,14 @@ function calculateVacancyRelevance(
 
   const titleLower = vacancy.title.toLowerCase();
   for (const keyword of positionKeywords) {
-    if (titleLower.includes(keyword)) {
+    if (containsSearchTerm(titleLower, keyword)) {
       score += 3;
     }
   }
 
   const descLower = vacancy.description.toLowerCase();
   for (const keyword of positionKeywords) {
-    if (descLower.includes(keyword)) {
+    if (containsSearchTerm(descLower, keyword)) {
       score += 1;
     }
   }

@@ -1,4 +1,3 @@
-import { fetchWithTimeout } from '../../resilience/resilient-fetch.js';
 import type { Fetcher, FetchResult } from '../../interfaces/fetcher.js';
 import type { ProviderResult, ResultMeta } from '../../interfaces/result.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
@@ -9,6 +8,17 @@ import type { MetricsCollector } from '../../observability/metrics.js';
 import type { Tracer } from '../../observability/tracer.js';
 import { PROVIDER_METRICS } from '../../observability/metrics.js';
 import { ProviderErrorType } from '../../errors/provider-errors.js';
+import {
+  fetchJobsPage,
+  fetchSingleJob,
+  pingBoard,
+  parseJob,
+  isValidGreenhouseJob,
+  AtsHttpError,
+  type AtsRawJob,
+  type GreenhouseMetadataFieldPayload,
+  type GreenhouseJobsPayload,
+} from '@careeros/ats-adapters';
 
 export interface GreenhouseFetcherConfig {
   readonly baseUrl: string;
@@ -17,43 +27,6 @@ export interface GreenhouseFetcherConfig {
   readonly logger: Logger;
   readonly metrics: MetricsCollector;
   readonly tracer: Tracer;
-}
-
-export interface GreenhouseMetadataField {
-  readonly id: number;
-  readonly name: string;
-  readonly value: string | null;
-}
-
-export interface GreenhousePayRange {
-  readonly min_cents: number | null;
-  readonly max_cents: number | null;
-  readonly currency_type: string | null;
-}
-
-export interface GreenhouseLocation {
-  readonly name: string;
-}
-
-export interface GreenhouseDepartment {
-  readonly id: number;
-  readonly name: string;
-}
-
-export interface GreenhouseRawJob {
-  readonly id: number;
-  readonly title: string;
-  readonly updated_at: string;
-  readonly absolute_url: string;
-  readonly content: string;
-  readonly location: GreenhouseLocation;
-  readonly departments?: readonly GreenhouseDepartment[];
-  readonly metadata?: readonly GreenhouseMetadataField[] | null;
-  readonly pay_input_ranges?: readonly GreenhousePayRange[] | null;
-}
-
-export interface GreenhouseJobsResponse {
-  readonly jobs: readonly GreenhouseRawJob[];
 }
 
 export class GreenhouseFetcher implements Fetcher {
@@ -88,30 +61,10 @@ export class GreenhouseFetcher implements Fetcher {
         boardToken: this.boardToken,
       });
 
-      const url = this.buildJobsUrl();
-      const response = await fetchWithTimeout(url, {
-        headers: { Accept: 'application/json' },
-      });
-
-      if (!response.ok) {
-        span.setAttribute('error', true);
-        span.setAttribute('http.status', response.status);
-
-        if (response.status === 429) {
-          return {
-            ok: false,
-            error: ProviderErrorType.RATE_LIMITED,
-            message: `HTTP ${response.status}: Rate limited by Greenhouse API`,
-            retryable: true,
-            meta: { durationMs: Date.now() - startTime },
-          };
-        }
-
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = (await response.json()) as GreenhouseJobsResponse;
-      const jobs = this.parseResponse(data).filter((job) => matchesCriteria(job, criteria));
+      const payload = await fetchJobsPage(this.transportConfig());
+      const jobs = this.parseJobsPayload(payload)
+        .map((raw) => this.toRawJob(raw))
+        .filter((job) => matchesCriteria(job, criteria));
 
       const durationMs = Date.now() - startTime;
       this.metrics.recordHistogram(PROVIDER_METRICS.FETCH_DURATION, durationMs, {
@@ -147,19 +100,29 @@ export class GreenhouseFetcher implements Fetcher {
       span.setAttribute('error', true);
       span.end();
 
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      if (error instanceof AtsHttpError) {
+        if (error.status === 429) {
+          return {
+            ok: false,
+            error: ProviderErrorType.RATE_LIMITED,
+            message: `HTTP ${error.status}: Rate limited by Greenhouse API`,
+            retryable: true,
+            meta: { durationMs },
+          };
+        }
 
-      if (message.startsWith('HTTP')) {
         return {
           ok: false,
           error: ProviderErrorType.NETWORK_ERROR,
-          message,
+          message: `HTTP ${error.status}: ${error.statusText}`,
           retryable: true,
           meta: { durationMs },
         };
       }
 
-      if (message.includes('JSON')) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+
+      if (message.includes('JSON') || message.includes('valid Greenhouse jobs payload')) {
         return {
           ok: false,
           error: ProviderErrorType.INVALID_RESPONSE,
@@ -188,20 +151,8 @@ export class GreenhouseFetcher implements Fetcher {
     const startTime = Date.now();
 
     try {
-      const url = `${this.baseUrl}/${this.boardToken}/jobs/${sourceId}?questions=false`;
-      const response = await fetchWithTimeout(url, { headers: { Accept: 'application/json' } });
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          span.setAttribute('found', false);
-          span.end();
-          return { ok: true, data: null, meta: { durationMs: Date.now() - startTime } };
-        }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = (await response.json()) as GreenhouseRawJob;
-      const rawJob = this.parseSingleJob(data);
+      const raw = await fetchSingleJob(this.transportConfig(), sourceId);
+      const rawJob = raw && isValidGreenhouseJob(raw) ? this.toRawJob(parseJob(raw)) : null;
       const durationMs = Date.now() - startTime;
 
       span.setAttribute('found', !!rawJob);
@@ -286,13 +237,13 @@ export class GreenhouseFetcher implements Fetcher {
     const startTime = Date.now();
 
     try {
-      const response = await fetchWithTimeout(this.buildJobsUrl(), { method: 'HEAD' });
+      const ok = await pingBoard(this.transportConfig());
       const durationMs = Date.now() - startTime;
 
-      span.setAttribute('http.status', response.status);
+      span.setAttribute('http.status', ok ? 200 : 0);
       span.end();
 
-      return { ok: true, data: response.ok, meta: { durationMs } };
+      return { ok: true, data: ok, meta: { durationMs } };
     } catch (error) {
       const durationMs = Date.now() - startTime;
       span.setAttribute('error', true);
@@ -308,86 +259,56 @@ export class GreenhouseFetcher implements Fetcher {
     }
   }
 
-  private buildJobsUrl(): string {
-    return `${this.baseUrl}/${this.boardToken}/jobs?content=true`;
+  private transportConfig(): { boardToken: string; baseUrl: string } {
+    return { boardToken: this.boardToken, baseUrl: this.baseUrl };
   }
 
-  private parseResponse(data: GreenhouseJobsResponse): RawJob[] {
-    if (!data || !Array.isArray(data.jobs)) {
+  /** Mirrors the original `parseResponse`'s shape check and per-job validity filtering. */
+  private parseJobsPayload(payload: GreenhouseJobsPayload): AtsRawJob[] {
+    if (!payload || !Array.isArray(payload.jobs)) {
       throw new Error('Response is not a valid Greenhouse jobs payload');
     }
 
-    const jobs: RawJob[] = [];
-    for (const item of data.jobs) {
-      const job = this.parseSingleJob(item);
-      if (job) jobs.push(job);
-    }
-    return jobs;
+    return payload.jobs.filter(isValidGreenhouseJob).map((item) => parseJob(item));
   }
 
-  private parseSingleJob(item: GreenhouseRawJob): RawJob | null {
-    if (!this.isValidJob(item)) {
-      return null;
-    }
-
-    const locationName = item.location?.name ?? '';
+  private toRawJob(raw: AtsRawJob): RawJob {
+    const locationName = raw.location ?? '';
 
     return {
-      sourceId: String(item.id),
-      title: item.title,
-      description: item.content,
+      sourceId: raw.externalId,
+      title: raw.title,
+      description: raw.description,
       companyName: this.companyName,
       location: locationName,
-      salary: this.parseSalary(item.pay_input_ranges),
-      technologies: this.extractTechnologies(item.metadata),
-      url: item.absolute_url,
-      publishedAt: new Date(item.updated_at),
+      salary: raw.salary
+        ? { from: raw.salary.min, to: raw.salary.max, currency: raw.salary.currency ?? 'USD', period: 'yearly' }
+        : undefined,
+      technologies: extractTechnologies(raw.rawMetadata as readonly GreenhouseMetadataFieldPayload[] | null | undefined),
+      url: raw.url,
+      publishedAt: raw.publishedAt ?? new Date(0),
       fetchedAt: new Date(),
       remote: /remote/i.test(locationName),
       extensions: {
-        departments: item.departments?.map((d) => d.name) ?? [],
+        departments: raw.departments ? [...raw.departments] : [],
       },
     };
   }
+}
 
-  private isValidJob(item: unknown): item is GreenhouseRawJob {
-    return (
-      typeof item === 'object' &&
-      item !== null &&
-      'id' in item &&
-      'title' in item &&
-      'content' in item &&
-      'absolute_url' in item
-    );
+/** Consumer-owned: technology enrichment stays out of the shared canonical model (ADR-033). */
+function extractTechnologies(metadata: readonly GreenhouseMetadataFieldPayload[] | null | undefined): string[] {
+  if (!metadata) return [];
+
+  const techFields = metadata.filter((field) => /tech(nolog(y|ies))?|skills?/i.test(field.name));
+  const technologies: string[] = [];
+
+  for (const field of techFields) {
+    if (!field.value) continue;
+    technologies.push(...field.value.split(',').map((t) => t.trim()).filter(Boolean));
   }
 
-  private parseSalary(ranges: readonly GreenhousePayRange[] | null | undefined): RawJob['salary'] | undefined {
-    const range = ranges?.[0];
-    if (!range || (range.min_cents == null && range.max_cents == null)) {
-      return undefined;
-    }
-
-    return {
-      from: range.min_cents != null ? range.min_cents / 100 : undefined,
-      to: range.max_cents != null ? range.max_cents / 100 : undefined,
-      currency: range.currency_type ?? 'USD',
-      period: 'yearly',
-    };
-  }
-
-  private extractTechnologies(metadata: readonly GreenhouseMetadataField[] | null | undefined): string[] {
-    if (!metadata) return [];
-
-    const techFields = metadata.filter((field) => /tech(nolog(y|ies))?|skills?/i.test(field.name));
-    const technologies: string[] = [];
-
-    for (const field of techFields) {
-      if (!field.value) continue;
-      technologies.push(...field.value.split(',').map((t) => t.trim()).filter(Boolean));
-    }
-
-    return technologies;
-  }
+  return technologies;
 }
 
 function matchesCriteria(job: RawJob, criteria: SearchCriteria): boolean {

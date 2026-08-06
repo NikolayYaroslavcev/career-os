@@ -1,10 +1,12 @@
 import { AggregateRoot } from '../base/aggregate-root.js';
 import type { WorkspaceId, UserId } from '../base/identifier.js';
 
+export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER';
+
 interface WorkspaceProps {
   name: string;
   ownerId: UserId;
-  memberIds: UserId[];
+  memberRoles: Map<UserId, WorkspaceRole>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -27,7 +29,7 @@ export class Workspace extends AggregateRoot<WorkspaceId> {
     return new Workspace(params.id, {
       name: params.name.trim(),
       ownerId: params.ownerId,
-      memberIds: [params.ownerId],
+      memberRoles: new Map([[params.ownerId, 'OWNER']]),
       createdAt: now,
       updatedAt: now,
     });
@@ -46,7 +48,11 @@ export class Workspace extends AggregateRoot<WorkspaceId> {
   }
 
   get memberIds(): ReadonlyArray<UserId> {
-    return [...this.props.memberIds];
+    return [...this.props.memberRoles.keys()];
+  }
+
+  get members(): ReadonlyArray<{ userId: UserId; role: WorkspaceRole }> {
+    return [...this.props.memberRoles.entries()].map(([userId, role]) => ({ userId, role }));
   }
 
   get createdAt(): Date {
@@ -62,9 +68,9 @@ export class Workspace extends AggregateRoot<WorkspaceId> {
     this.touch();
   }
 
-  addMember(userId: UserId): void {
-    if (!this.props.memberIds.includes(userId)) {
-      this.props.memberIds.push(userId);
+  addMember(userId: UserId, role: Exclude<WorkspaceRole, 'OWNER'> = 'MEMBER'): void {
+    if (!this.props.memberRoles.has(userId)) {
+      this.props.memberRoles.set(userId, role);
       this.touch();
     }
   }
@@ -74,15 +80,29 @@ export class Workspace extends AggregateRoot<WorkspaceId> {
       throw new Error('Cannot remove workspace owner');
     }
 
-    const index = this.props.memberIds.indexOf(userId);
-    if (index !== -1) {
-      this.props.memberIds.splice(index, 1);
+    if (this.props.memberRoles.delete(userId)) {
       this.touch();
     }
   }
 
+  getMemberRole(userId: UserId): WorkspaceRole | undefined {
+    return this.props.memberRoles.get(userId);
+  }
+
+  updateMemberRole(userId: UserId, role: Exclude<WorkspaceRole, 'OWNER'>): void {
+    if (userId === this.props.ownerId) {
+      throw new Error('Cannot change the workspace owner\'s role');
+    }
+    if (!this.props.memberRoles.has(userId)) {
+      throw new Error('User is not a member of this workspace');
+    }
+
+    this.props.memberRoles.set(userId, role);
+    this.touch();
+  }
+
   isMember(userId: UserId): boolean {
-    return this.props.memberIds.includes(userId);
+    return this.props.memberRoles.has(userId);
   }
 
   isOwner(userId: UserId): boolean {
@@ -90,11 +110,13 @@ export class Workspace extends AggregateRoot<WorkspaceId> {
   }
 
   transferOwnership(newOwnerId: UserId): void {
-    if (!this.props.memberIds.includes(newOwnerId)) {
+    if (!this.props.memberRoles.has(newOwnerId)) {
       throw new Error('New owner must be a workspace member');
     }
 
+    this.props.memberRoles.set(this.props.ownerId, 'ADMIN');
     this.props.ownerId = newOwnerId;
+    this.props.memberRoles.set(newOwnerId, 'OWNER');
     this.touch();
   }
 

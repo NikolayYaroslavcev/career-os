@@ -1,0 +1,31 @@
+[
+  {
+    "uid": "job-001",
+    "name": "Senior Backend Engineer",
+    "department": "Engineering",
+    "location": { "name": "Tel Aviv, Israel", "country": "Israel", "city": "Tel Aviv", "is_remote": false },
+    "employment_type": "Full-time",
+    "workplace_type": "Office",
+    "time_updated": "2026-07-01T10:00:00.000Z",
+    "company_name": "Acme Inc",
+    "url_active_page": "https://www.comeet.com/jobs/acme/12.345/senior-backend-engineer/AB.CDE",
+    "position_url": "https://www.comeet.com/jobs/acme/12.345",
+    "details": [
+      { "name": "Description", "value": "Build APIs using Node.js and React." },
+      { "name": "Requirements", "value": "Experience with Kubernetes." }
+    ]
+  },
+  {
+    "uid": "job-002",
+    "name": "Remote Product Manager",
+    "department": null,
+    "location": { "name": "", "country": null, "city": null, "is_remote": true },
+    "employment_type": null,
+    "workplace_type": "Remote",
+    "time_updated": "2026-07-02T10:00:00.000Z",
+    "company_name": "Acme Inc",
+    "url_active_page": "",
+    "position_url": "https://www.comeet.com/jobs/acme/12.346",
+    "details": null
+  }
+]

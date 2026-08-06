@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { authMiddleware } from '../../middleware/auth-middleware.js';
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -172,6 +173,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   fastify.post('/logout-all', {
+    preHandler: [authMiddleware],
     schema: {
       response: {
         200: {

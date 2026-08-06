@@ -1,0 +1,20 @@
+{
+  "id": "a1b2c3d4-1111-2222-3333-444455556666",
+  "text": "Senior Backend Engineer",
+  "categories": {
+    "commitment": "Full-time",
+    "department": "Engineering",
+    "location": "Remote - US",
+    "team": "Platform",
+    "allLocations": ["Remote - US"]
+  },
+  "description": "<div>We are looking for a Senior Backend Engineer to join our platform team.</div>",
+  "descriptionPlain": "We are looking for a Senior Backend Engineer to join our platform team.",
+  "lists": [{ "text": "Requirements", "content": "<ul><li>5+ years experience</li></ul>" }],
+  "hostedUrl": "https://jobs.lever.co/acme/a1b2c3d4-1111-2222-3333-444455556666",
+  "applyUrl": "https://jobs.lever.co/acme/a1b2c3d4-1111-2222-3333-444455556666/apply",
+  "createdAt": 1752105600000,
+  "workplaceType": "remote",
+  "salaryRange": { "min": 150000, "max": 190000, "currency": "USD", "interval": "per-year-salary" },
+  "tags": ["go", "kubernetes"]
+}

@@ -1,5 +1,5 @@
 import type { Config } from '@careeros/shared';
-import { RedisAiBatchBacklog, getRedis } from '@careeros/shared';
+import { RedisAiBatchBacklog, getRedis, parseTelegramChannelList } from '@careeros/shared';
 import {
   PrismaUserRepository,
   PrismaResumeRepository,
@@ -22,6 +22,7 @@ import {
   PrismaCompanyWatchRepository,
   PrismaCompanyWatchEventRepository,
   PrismaCompanyWatchSyncLogRepository,
+  PrismaCompanyCandidateRepository,
   PrismaAIJobRepository,
   PrismaAICacheRepository,
   PrismaAIUsageRepository,
@@ -31,16 +32,19 @@ import {
   PrismaCareerInsightRepository,
   PrismaProviderConfigRepository,
   PrismaTelegramChannelRepository,
+  PrismaTelegramChannelStatsRepository,
   PrismaQualityDataRepository,
   PrismaUserVacancyInteractionRepository,
+  PrismaTailoredResumeRepository,
+  PrismaSocialMessageRepository,
+  PrismaMessageExtractionRepository,
 } from '@careeros/database';
 import { createAuthProvider } from '@careeros/auth';
-import { ApplicationServiceImpl } from '@careeros/career';
+import { ApplicationServiceImpl, SocialPlatform } from '@careeros/career';
 import type { ApplicationService } from '@careeros/career';
 import {
   AIOrchestrator,
   AnalyzeVacancyHandler,
-  TailorResumeHandler,
   CoverLetterHandler,
   InterviewPrepHandler,
   SalaryAnalysisHandler,
@@ -57,6 +61,10 @@ import {
   SearchProfileSuggestionPromptBuilder,
   StructuredResumeExtractionPromptBuilder,
   ResumeExtractionEngine,
+  MessageExtractionEngine,
+  MessageExtractionStatus,
+  MESSAGE_EXTRACTION_DISCOVERY_MIN_CONFIDENCE,
+  MessageExtractionPromptBuilder,
   InMemoryAICache,
   InMemoryCostTracker,
   ConsoleAILogger,
@@ -66,10 +74,9 @@ import {
   createPrimaryAIProviderFromEnv,
   AIProviderHealthMonitor,
 } from '@careeros/ai';
-import type { AIProvider } from '@careeros/ai';
+import type { AIProvider, UsageRecorder, MessageExtraction } from '@careeros/ai';
 import {
   ProviderRegistry,
-  createRemoteOKProvider,
   createHHProvider,
   createGreenhouseProvider,
   createLeverProvider,
@@ -77,18 +84,23 @@ import {
   createWorkdayProvider,
   createTeamtailorProvider,
   createRemotiveProvider,
-  createHimalayasProvider,
   createArbeitnowProvider,
   createJobicyProvider,
   createWWRProvider,
   createWorkingNomadsProvider,
   createNoDeskProvider,
+  createPyJobsProvider,
+  createDjangoJobsProvider,
+  createSpeedrunProvider,
+  createFranceTravailProvider,
   createHNHiringProvider,
   createLinkedInProvider,
   createAdzunaProvider,
   createSmartRecruitersProvider,
   createRecruiteeProvider,
   createComeetProvider,
+  createPersonioProvider,
+  createWorkableProvider,
   createHabrCareerProvider,
   createSuperJobProvider,
   createTelegramProvider,
@@ -96,12 +108,25 @@ import {
   InMemoryMetricsCollector as ProviderInMemoryMetricsCollector,
   InMemoryTracer as ProviderInMemoryTracer,
   ProviderHealthMonitor,
+  SocialMessageTransportRegistry,
+  TransportManager,
+  TelegramFetcher,
+  HtmlPreviewTransport,
+  BotApiTransport,
 } from '@careeros/providers';
-import type { Logger as ProviderLogger } from '@careeros/providers';
+import type { Logger as ProviderLogger, TelegramExtractionLookup, TelegramExtractedFields, NormalizedVacancy } from '@careeros/providers';
 import { TelegramAdapter, InMemoryTelegramClient } from '@careeros/telegram';
 import type { TelegramClient } from '@careeros/telegram';
 import { FollowUpReminderService } from '@careeros/notifications';
-import { CompanyWatchService, AtsAdapterRegistry } from '@careeros/company-watch';
+import {
+  CompanyWatchService,
+  AtsAdapterRegistry,
+  CompanyDiscoveryService,
+  CandidateDeduplicationService,
+  CompanyDiscoveryIntakeService,
+  VacancyDiscoveryBridge,
+} from '@careeros/company-watch';
+import type { VacancyForDiscovery } from '@careeros/company-watch';
 import { SearchProfileService } from './services/search-profile-service.js';
 import { ProviderSearchService } from './services/provider-search-service.js';
 import { AiMatchingService } from './services/ai-matching-service.js';
@@ -118,14 +143,21 @@ import { DigestDeliveryService } from './services/digest-delivery-service.js';
 import { ManualDigestScheduler } from './services/digest-scheduler.js';
 import { TelegramLinkingService } from './services/telegram-linking-service.js';
 import { AuthService } from './services/auth-service.js';
+import { WorkspaceService } from './services/workspace-service.js';
 import { ResumeService } from './services/resume-service.js';
 import { SearchProfileSuggestionService } from './services/search-profile-suggestion-service.js';
 import { SyncSchedulerService } from './services/sync-scheduler-service.js';
+import { SocialMessageIngestionService } from './services/social-message-ingestion-service.js';
+import { SocialMessagePipeline } from './services/social-message-pipeline.js';
+import { TelegramChannelStatsService } from './services/telegram-channel-stats-service.js';
 import { RedisRateLimiter } from './services/redis-rate-limiter.js';
 import { DashboardStatsService } from './services/dashboard-stats-service.js';
 import { NotificationDispatcherService } from './services/notification-dispatcher-service.js';
 import { BullMqVacancyAnalysisQueue, type VacancyAnalysisQueue } from './queues/vacancy-analysis-queue.js';
+import { BullMqResumeTailoringQueue, type ResumeTailoringQueue } from './queues/resume-tailoring-queue.js';
+import { TailoringRequestService } from './services/tailoring-request-service.js';
 import { ProviderDiagnosticsService, type ProviderRegistrationOutcome } from './services/provider-diagnostics-service.js';
+import { CompanyDiscoveryDiagnosticsService } from './services/company-discovery-diagnostics-service.js';
 import { SearchRunTraceRecorder } from './services/search-run-trace.js';
 import { QueueDiagnosticsService } from './services/queue-diagnostics-service.js';
 import { CareerIntelligenceService } from './services/career-intelligence-service.js';
@@ -152,6 +184,7 @@ export interface Container {
     readonly workspace: PrismaWorkspaceRepository;
     readonly refreshToken: PrismaRefreshTokenRepository;
     readonly structuredResume: PrismaStructuredResumeRepository;
+    readonly tailoredResume: PrismaTailoredResumeRepository;
     readonly aiJob: PrismaAIJobRepository;
     readonly aiCache: PrismaAICacheRepository;
     readonly aiUsage: PrismaAIUsageRepository;
@@ -162,20 +195,34 @@ export interface Container {
     readonly providerConfig: PrismaProviderConfigRepository;
     readonly telegramChannel: PrismaTelegramChannelRepository;
     readonly userVacancyInteraction: PrismaUserVacancyInteractionRepository;
+    readonly socialMessage: PrismaSocialMessageRepository;
+    readonly messageExtraction: PrismaMessageExtractionRepository;
+    readonly companyCandidate: PrismaCompanyCandidateRepository;
   };
   readonly authProvider: ReturnType<typeof createAuthProvider>;
   readonly providerRegistry: ProviderRegistry;
   readonly providerHealthMonitor: ProviderHealthMonitor;
+  readonly socialMessageTransportRegistry: SocialMessageTransportRegistry;
+  readonly transportManager: TransportManager;
+  readonly botApiTransport: BotApiTransport;
   readonly providerDiagnostics: ProviderDiagnosticsService;
+  readonly companyDiscoveryDiagnostics: CompanyDiscoveryDiagnosticsService;
   readonly searchRunTraces: SearchRunTraceRecorder;
   readonly queueDiagnostics: QueueDiagnosticsService;
   readonly aiProvider: AIProvider;
   readonly aiProviderHealthMonitor: AIProviderHealthMonitor;
   readonly aiMetrics: InMemoryAIMetricsCollector;
   readonly aiOrchestrator: AIOrchestrator;
+  /**
+   * ADR-032 Phase 3: SocialMessage -> MessageExtraction. Driven by
+   * `services.socialMessagePipeline` (Phase 4/5), wired from the same
+   * onProviderSynced('telegram') hook SocialMessageIngestionService uses.
+   */
+  readonly messageExtractionEngine: MessageExtractionEngine;
   readonly applicationService: ApplicationService;
   readonly services: {
     readonly auth: AuthService;
+    readonly workspace: WorkspaceService;
     readonly searchProfile: SearchProfileService;
     readonly providerSearch: ProviderSearchService;
     readonly aiMatching: AiMatchingService;
@@ -197,10 +244,42 @@ export interface Container {
     readonly dashboardStats: DashboardStatsService;
     readonly notificationDispatcher: NotificationDispatcherService;
     readonly companyWatch: CompanyWatchService;
+    readonly companyDiscoveryIntake: CompanyDiscoveryIntakeService;
     readonly careerIntelligence: CareerIntelligenceService;
     readonly resumeVersionIntelligence: ResumeVersionIntelligenceService;
     readonly providerManagement: ProviderManagementService;
+    readonly tailoringRequest: TailoringRequestService;
+    readonly socialMessageIngestion: SocialMessageIngestionService;
+    readonly socialMessagePipeline: SocialMessagePipeline;
+    readonly telegramChannelStats: TelegramChannelStatsService;
   };
+}
+
+/**
+ * Priority: DB enabled channels > ENV fallback for migration compatibility.
+ * Shared by V1's createTelegramProvider() registration below and by
+ * registerSocialMessageTransports() (V2 transport layer) so both read the
+ * exact same channel list instead of two independently-parsed copies.
+ */
+function resolveTelegramChannelSource(
+  config: Config,
+  telegramChannelRepo?: PrismaTelegramChannelRepository,
+): { envChannelsList: readonly string[]; channelProvider?: () => Promise<readonly string[]> } {
+  const envChannelsList = parseTelegramChannelList(config.TELEGRAM_CHANNELS);
+
+  const channelProvider = telegramChannelRepo
+    ? async (): Promise<readonly string[]> => {
+        try {
+          const dbChannels = await telegramChannelRepo.findEnabledUsernames();
+          if (dbChannels.length > 0) return dbChannels;
+        } catch {
+          // DB not available, fall through to ENV
+        }
+        return envChannelsList;
+      }
+    : undefined;
+
+  return { envChannelsList, channelProvider };
 }
 
 /**
@@ -218,20 +297,13 @@ function registerConfiguredProviders(
   config: Config,
   logger: ProviderLogger,
   telegramChannelRepo?: PrismaTelegramChannelRepository,
+  transportManager?: TransportManager,
+  extractionLookup?: TelegramExtractionLookup,
 ): ProviderRegistrationOutcome[] {
   const outcomes: ProviderRegistrationOutcome[] = [];
 
-  registry.register(
-    createRemoteOKProvider({
-      logger,
-      metrics: new ProviderInMemoryMetricsCollector(),
-      tracer: new ProviderInMemoryTracer(),
-    })
-  );
-  outcomes.push({ providerId: 'remote_ok', registered: true, configured: true, authenticated: 'not_required' });
-
   // HH (HeadHunter) requires no API key for search — an access token only
-  // raises rate limits, so it's registered unconditionally, same as RemoteOK.
+  // raises rate limits, so it's registered unconditionally.
   // All HH group domains (hh.ru, hh.kz, headhunter.ge) use api.hh.ru.
   // rabota.by has NO API — Belarus jobs are accessed via area ID 16.
   registry.register(
@@ -268,6 +340,27 @@ function registerConfiguredProviders(
     const reason = 'ADZUNA_APP_ID/ADZUNA_APP_KEY not set';
     logger.warn(`Adzuna provider not registered: ${reason}`);
     outcomes.push({ providerId: 'adzuna', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: adzunaRequiredConfig });
+  }
+
+  // France Travail — requires OAuth2 client_credentials from a free
+  // francetravail.io developer registration (see research/free-provider-expansion).
+  const franceTravailRequiredConfig = ['FRANCE_TRAVAIL_CLIENT_ID', 'FRANCE_TRAVAIL_CLIENT_SECRET'];
+  if (config.FRANCE_TRAVAIL_CLIENT_ID && config.FRANCE_TRAVAIL_CLIENT_SECRET) {
+    registry.register(
+      createFranceTravailProvider({
+        clientId: config.FRANCE_TRAVAIL_CLIENT_ID,
+        clientSecret: config.FRANCE_TRAVAIL_CLIENT_SECRET,
+        romeCodes: config.FRANCE_TRAVAIL_ROME_CODES?.split(',').map((c) => c.trim()).filter(Boolean),
+        logger,
+        metrics: new ProviderInMemoryMetricsCollector(),
+        tracer: new ProviderInMemoryTracer(),
+      })
+    );
+    outcomes.push({ providerId: 'france_travail', registered: true, configured: true, authenticated: 'configured', requiredConfig: franceTravailRequiredConfig });
+  } else {
+    const reason = 'FRANCE_TRAVAIL_CLIENT_ID/FRANCE_TRAVAIL_CLIENT_SECRET not set';
+    logger.warn(`France Travail provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'france_travail', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: franceTravailRequiredConfig });
   }
 
   const greenhouseRequiredConfig = ['GREENHOUSE_BOARD_TOKEN', 'GREENHOUSE_COMPANY_NAME'];
@@ -421,16 +514,53 @@ function registerConfiguredProviders(
     outcomes.push({ providerId: 'comeet', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: comeetRequiredConfig });
   }
 
+  // Personio — public unauthenticated per-tenant XML feed, but still
+  // per-company like Greenhouse/Lever/etc. (see research/free-provider-expansion).
+  // No default tenant (unlike Greenhouse's JetBrains default): skipped until configured.
+  const personioRequiredConfig = ['PERSONIO_COMPANY', 'PERSONIO_COMPANY_NAME'];
+  if (config.PERSONIO_COMPANY && config.PERSONIO_COMPANY_NAME) {
+    registry.register(
+      createPersonioProvider({
+        company: config.PERSONIO_COMPANY,
+        companyName: config.PERSONIO_COMPANY_NAME,
+        language: config.PERSONIO_LANGUAGE,
+        logger,
+        metrics: new ProviderInMemoryMetricsCollector(),
+        tracer: new ProviderInMemoryTracer(),
+      })
+    );
+    outcomes.push({ providerId: 'personio', registered: true, configured: true, authenticated: 'not_required', requiredConfig: personioRequiredConfig });
+  } else {
+    const reason = 'PERSONIO_COMPANY/PERSONIO_COMPANY_NAME not set';
+    logger.warn(`Personio provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'personio', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: personioRequiredConfig });
+  }
+
+  // Workable — public unauthenticated per-tenant JSON widget endpoint, but
+  // still per-company like Greenhouse/Personio/etc. (see research/free-provider-expansion).
+  const workableRequiredConfig = ['WORKABLE_ACCOUNT_SLUG', 'WORKABLE_COMPANY_NAME'];
+  if (config.WORKABLE_ACCOUNT_SLUG && config.WORKABLE_COMPANY_NAME) {
+    registry.register(
+      createWorkableProvider({
+        accountSlug: config.WORKABLE_ACCOUNT_SLUG,
+        companyName: config.WORKABLE_COMPANY_NAME,
+        logger,
+        metrics: new ProviderInMemoryMetricsCollector(),
+        tracer: new ProviderInMemoryTracer(),
+      })
+    );
+    outcomes.push({ providerId: 'workable', registered: true, configured: true, authenticated: 'not_required', requiredConfig: workableRequiredConfig });
+  } else {
+    const reason = 'WORKABLE_ACCOUNT_SLUG/WORKABLE_COMPANY_NAME not set';
+    logger.warn(`Workable provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'workable', registered: false, configured: false, authenticated: 'missing', reason, requiredConfig: workableRequiredConfig });
+  }
+
   // Free providers — no API key needed, always register
   registry.register(
     createRemotiveProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
   );
   outcomes.push({ providerId: 'remotive', registered: true, configured: true, authenticated: 'not_required' });
-
-  registry.register(
-    createHimalayasProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
-  );
-  outcomes.push({ providerId: 'himalayas', registered: true, configured: true, authenticated: 'not_required' });
 
   registry.register(
     createArbeitnowProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
@@ -451,6 +581,21 @@ function registerConfiguredProviders(
     createWorkingNomadsProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
   );
   outcomes.push({ providerId: 'working_nomads', registered: true, configured: true, authenticated: 'not_required' });
+
+  registry.register(
+    createPyJobsProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
+  );
+  outcomes.push({ providerId: 'pyjobs', registered: true, configured: true, authenticated: 'not_required' });
+
+  registry.register(
+    createDjangoJobsProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
+  );
+  outcomes.push({ providerId: 'django_jobs', registered: true, configured: true, authenticated: 'not_required' });
+
+  registry.register(
+    createSpeedrunProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
+  );
+  outcomes.push({ providerId: 'speedrun', registered: true, configured: true, authenticated: 'not_required' });
 
   registry.register(
     createNoDeskProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
@@ -496,22 +641,7 @@ function registerConfiguredProviders(
   // TELEGRAM_CHANNELS env is kept only as migration fallback — DB is authoritative.
   const telegramRequiredConfig = ['TELEGRAM_CHANNELS (fallback)'];
 
-  const envChannelsList = config.TELEGRAM_CHANNELS
-    ? config.TELEGRAM_CHANNELS.split(',').map((c) => c.trim().replace(/^@/, '').replace(/^https?:\/\/t\.me\//i, '')).filter(Boolean)
-    : [];
-
-  const channelProvider = telegramChannelRepo
-    ? async (): Promise<readonly string[]> => {
-        try {
-          const dbChannels = await telegramChannelRepo.findEnabledUsernames();
-          if (dbChannels.length > 0) return dbChannels;
-        } catch {
-          // DB not available, fall through to ENV
-        }
-        return envChannelsList;
-      }
-    : undefined;
-
+  const { envChannelsList, channelProvider } = resolveTelegramChannelSource(config, telegramChannelRepo);
   const telegramChannels = envChannelsList;
 
   if (telegramChannels.length > 0 || channelProvider) {
@@ -522,6 +652,8 @@ function registerConfiguredProviders(
         metrics: new ProviderInMemoryMetricsCollector(),
         tracer: new ProviderInMemoryTracer(),
         channelProvider,
+        transportManager,
+        extractionLookup,
       })
     );
     outcomes.push({ providerId: 'telegram', registered: true, configured: true, authenticated: 'not_required', requiredConfig: telegramRequiredConfig });
@@ -548,6 +680,158 @@ function registerConfiguredProviders(
   }
 
   return outcomes;
+}
+
+interface SocialMessageTransportWiring {
+  readonly registry: SocialMessageTransportRegistry;
+  readonly manager: TransportManager;
+  readonly botApiTransport: BotApiTransport;
+}
+
+/**
+ * Registers EPIC-12 Phase 2's transport layer (ADR-032 addendum) into its own
+ * SocialMessageTransportRegistry/TransportManager. Uses its own TelegramFetcher
+ * instance (same class/scrape logic createTelegramProvider() uses, not a fork
+ * of it) to do the actual `t.me/s/<channel>` scrape.
+ *
+ * Phase 2.5 (ADR-032 addendum) wires the resulting TransportManager into two
+ * places, both downstream of this function: (1) the vacancy-sync
+ * TelegramFetcher instance (constructed in registerConfiguredProviders(),
+ * passed the `transportManager` this function returns) now routes its
+ * message fetching through TransportManager instead of scraping directly —
+ * the RawJob[] output contract to Mapper/Normalizer/SyncStrategy is
+ * unchanged, so the existing SyncScheduler → dedup → persistence → Dashboard
+ * pipeline sees no behavior change; (2) SocialMessageIngestionService calls
+ * TransportManager.fetch() directly to persist SocialMessage rows, via
+ * SyncSchedulerService's onProviderSynced hook. Phase 4/5 (SocialMessagePipeline,
+ * SocialMessageMapper/Normalizer) is what actually turns those SocialMessage
+ * rows into extractions and, once extracted, Vacancy rows — nothing in this
+ * function does either.
+ */
+function registerSocialMessageTransports(
+  config: Config,
+  logger: ProviderLogger,
+  telegramChannelRepo?: PrismaTelegramChannelRepository,
+): SocialMessageTransportWiring {
+  const registry = new SocialMessageTransportRegistry();
+  const metrics = new ProviderInMemoryMetricsCollector();
+  const tracer = new ProviderInMemoryTracer();
+
+  const { channelProvider } = resolveTelegramChannelSource(config, telegramChannelRepo);
+  const telegramFetcher = new TelegramFetcher({ channels: [], logger, metrics, tracer, channelProvider });
+
+  const htmlPreviewTransport = new HtmlPreviewTransport({ logger, metrics, tracer, fetcher: telegramFetcher });
+  const botApiTransport = new BotApiTransport({ logger, metrics, tracer });
+
+  // Registration order = resolve() preference: once a bot token is
+  // configured, prefer the richer API transport over scraping the public
+  // preview page (SocialMessageTransportRegistry.resolve() doc comment).
+  if (config.TELEGRAM_BOT_TOKEN) {
+    registry.register('telegram', botApiTransport);
+  }
+  registry.register('telegram', htmlPreviewTransport);
+
+  const manager = new TransportManager({ registry, logger, metrics, tracer });
+
+  return { registry, manager, botApiTransport };
+}
+
+/**
+ * ADR-032 Phase 4/5 cutover seam: given a channel + platform-native message
+ * ID, resolve the SocialMessage the SocialMessage pipeline already ingested
+ * and its latest MessageExtraction, if any. Shared by createTelegramExtractionLookup
+ * (below, feeds RawJob fields) and createTelegramDiscoveryFilter (feeds the
+ * Company Discovery bridge) so the two-query lookup isn't duplicated between them.
+ */
+function resolveTelegramMessageExtraction(
+  socialMessageRepository: PrismaSocialMessageRepository,
+  messageExtractionRepository: PrismaMessageExtractionRepository,
+  channel: string,
+  messageId: string,
+): Promise<MessageExtraction | undefined> {
+  return socialMessageRepository
+    .findBySourceAndExternalId(SocialPlatform.TELEGRAM, channel, messageId)
+    .then((message) => (message ? messageExtractionRepository.findLatestByMessageId(message.id) : null))
+    .then((extraction) => extraction ?? undefined);
+}
+
+/**
+ * Given a channel + platform-native message ID, resolve the SocialMessage
+ * the SocialMessage pipeline already ingested and extracted, and shape its
+ * latest MessageExtraction into the plain fields TelegramFetcher.buildRawJob()
+ * needs. Only a SUCCESS-status
+ * extraction qualifies — LOW_CONFIDENCE/SPAM/PARSE_ERROR/PROVIDER_ERROR all
+ * resolve to `undefined`, same as "not extracted yet", which is exactly
+ * "rows below the confidence threshold never reach this step" (ADR-032).
+ */
+function createTelegramExtractionLookup(
+  socialMessageRepository: PrismaSocialMessageRepository,
+  messageExtractionRepository: PrismaMessageExtractionRepository,
+): TelegramExtractionLookup {
+  return async (channel: string, messageId: string): Promise<TelegramExtractedFields | undefined> => {
+    const extraction = await resolveTelegramMessageExtraction(socialMessageRepository, messageExtractionRepository, channel, messageId);
+    if (!extraction || extraction.status !== MessageExtractionStatus.SUCCESS) return undefined;
+
+    const fields = extraction.extractedFields;
+    return {
+      company: fields.company,
+      title: fields.title,
+      technologies: fields.technologies,
+      skills: fields.skills,
+      seniority: fields.seniority,
+      salaryMin: fields.salaryMin,
+      salaryMax: fields.salaryMax,
+      currency: fields.currency,
+      country: fields.country,
+      city: fields.city,
+      employmentType: fields.employmentType,
+      remoteType: fields.remoteType,
+      links: fields.links,
+      requirements: fields.requirements,
+      responsibilities: fields.responsibilities,
+    };
+  };
+}
+
+/**
+ * ADR-035 Phase 3 extension: gates which Telegram-sourced NormalizedVacancy
+ * rows are trusted enough to feed VacancyDiscoveryBridge.processVacancies()
+ * (i.e. create a CompanyCandidate). Deliberately a *stricter* bar than the
+ * one createTelegramExtractionLookup already applies to reach Vacancy
+ * creation at all — MESSAGE_EXTRACTION_DISCOVERY_MIN_CONFIDENCE (70) vs.
+ * SUCCESS's implicit >=40 — plus a requirement for a real extracted company
+ * name and an external (non-t.me, non-mailto) link to use as companyUrl,
+ * since NormalizedVacancy.companyUrl is never set by TelegramFetcher itself.
+ * Returns undefined for anything that doesn't qualify — those vacancies
+ * still exist (created via the unconditional Vacancy-sync path), they just
+ * never reach the discovery bridge, same "not eligible" convention used
+ * throughout this file rather than a thrown error.
+ */
+export function createTelegramDiscoveryFilter(
+  socialMessageRepository: PrismaSocialMessageRepository,
+  messageExtractionRepository: PrismaMessageExtractionRepository,
+): (vacancy: NormalizedVacancy) => Promise<VacancyForDiscovery | undefined> {
+  return async (vacancy: NormalizedVacancy): Promise<VacancyForDiscovery | undefined> => {
+    const separator = vacancy.sourceId.indexOf(':');
+    if (separator === -1) return undefined;
+    const channel = vacancy.sourceId.slice(0, separator);
+    const messageId = vacancy.sourceId.slice(separator + 1);
+
+    const extraction = await resolveTelegramMessageExtraction(socialMessageRepository, messageExtractionRepository, channel, messageId);
+    if (!extraction) return undefined;
+    if (extraction.status !== MessageExtractionStatus.SUCCESS) return undefined;
+    if (extraction.deterministicConfidence < MESSAGE_EXTRACTION_DISCOVERY_MIN_CONFIDENCE) return undefined;
+
+    const fields = extraction.extractedFields;
+    if (!fields.company || !fields.company.trim()) return undefined;
+
+    const companyUrl = fields.links.find(
+      (link) => /^https?:\/\//i.test(link) && !/^https?:\/\/t\.me\//i.test(link) && !link.startsWith('mailto:')
+    );
+    if (!companyUrl) return undefined;
+
+    return { companyName: fields.company, companyUrl, title: vacancy.title };
+  };
 }
 
 function createTelegramClient(config: Config): TelegramClient {
@@ -607,9 +891,11 @@ export function buildContainer(config: Config): Container {
   const workspaceRepository = new PrismaWorkspaceRepository();
   const refreshTokenRepository = new PrismaRefreshTokenRepository();
   const structuredResumeRepository = new PrismaStructuredResumeRepository();
+  const tailoredResumeRepository = new PrismaTailoredResumeRepository();
   const companyWatchRepository = new PrismaCompanyWatchRepository();
   const companyWatchEventRepository = new PrismaCompanyWatchEventRepository();
   const companyWatchSyncLogRepository = new PrismaCompanyWatchSyncLogRepository();
+  const companyCandidateRepository = new PrismaCompanyCandidateRepository();
   const aiJobRepository = new PrismaAIJobRepository();
   const aiCacheRepository = new PrismaAICacheRepository();
   const aiUsageRepository = new PrismaAIUsageRepository();
@@ -622,12 +908,39 @@ export function buildContainer(config: Config): Container {
   const bulkAiBudgetEnforcer = config.AI_BUDGET_CHECK_ENABLED
     ? new BudgetEnforcer(aiBudgetRepository, new UsageTracker(aiUsageRepository))
     : undefined;
+  // Same bulk/background call sites as bulkAiBudgetEnforcer above, but for
+  // *persisting* usage instead of gating it — without this, MatchingEngine,
+  // ResumeExtractionEngine, and SearchProfileSuggestionService spend real AI
+  // provider budget that never shows up in the AI usage dashboard (which reads
+  // only from AIUsageRepository, populated otherwise solely by AIOrchestrator.execute()).
+  const bulkUsageRecorder: UsageRecorder = {
+    record: async (input) => {
+      await aiUsageRepository.create(input);
+    },
+  };
   const analyticsEventRepository = new PrismaAnalyticsEventRepository();
   const careerInsightRepository = new PrismaCareerInsightRepository();
   const providerConfigRepository = new PrismaProviderConfigRepository();
   const telegramChannelRepository = new PrismaTelegramChannelRepository();
+  const telegramChannelStatsRepository = new PrismaTelegramChannelStatsRepository();
+
+  // Bootstrap: makes the TelegramChannel DB table the source of truth from
+  // this boot onward, with no manual script required. seedFromEnv() is
+  // idempotent (only inserts usernames that don't already exist yet), so
+  // calling it on every boot is safe — the first boot populates the table,
+  // every later boot is a no-op. Fire-and-forget/best-effort: buildContainer()
+  // is synchronous and must never block startup on this, and
+  // resolveTelegramChannelSource()'s channelProvider already falls back to
+  // TELEGRAM_CHANNELS for any sync tick that runs before this lands.
+  if (config.TELEGRAM_CHANNELS) {
+    telegramChannelRepository.seedFromEnv(config.TELEGRAM_CHANNELS).catch((error) => {
+      console.warn('Telegram channel DB bootstrap failed, TELEGRAM_CHANNELS env fallback remains active:', error instanceof Error ? error.message : error);
+    });
+  }
   const qualityDataRepository = new PrismaQualityDataRepository();
   const userVacancyInteractionRepository = new PrismaUserVacancyInteractionRepository();
+  const socialMessageRepository = new PrismaSocialMessageRepository();
+  const messageExtractionRepository = new PrismaMessageExtractionRepository();
 
   const authProvider = createAuthProvider({
     jwtSecret: config.JWT_SECRET,
@@ -638,13 +951,38 @@ export function buildContainer(config: Config): Container {
     argon2Parallelism: config.ARGON2_PARALLELISM,
   });
 
+  // Built before registerConfiguredProviders() (Phase 2.5, ADR-032 addendum)
+  // so the resulting TransportManager can be threaded into
+  // createTelegramProvider() below — its TelegramFetcher routes message
+  // fetching through it instead of scraping directly.
+  const {
+    registry: socialMessageTransportRegistry,
+    manager: transportManager,
+    botApiTransport,
+  } = registerSocialMessageTransports(config, new ProviderConsoleLogger(config.LOG_LEVEL), telegramChannelRepository);
+
+  // ADR-032 Phase 4/5 cutover seam: buildRawJob() calls this instead of
+  // regex-extracting when it wants V2 behavior — see createTelegramProvider() below.
+  const telegramExtractionLookup = createTelegramExtractionLookup(socialMessageRepository, messageExtractionRepository);
+
   const providerRegistry = new ProviderRegistry();
   const registrationOutcomes = registerConfiguredProviders(
     providerRegistry,
     config,
     new ProviderConsoleLogger(config.LOG_LEVEL),
     telegramChannelRepository,
+    transportManager,
+    telegramExtractionLookup,
   );
+
+  const socialMessageIngestionService = new SocialMessageIngestionService(
+    transportManager,
+    socialMessageRepository,
+    new ProviderConsoleLogger(config.LOG_LEVEL),
+    new ProviderInMemoryMetricsCollector(),
+  );
+
+  const { channelProvider: telegramChannelsForIngestion } = resolveTelegramChannelSource(config, telegramChannelRepository);
 
   const providerHealthMonitor = new ProviderHealthMonitor({
     checkIntervalMs: 5 * 60 * 1000,
@@ -672,7 +1010,95 @@ export function buildContainer(config: Config): Container {
     logger: new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info'),
     metrics: new InMemoryAIMetricsCollector(),
     tracer: new InMemoryAITracer(),
+    usageRecorder: bulkUsageRecorder,
   });
+
+  // EPIC-12 Phase 3 (ADR-032): own AICache/CostTracker/Tracer instances, same
+  // convention as matchingEngine above — engines don't share cache state,
+  // each keys its own cache by its own inputs.
+  const messageExtractionEngine = new MessageExtractionEngine({
+    provider: aiProvider,
+    promptBuilder: new MessageExtractionPromptBuilder(),
+    repository: messageExtractionRepository,
+    cache: new InMemoryAICache(),
+    costTracker: new InMemoryCostTracker(),
+    logger: new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info'),
+    metrics: new InMemoryAIMetricsCollector(),
+    tracer: new InMemoryAITracer(),
+  });
+
+  // ADR-032 Phase 4/5: the pending-message loop messageExtractionEngine was
+  // built for but never wired to. Driven by the same onProviderSynced hook
+  // SocialMessageIngestionService uses, immediately after ingestion so a
+  // freshly-ingested batch is classified/extracted the same sync cycle.
+  const socialMessagePipeline = new SocialMessagePipeline(
+    socialMessageRepository,
+    messageExtractionEngine,
+    new ProviderConsoleLogger(config.LOG_LEVEL),
+    new ProviderInMemoryMetricsCollector(),
+  );
+
+  const telegramChannelStatsService = new TelegramChannelStatsService(telegramChannelStatsRepository);
+
+  // Gates which Telegram vacancies are trusted enough to create a
+  // CompanyCandidate — see createTelegramDiscoveryFilter's doc comment.
+  const telegramDiscoveryFilter = createTelegramDiscoveryFilter(socialMessageRepository, messageExtractionRepository);
+
+  // Phase 2.5/4.5: fires after every successful 'telegram' sync tick so
+  // SocialMessage ingestion + extraction run on the exact same cadence as
+  // the existing Vacancy sync, without SyncSchedulerService knowing anything
+  // about Telegram or channels (see its onProviderSynced doc comment).
+  // Sequential per channel (not Promise.all across both steps) because the
+  // pipeline reads PENDING rows this same ingestSource() call just wrote.
+  const onProviderSynced = async (providerId: string, vacancies: readonly VacancyForDiscovery[]): Promise<void> => {
+    // Telegram: social message ingestion
+    if (providerId === 'telegram') {
+      const channels = (await telegramChannelsForIngestion?.()) ?? [];
+      await Promise.all(
+        channels.map(async (channel) => {
+          await socialMessageIngestionService.ingestSource('telegram', SocialPlatform.TELEGRAM, { sourceId: channel });
+          await socialMessagePipeline.processPendingBySource(SocialPlatform.TELEGRAM, channel);
+
+          const channelRecord = await telegramChannelRepository.findByUsername(channel);
+          if (channelRecord) {
+            await telegramChannelStatsService.computeAndPersist(channel, channelRecord.id);
+          }
+        })
+      );
+
+      // ADR-035 Phase 3 extension: unlike every other provider, Telegram
+      // vacancies only reach the discovery bridge if their originating
+      // MessageExtraction clears a stricter, separate confidence bar (see
+      // createTelegramDiscoveryFilter) — SyncSchedulerService always passes
+      // the real NormalizedVacancy[] here (sync-scheduler-service.ts's
+      // onProviderSynced call site), so this cast just recovers the fields
+      // the narrower VacancyForDiscovery callback type doesn't expose.
+      if (companyDiscoveryBridge) {
+        try {
+          const telegramVacancies = vacancies as readonly NormalizedVacancy[];
+          const eligible = (
+            await Promise.all(telegramVacancies.map((vacancy) => telegramDiscoveryFilter(vacancy)))
+          ).filter((v): v is VacancyForDiscovery => v !== undefined);
+
+          if (eligible.length > 0) {
+            await companyDiscoveryBridge.processVacancies(eligible, 'telegram');
+          }
+        } catch (discoveryError) {
+          console.warn('VacancyDiscoveryBridge failed (telegram):', discoveryError instanceof Error ? discoveryError.message : discoveryError);
+        }
+      }
+      return;
+    }
+
+    // ADR-035 Phase 3: vacancy discovery bridge for all non-telegram providers
+    if (vacancies.length > 0 && companyDiscoveryBridge) {
+      try {
+        await companyDiscoveryBridge.processVacancies(vacancies, providerId);
+      } catch (discoveryError) {
+        console.warn('VacancyDiscoveryBridge failed:', discoveryError instanceof Error ? discoveryError.message : discoveryError);
+      }
+    }
+  };
 
   const aiMetrics = new InMemoryAIMetricsCollector();
   const applicationService = new ApplicationServiceImpl(applicationRepository);
@@ -724,6 +1150,8 @@ export function buildContainer(config: Config): Container {
   );
   const recruiterService = new RecruiterService(recruiterRepository);
   const vacancyAnalysisQueue: VacancyAnalysisQueue = new BullMqVacancyAnalysisQueue(config.REDIS_URL);
+  const resumeTailoringQueue: ResumeTailoringQueue = new BullMqResumeTailoringQueue(config.REDIS_URL);
+  const tailoringRequestService = new TailoringRequestService(tailoredResumeRepository, resumeTailoringQueue);
   const intelligenceWorkflowService = new IntelligenceWorkflowService(
     searchProfileService,
     providerSearchService,
@@ -783,6 +1211,8 @@ export function buildContainer(config: Config): Container {
     refreshTokenRepository
   );
 
+  const workspaceService = new WorkspaceService(workspaceRepository, userRepository);
+
   const resumeService = new ResumeService(resumeRepository);
 
   const extractionEngine = new ResumeExtractionEngine(
@@ -791,6 +1221,7 @@ export function buildContainer(config: Config): Container {
       promptBuilder: new StructuredResumeExtractionPromptBuilder(),
       logger: new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info'),
       metrics: new InMemoryAIMetricsCollector(),
+      usageRecorder: bulkUsageRecorder,
     },
     { maxRetries: 2, timeoutMs: 60_000 }
   );
@@ -802,7 +1233,8 @@ export function buildContainer(config: Config): Container {
     extractionEngine,
     '1.0.0',
     new SearchProfileSuggestionPromptBuilder(),
-    bulkAiBudgetEnforcer
+    bulkAiBudgetEnforcer,
+    bulkUsageRecorder
   );
 
   // Distributed across replicas via Redis (SET NX), unlike a per-process Map —
@@ -818,6 +1250,7 @@ export function buildContainer(config: Config): Container {
     new ProviderInMemoryMetricsCollector(),
     60 * 60 * 1000,
     providerConfigRepository,
+    onProviderSynced,
   );
   providerDiagnosticsService.setSyncScheduler(syncSchedulerService);
 
@@ -839,6 +1272,46 @@ export function buildContainer(config: Config): Container {
     companyWatchEventRepository,
     companyWatchSyncLogRepository,
     atsAdapterRegistry
+  );
+
+  // ADR-035 Phase 2: single-shot discovery pipeline built on top of the
+  // existing CompanyDiscoveryService/AtsAdapterRegistry/CompanyWatchService —
+  // no parallel fingerprinting, ATS-fetch, or enrollment path.
+  const companyDiscoveryIntakeService = new CompanyDiscoveryIntakeService(
+    companyCandidateRepository,
+    companyWatchRepository,
+    companyWatchService,
+    new CompanyDiscoveryService(),
+    atsAdapterRegistry,
+    new CandidateDeduplicationService(),
+    config.DISCOVERY_WORKSPACE_ID
+  );
+  const companyDiscoveryDiagnosticsService = new CompanyDiscoveryDiagnosticsService(companyCandidateRepository);
+
+  // ADR-035 Phase 3: vacancy discovery bridge — auto-discovers companies
+  // from the vacancy sync pipeline and converts high-confidence candidates
+  // to CompanyWatch.
+  const companyDiscoveryBridge = new VacancyDiscoveryBridge(
+    companyCandidateRepository,
+    companyWatchRepository,
+    companyWatchService,
+    new CompanyDiscoveryService(),
+    atsAdapterRegistry,
+    new CandidateDeduplicationService(),
+    {
+      autoEnrollWorkspaceId: config.DISCOVERY_WORKSPACE_ID,
+      sourceAuthorityScore: 30,
+      // Community/crowd-sourced Telegram posts are a weaker signal than an
+      // ATS API or job-board listing (same COMMUNITY tier source-priority.ts
+      // already ranks Telegram at) — lower trust here, never higher.
+      sourceAuthorityScoreByProvider: { telegram: 15 },
+    },
+    {
+      info: (msg, ctx) => console.log(`[VacancyDiscovery] ${msg}`, ctx ?? ''),
+      warn: (msg, ctx) => console.warn(`[VacancyDiscovery] ${msg}`, ctx ?? ''),
+      error: (msg, err, ctx) => console.error(`[VacancyDiscovery] ${msg}`, err, ctx ?? ''),
+      debug: (msg, ctx) => { if (config.LOG_LEVEL === 'debug') console.debug(`[VacancyDiscovery] ${msg}`, ctx ?? ''); },
+    },
   );
 
   const careerIntelligenceService = new CareerIntelligenceService({
@@ -873,8 +1346,22 @@ export function buildContainer(config: Config): Container {
 
   // AI Orchestrator
   const aiHandlers = new Map<AIFeature, JobHandler>();
-  aiHandlers.set('analyze_vacancy', new AnalyzeVacancyHandler());
-  aiHandlers.set('tailor_resume', new TailorResumeHandler());
+  // Delegates to analyzeVacancyForSearchProfile (the same reuse-checked path
+  // AiMatchingService's bulk matching uses) instead of calling the LLM
+  // directly, so a vacancy already scored via bulk matching is never
+  // re-analyzed for the same (vacancy, profile[, resume]) triple just because
+  // the user clicked "Analyze" on the application instead.
+  aiHandlers.set('analyze_vacancy', new AnalyzeVacancyHandler({
+    matchResultRepository,
+    cache: new InMemoryAICache(),
+    costTracker: new InMemoryCostTracker(),
+    logger: new ConsoleAILogger(config.LOG_LEVEL === 'debug' ? 'debug' : 'info'),
+    metrics: new InMemoryAIMetricsCollector(),
+    tracer: new InMemoryAITracer(),
+  }));
+  // 'tailor_resume' is no longer registered here — ADR-031 moved resume
+  // tailoring to its own async pipeline (TailoringRequestService +
+  // apps/worker), not this synchronous orchestrator.
   aiHandlers.set('cover_letter', new CoverLetterHandler());
   aiHandlers.set('interview_prep', new InterviewPrepHandler());
   aiHandlers.set('salary_analysis', new SalaryAnalysisHandler());
@@ -930,6 +1417,7 @@ export function buildContainer(config: Config): Container {
       workspace: workspaceRepository,
       refreshToken: refreshTokenRepository,
       structuredResume: structuredResumeRepository,
+      tailoredResume: tailoredResumeRepository,
       aiJob: aiJobRepository,
       aiCache: aiCacheRepository,
       aiUsage: aiUsageRepository,
@@ -940,20 +1428,29 @@ export function buildContainer(config: Config): Container {
       providerConfig: providerConfigRepository,
       telegramChannel: telegramChannelRepository,
       userVacancyInteraction: userVacancyInteractionRepository,
+      socialMessage: socialMessageRepository,
+      messageExtraction: messageExtractionRepository,
+      companyCandidate: companyCandidateRepository,
     },
     authProvider,
     providerRegistry,
     providerHealthMonitor,
+    socialMessageTransportRegistry,
+    transportManager,
+    botApiTransport,
     providerDiagnostics: providerDiagnosticsService,
+    companyDiscoveryDiagnostics: companyDiscoveryDiagnosticsService,
     searchRunTraces: searchRunTraceRecorder,
     queueDiagnostics: queueDiagnosticsService,
     aiProvider,
     aiProviderHealthMonitor,
     aiMetrics,
     aiOrchestrator,
+    messageExtractionEngine,
     applicationService,
     services: {
       auth: authService,
+      workspace: workspaceService,
       searchProfile: searchProfileService,
       providerSearch: providerSearchService,
       aiMatching: aiMatchingService,
@@ -975,9 +1472,14 @@ export function buildContainer(config: Config): Container {
       dashboardStats: dashboardStatsService,
       notificationDispatcher: notificationDispatcherService,
       companyWatch: companyWatchService,
+      companyDiscoveryIntake: companyDiscoveryIntakeService,
       careerIntelligence: careerIntelligenceService,
       resumeVersionIntelligence: resumeVersionIntelligenceService,
       providerManagement: providerManagementService,
+      tailoringRequest: tailoringRequestService,
+      socialMessageIngestion: socialMessageIngestionService,
+      socialMessagePipeline,
+      telegramChannelStats: telegramChannelStatsService,
     },
   };
 }

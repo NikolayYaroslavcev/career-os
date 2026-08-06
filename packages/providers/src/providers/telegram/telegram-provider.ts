@@ -3,10 +3,12 @@ import type { ProviderCapabilities } from '../../interfaces/provider-capabilitie
 import type { Logger } from '../../observability/logger.js';
 import type { MetricsCollector } from '../../observability/metrics.js';
 import type { Tracer } from '../../observability/tracer.js';
+import type { TransportManager } from '../../transport/transport-manager.js';
 import { DefaultProviderJob } from '../../interfaces/default-provider-job.js';
 import { TelegramFetcher } from './telegram-fetcher.js';
-import { TelegramMapper } from './telegram-mapper.js';
-import { TelegramNormalizer } from './telegram-normalizer.js';
+import { SocialMessageMapper } from './social-message-mapper.js';
+import type { TelegramExtractionLookup } from './social-message-mapper.js';
+import { SocialMessageNormalizer } from './social-message-normalizer.js';
 import { TelegramSyncStrategy } from './telegram-sync-strategy.js';
 
 // Provider category: COMMUNITY — a public, user-run channel feed rather than
@@ -55,6 +57,21 @@ export interface TelegramProviderConfig {
   /** Dynamic channel provider. When provided, fetcher loads channels from DB
    *  at sync time instead of using the static `channels` array. */
   readonly channelProvider?: () => Promise<readonly string[]>;
+  /**
+   * Phase 2.5 (ADR-032 addendum): when provided, the fetcher routes message
+   * fetching through TransportManager instead of scraping `t.me/s/<channel>`
+   * directly. Must be a TransportManager with a 'telegram' PULL transport
+   * registered (HtmlPreviewTransport) — see registerSocialMessageTransports()
+   * in apps/backend/src/container.ts.
+   */
+  readonly transportManager?: TransportManager;
+  /**
+   * ADR-032 Phase 4/5 — passed straight through to TelegramFetcher. This is
+   * the single seam that makes this the V2 provider: TelegramFetcher,
+   * SocialMessageMapper, SocialMessageNormalizer, and TelegramSyncStrategy
+   * below are otherwise identical to V1's wiring.
+   */
+  readonly extractionLookup?: TelegramExtractionLookup;
 }
 
 export function createTelegramProvider(config: TelegramProviderConfig): DefaultProviderJob {
@@ -67,9 +84,11 @@ export function createTelegramProvider(config: TelegramProviderConfig): DefaultP
       metrics: config.metrics,
       tracer: config.tracer,
       channelProvider: config.channelProvider,
+      transportManager: config.transportManager,
+      extractionLookup: config.extractionLookup,
     }),
-    new TelegramMapper(),
-    new TelegramNormalizer(),
+    new SocialMessageMapper(),
+    new SocialMessageNormalizer(),
     new TelegramSyncStrategy(),
   );
 }

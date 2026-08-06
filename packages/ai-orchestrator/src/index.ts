@@ -25,8 +25,10 @@ export type { AIJobPayload, AIJobResult } from './queue/ai-job-queue.js';
 // Job Handlers
 export { AnalyzeVacancyHandler } from './queue/job-handlers/analyze-vacancy-handler.js';
 export type { AnalyzeVacancyInput, AnalyzeVacancyResult } from './queue/job-handlers/analyze-vacancy-handler.js';
-export { TailorResumeHandler } from './queue/job-handlers/tailor-resume-handler.js';
-export type { TailorResumeInput, TailorResumeResult } from './queue/job-handlers/tailor-resume-handler.js';
+// TailorResumeHandler removed (ADR-031) — resume tailoring moved to its own
+// async pipeline (packages/ai/src/tailoring, apps/worker), not this
+// synchronous orchestrator. 'tailor_resume' stays a valid AIFeature value
+// for historical AIJob rows, but nothing constructs this handler anymore.
 export { CoverLetterHandler } from './queue/job-handlers/cover-letter-handler.js';
 export type { CoverLetterInput, CoverLetterResult } from './queue/job-handlers/cover-letter-handler.js';
 export { InterviewPrepHandler } from './queue/job-handlers/interview-prep-handler.js';
@@ -44,7 +46,7 @@ export type { CareerAdviceInput, CareerAdviceResult } from './queue/job-handlers
 export { UsageTracker } from './usage/usage-tracker.js';
 export { BudgetEnforcer } from './usage/budget-enforcer.js';
 export type { BudgetCheckResult } from './usage/budget-enforcer.js';
-export { getModelPricing } from './usage/pricing.js';
+export { getModelPricing } from '@careeros/ai';
 
 // Provider Router
 export { ProviderRouter } from './provider-router/provider-router.js';

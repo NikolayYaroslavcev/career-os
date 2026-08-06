@@ -1,0 +1,31 @@
+{
+  "jobs": [
+    {
+      "id": "11111111-2222-3333-4444-555555555555",
+      "title": "Staff Software Engineer",
+      "departmentName": "Engineering",
+      "teamName": "Infrastructure",
+      "locationName": "Remote - North America",
+      "isRemote": true,
+      "descriptionHtml": "<p>We're hiring a Staff Software Engineer to lead our infrastructure team.</p>",
+      "publishedAt": "2026-07-05T00:00:00.000Z",
+      "employmentType": "FullTime",
+      "jobUrl": "https://jobs.ashbyhq.com/acme/11111111-2222-3333-4444-555555555555",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/11111111-2222-3333-4444-555555555555/apply"
+    },
+    {
+      "id": "22222222-3333-4444-5555-666666666666",
+      "title": "Office Manager",
+      "departmentName": "Operations",
+      "teamName": "People",
+      "locationName": "",
+      "isRemote": false,
+      "descriptionHtml": "<p>Help run the day to day operations of our San Francisco office.</p>",
+      "publishedAt": "2026-07-04T00:00:00.000Z",
+      "employmentType": "Contract",
+      "jobUrl": "https://jobs.ashbyhq.com/acme/22222222-3333-4444-5555-666666666666",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/22222222-3333-4444-5555-666666666666/apply"
+    }
+  ],
+  "apiVersion": "1"
+}

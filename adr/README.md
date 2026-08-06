@@ -9,7 +9,7 @@ entries and the only one with commit history behind it (e.g. `ADR-025`,
 see `git log -- adr/ADR-025-ai-provider-resilience.md`).
 
 Numbering: `ADR-0NN-short-title.md`, sequential, never reused. Highest
-number currently in use: **ADR-030**. The next new ADR is **ADR-031**.
+number currently in use: **ADR-037**. The next new ADR is **ADR-038**.
 
 ### Known naming inconsistency
 
@@ -41,6 +41,6 @@ architectural decision actually was and the two directories disagree,
 ## Where to create new ADRs
 
 Add new files directly to **`/adr/`** (repo root), using the next sequential
-number (**ADR-031** as of this writing) and the `ADR-0NN-short-title.md`
-naming pattern used by `ADR-001` through `ADR-030`. Do not add to
+number (**ADR-038** as of this writing) and the `ADR-0NN-short-title.md`
+naming pattern used by `ADR-001` through `ADR-037`. Do not add to
 `/docs/adr/`.

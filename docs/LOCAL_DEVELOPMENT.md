@@ -114,7 +114,6 @@ provider only when its required identifiers are set; anything else is skipped wi
 
 | Provider    | Required env vars                                                          | Notes |
 | ----------- | ---------------------------------------------------------------------------- | ----- |
-| RemoteOK    | none                                                                          | Always registered. |
 | HH (HeadHunter, hh.ru) | none (`HH_ACCESS_TOKEN` optional)                                | Always registered; a token only raises rate limits. |
 | Greenhouse  | `GREENHOUSE_BOARD_TOKEN`, `GREENHOUSE_COMPANY_NAME`                          | Board-scoped. |
 | Lever       | `LEVER_COMPANY`, `LEVER_COMPANY_NAME`                                        | Board-scoped. |
@@ -122,7 +121,7 @@ provider only when its required identifiers are set; anything else is skipped wi
 | Workday     | `WORKDAY_TENANT`, `WORKDAY_SITE`, `WORKDAY_COMPANY_NAME` (`WORKDAY_HOST` optional) | Tenant-scoped. |
 | Teamtailor  | `TEAMTAILOR_API_KEY`, `TEAMTAILOR_COMPANY_NAME`                              | Board-scoped. |
 
-RemoteOK and HH need no configuration, so a fresh checkout can always search jobs —
+HH needs no configuration, so a fresh checkout can always search jobs —
 the board-specific providers are opt-in extras for a particular company's careers page.
 
 ### AI Providers
@@ -181,7 +180,7 @@ curl http://localhost:3000/ready   # {"status":"ready"}       — safe to receiv
   200/503 status code and the Docker `HEALTHCHECK`/`depends_on: condition: service_healthy`
   wiring). Also reports two informational sub-checks that never flip the overall
   status, since both are optional: `providers` (at least one job provider is
-  registered — RemoteOK and HH always are, so this is effectively always healthy)
+  registered — HH always is, so this is effectively always healthy)
   and `ai` (the configured `AI_PROVIDER` has an API key set — a config check,
   not a live call to the vendor, so it doesn't burn rate-limit budget on every poll).
 - `GET /ready` - Readiness check (database + Redis)
@@ -321,7 +320,7 @@ career-os/
 │   ├── career/           # Career domain logic
 │   ├── database/         # Prisma ORM + repositories
 │   ├── notifications/    # Notification providers
-│   ├── providers/        # Job providers (RemoteOK, etc.)
+│   ├── providers/        # Job providers (HH, Greenhouse, Lever, etc.)
 │   ├── resume/           # Resume parsing
 │   ├── shared/           # Config, Redis, health checks
 │   └── telegram/         # Telegram bot integration

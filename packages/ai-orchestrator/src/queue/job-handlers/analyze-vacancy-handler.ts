@@ -1,9 +1,20 @@
 import type { AIProvider } from '@careeros/ai';
-import { VacancyAnalysisPromptBuilder } from '@careeros/ai';
+import {
+  MatchingEngine,
+  VacancyAnalysisPromptBuilder,
+  analyzeVacancyForSearchProfile,
+  type AICache,
+  type CostTracker,
+  type AILogger,
+  type AIMetricsCollector,
+  type AITracer,
+  type MatchResultRepository,
+} from '@careeros/ai';
 import type { JobHandler, JobHandlerResult } from '../../orchestrator-config.js';
 
 export interface AnalyzeVacancyInput {
   readonly vacancyId: string;
+  readonly vacancyUpdatedAt: Date;
   readonly vacancyTitle: string;
   readonly vacancyDescription: string;
   readonly companyName: string;
@@ -11,13 +22,17 @@ export interface AnalyzeVacancyInput {
   readonly experienceLevel?: string;
   readonly salaryRange?: string;
   readonly location: string;
+  readonly userId: string;
   readonly searchProfileId: string;
+  readonly searchProfileUpdatedAt: Date;
   readonly desiredPositions: string[];
   readonly desiredTechnologies: string[];
   readonly desiredExperienceLevel: string;
   readonly isRemoteOnly: boolean;
   readonly desiredLocations: string[];
   readonly resume?: {
+    readonly resumeId: string;
+    readonly resumeUpdatedAt: Date;
     readonly summary: string;
     readonly skills: string[];
     readonly technologies: string[];
@@ -38,63 +53,104 @@ export interface AnalyzeVacancyResult {
   readonly reasoning: string;
 }
 
+export interface AnalyzeVacancyHandlerDeps {
+  readonly matchResultRepository: MatchResultRepository;
+  readonly cache: AICache;
+  readonly costTracker: CostTracker;
+  readonly logger: AILogger;
+  readonly metrics: AIMetricsCollector;
+  readonly tracer: AITracer;
+}
+
+const ZERO_USAGE = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+
+/**
+ * Delegates to `analyzeVacancyForSearchProfile` — the same reuse-checked
+ * entry point the bulk `/intelligence/search` matching path
+ * (`AiMatchingService`) and the post-import worker pass already use — instead
+ * of building the identical `VacancyAnalysisPromptBuilder` prompt and calling
+ * `provider.complete()` a second, independent time. Before this, clicking
+ * "Analyze" on an application for a vacancy that had already been scored by
+ * bulk matching triggered a brand-new LLM call every time, because this
+ * handler never checked `MatchResultRepository` — `analyzeVacancyForSearchProfile`'s
+ * own doc comment exists specifically to prevent that ("not two parallel
+ * implementations"). A reused result costs zero tokens (see ZERO_USAGE
+ * below), which is also what AIOrchestrator's job/usage records now show for
+ * it — accurate, not a workaround.
+ */
 export class AnalyzeVacancyHandler implements JobHandler<AnalyzeVacancyInput, AnalyzeVacancyResult> {
   readonly feature = 'analyze_vacancy' as const;
   private readonly promptBuilder = new VacancyAnalysisPromptBuilder();
 
+  constructor(private readonly deps: AnalyzeVacancyHandlerDeps) {}
+
   async execute(input: AnalyzeVacancyInput, provider: AIProvider): Promise<JobHandlerResult<AnalyzeVacancyResult>> {
-    const prompt = this.promptBuilder.build({
-      vacancyTitle: input.vacancyTitle,
-      vacancyDescription: input.vacancyDescription,
-      companyName: input.companyName,
-      technologies: input.technologies,
-      experienceLevel: input.experienceLevel,
-      salaryRange: input.salaryRange,
-      location: input.location,
-      desiredPositions: input.desiredPositions,
-      desiredTechnologies: input.desiredTechnologies,
-      desiredExperienceLevel: input.desiredExperienceLevel,
-      isRemoteOnly: input.isRemoteOnly,
-      desiredLocations: input.desiredLocations,
-      resumeSummary: input.resume?.summary,
-      resumeSkills: input.resume?.skills,
-      resumeTechnologies: input.resume?.technologies,
-      yearsOfExperience: input.resume?.yearsOfExperience,
-      resumeRawText: input.resume?.rawText,
+    // MatchingEngine binds its provider at construction, but AIOrchestrator
+    // resolves a provider per call (ProviderRouter, possibly per-user/-feature
+    // routing) — so this engine is built fresh per call, reusing this
+    // handler's own cache/costTracker/logger instances across calls the same
+    // way apps/backend's container wires MatchingEngine for the bulk path.
+    const matchingEngine = new MatchingEngine({
+      provider,
+      promptBuilder: this.promptBuilder,
+      cache: this.deps.cache,
+      costTracker: this.deps.costTracker,
+      logger: this.deps.logger,
+      metrics: this.deps.metrics,
+      tracer: this.deps.tracer,
     });
 
-    const response = await provider.complete({
-      systemPrompt: prompt.system,
-      prompt: prompt.user,
-      model: provider.defaultModel,
-      temperature: 0.3,
-      maxTokens: 2000,
-      promptId: this.promptBuilder.promptId,
-      promptVersion: this.promptBuilder.currentVersion,
-      promptChecksum: prompt.version.checksum,
-    });
+    const outcome = await analyzeVacancyForSearchProfile(
+      { matchingEngine, matchResultRepository: this.deps.matchResultRepository, logger: this.deps.logger },
+      {
+        vacancyId: input.vacancyId,
+        vacancyUpdatedAt: input.vacancyUpdatedAt,
+        vacancyTitle: input.vacancyTitle,
+        vacancyDescription: input.vacancyDescription,
+        companyName: input.companyName,
+        technologies: input.technologies,
+        experienceLevel: input.experienceLevel,
+        salaryRange: input.salaryRange,
+        location: input.location,
+      },
+      {
+        searchProfileId: input.searchProfileId,
+        searchProfileUpdatedAt: input.searchProfileUpdatedAt,
+        userId: input.userId,
+        desiredPositions: input.desiredPositions,
+        desiredTechnologies: input.desiredTechnologies,
+        desiredExperienceLevel: input.desiredExperienceLevel,
+        isRemoteOnly: input.isRemoteOnly,
+        desiredLocations: input.desiredLocations,
+      },
+      input.resume
+        ? {
+            resumeId: input.resume.resumeId,
+            resumeUpdatedAt: input.resume.resumeUpdatedAt,
+            summary: input.resume.summary,
+            skills: input.resume.skills,
+            technologies: input.resume.technologies,
+            yearsOfExperience: input.resume.yearsOfExperience,
+            rawText: input.resume.rawText,
+          }
+        : undefined
+    );
 
-    const content = response.content;
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('Failed to parse AI response as JSON');
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+    const { matchResult, reused } = outcome;
 
     return {
       result: {
-        overallScore: Math.min(100, Math.max(0, Number(parsed.overallScore) || 0)),
-        confidence: Math.min(1, Math.max(0, Number(parsed.confidence) || 0)),
-        recommendation: String(parsed.recommendation || 'Maybe'),
-        summary: String(parsed.summary || ''),
-        strengths: Array.isArray(parsed.strengths) ? parsed.strengths.map(String) : [],
-        weaknesses: Array.isArray(parsed.weaknesses) ? parsed.weaknesses.map(String) : [],
-        requiredSkills: Array.isArray(parsed.requiredSkills) ? parsed.requiredSkills.map(String) : [],
-        missingSkills: Array.isArray(parsed.missingSkills) ? parsed.missingSkills.map(String) : [],
-        reasoning: String(parsed.reasoning || ''),
+        overallScore: matchResult.overallScore,
+        confidence: matchResult.confidence,
+        recommendation: matchResult.recommendation,
+        summary: matchResult.summary,
+        strengths: [...matchResult.strengths],
+        weaknesses: [...matchResult.weaknesses],
+        requiredSkills: [...matchResult.requiredSkills],
+        missingSkills: [...matchResult.missingSkills],
+        reasoning: matchResult.reasoning,
       },
-      usage: response.usage,
+      usage: reused ? ZERO_USAGE : matchResult.tokenUsage,
     };
   }
 }

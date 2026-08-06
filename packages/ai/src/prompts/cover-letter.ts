@@ -33,6 +33,7 @@ You must respond with a JSON object matching this exact schema:
 }
 
 Rules:
+- NEVER fabricate experience, employers, projects, achievements, or anecdotes not present in the candidate's resume — every claim about the candidate must be traceable to their actual background below.
 - Write a genuine, specific cover letter — NO generic templates
 - Reference specific requirements from the job posting
 - Connect the candidate's actual experience to the company's needs
@@ -92,7 +93,7 @@ Please write a personalized cover letter for this application. Follow all rules 
 
 export class CoverLetterPromptBuilder implements PromptBuilder<CoverLetterParams> {
   readonly promptId = 'cover-letter';
-  readonly currentVersion = '1.1.0';
+  readonly currentVersion = '1.2.0';
 
   build(params: CoverLetterParams): BuiltPrompt {
     return {

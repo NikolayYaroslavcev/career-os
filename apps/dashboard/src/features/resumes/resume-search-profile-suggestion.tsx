@@ -121,13 +121,15 @@ export function ResumeSearchProfileSuggestion({
         <Alert variant="destructive">
           <AlertDescription className="flex items-center justify-between gap-2">
             <span>{error}</span>
-            <button
+            <Button
               type="button"
-              className="text-xs font-medium underline underline-offset-2 hover:no-underline"
+              variant="link"
+              size="xs"
+              className="h-auto px-0"
               onClick={() => setError(null)}
             >
               {t('common.dismiss')}
-            </button>
+            </Button>
           </AlertDescription>
         </Alert>
       )}

@@ -28,7 +28,7 @@ The MVP is the smallest version of CareerOS that delivers value to users. It mus
 | Feature | Description | Status |
 |---------|-------------|--------|
 | Dashboard (Next.js) | Web interface | Done — now the primary UI |
-| Multiple Job Providers | LinkedIn, Habr, RemoteOK | Done, plus 17 more (Greenhouse, Lever, Ashby, Workday, etc.) |
+| Multiple Job Providers | LinkedIn, Habr Career, HH | Done, plus 17 more (Greenhouse, Lever, Ashby, Workday, etc.) |
 | Analytics | Application statistics | Done — Career Intelligence, see ADR-029 |
 | Cover Letter Generation | AI-generated letters | Built (`cover-letter-service.ts` + dashboard component) but **not linked from any route** — unreachable in the UI |
 | Interview Prep | Question generation | **Not built** — `packages/interview` is a two-line stub despite the `Interview` domain entity existing |
@@ -162,7 +162,6 @@ The MVP is complete when:
 ### v0.4 - Multiple Providers — shipped, far exceeded
 - LinkedIn integration — done
 - Habr Career integration — done
-- RemoteOK integration — done
 - Plus 17 more providers not in the original plan (Greenhouse, Lever, Ashby, Workday, Adzuna, etc.)
 
 ### v0.5 - Learning Engine — not built

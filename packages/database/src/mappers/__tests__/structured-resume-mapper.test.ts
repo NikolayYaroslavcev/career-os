@@ -29,6 +29,7 @@ describe('StructuredResumeMapper', () => {
           startDate: new Date('2020-01-01'),
           endDate: new Date('2024-01-01'),
           description: 'Built things',
+          bullets: ['Built things'],
           technologies: ['TypeScript', 'React'],
         },
       ],
@@ -41,6 +42,8 @@ describe('StructuredResumeMapper', () => {
           endDate: new Date('2016-06-01'),
         },
       ],
+      certifications: ['AWS Certified'],
+      languages: ['English — fluent'],
       extractedAt: new Date('2026-01-01'),
       createdAt: new Date('2026-01-01'),
       updatedAt: new Date('2026-01-01'),
@@ -74,6 +77,8 @@ describe('StructuredResumeMapper', () => {
         technologies: [],
         experience: [],
         education: [],
+        certifications: [],
+        languages: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -125,6 +130,8 @@ describe('StructuredResumeMapper', () => {
             endDate: '2016-06-01T00:00:00.000Z',
           },
         ],
+        certifications: ['AWS Certified'],
+        languages: ['English — fluent'],
         createdAt: now,
         updatedAt: now,
       };
@@ -161,6 +168,8 @@ describe('StructuredResumeMapper', () => {
         technologies: null,
         experience: null,
         education: null,
+        certifications: null,
+        languages: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       };

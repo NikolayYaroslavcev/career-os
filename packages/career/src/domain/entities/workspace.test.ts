@@ -77,4 +77,76 @@ describe('Workspace', () => {
     workspace.rename('New Name');
     expect(workspace.name).toBe('New Name');
   });
+
+  it('should default new members to MEMBER role and track OWNER role', () => {
+    const workspace = Workspace.create({
+      id: workspaceId,
+      name: 'My Workspace',
+      ownerId,
+    });
+
+    workspace.addMember(memberId);
+
+    expect(workspace.getMemberRole(ownerId)).toBe('OWNER');
+    expect(workspace.getMemberRole(memberId)).toBe('MEMBER');
+  });
+
+  it('should add a member with an explicit role', () => {
+    const workspace = Workspace.create({
+      id: workspaceId,
+      name: 'My Workspace',
+      ownerId,
+    });
+
+    workspace.addMember(memberId, 'ADMIN');
+
+    expect(workspace.getMemberRole(memberId)).toBe('ADMIN');
+  });
+
+  it('should update a member role', () => {
+    const workspace = Workspace.create({
+      id: workspaceId,
+      name: 'My Workspace',
+      ownerId,
+    });
+
+    workspace.addMember(memberId);
+    workspace.updateMemberRole(memberId, 'ADMIN');
+
+    expect(workspace.getMemberRole(memberId)).toBe('ADMIN');
+  });
+
+  it('should not update the role of a non-member', () => {
+    const workspace = Workspace.create({
+      id: workspaceId,
+      name: 'My Workspace',
+      ownerId,
+    });
+
+    expect(() => workspace.updateMemberRole(memberId, 'ADMIN')).toThrow('User is not a member of this workspace');
+  });
+
+  it('should not update the owner role', () => {
+    const workspace = Workspace.create({
+      id: workspaceId,
+      name: 'My Workspace',
+      ownerId,
+    });
+
+    expect(() => workspace.updateMemberRole(ownerId, 'ADMIN')).toThrow("Cannot change the workspace owner's role");
+  });
+
+  it('should demote the previous owner to ADMIN on ownership transfer', () => {
+    const workspace = Workspace.create({
+      id: workspaceId,
+      name: 'My Workspace',
+      ownerId,
+    });
+
+    workspace.addMember(memberId);
+    workspace.transferOwnership(memberId);
+
+    expect(workspace.getMemberRole(memberId)).toBe('OWNER');
+    expect(workspace.getMemberRole(ownerId)).toBe('ADMIN');
+  });
 });

@@ -68,7 +68,7 @@ describe('IntelligenceWorkflowService (Search Profile -> Provider -> AI Matching
       expect(workflow.vacancyAnalysisQueue.enqueued).toHaveLength(0);
     });
 
-    it('caps AI-worthy candidates via the relevance pre-filter when the provider returns many more vacancies than the AI budget (RemoteOK-scale volume)', async () => {
+    it('caps AI-worthy candidates via the relevance pre-filter when the provider returns many more vacancies than the AI budget (high-volume provider)', async () => {
       workflow = buildTestWorkflow({ jobsToReturn: 91 });
 
       const resume = buildFixtureResume();

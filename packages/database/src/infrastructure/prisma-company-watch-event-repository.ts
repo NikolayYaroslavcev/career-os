@@ -73,11 +73,12 @@ export class PrismaCompanyWatchEventRepository {
     });
   }
 
-  async countByCompanyWatch(companyWatchId: string, type?: string): Promise<number> {
+  async countByCompanyWatch(companyWatchId: string, type?: string, since?: Date): Promise<number> {
     return prisma.companyWatchEvent.count({
       where: {
         companyWatchId,
         ...(type ? { type: type as 'NEW_JOB' | 'REMOVED_JOB' | 'CHANGED_JOB' } : {}),
+        ...(since ? { detectedAt: { gte: since } } : {}),
       },
     });
   }

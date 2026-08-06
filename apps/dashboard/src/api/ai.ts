@@ -19,7 +19,7 @@ export interface DashboardData {
   today: UsageStats;
   week: UsageStats;
   month: UsageStats;
-  estimatedMonthlyCost: number;
+  monthlyCost: number;
   savedTokens: number;
   mostExpensiveFeature: string;
   mostFrequentFeature: string;
@@ -62,18 +62,83 @@ export interface AnalyzeVacancyResult {
   reasoning: string;
 }
 
-export interface TailorResumeResultData {
-  optimizedSummary: string;
-  reorderedExperience: Array<{
-    company: string;
-    position: string;
-    description: string;
-    technologies: string[];
-    relevanceScore: number;
-  }>;
-  emphasizedSkills: string[];
-  keywordOptimizations: string[];
-  tailoredResume: string;
+// ===== Resume Tailoring (ADR-031 — async pipeline) =====
+
+export type TailoringStage =
+  | 'QUEUED'
+  | 'PARSING_RESUME'
+  | 'PARSING_VACANCY'
+  | 'BUILDING_EVIDENCE'
+  | 'TAILORING_RESUME'
+  | 'ATS_SCORING'
+  | 'REVIEWER_VALIDATION'
+  | 'SAVING_RESULTS'
+  | 'COMPLETED'
+  | 'FAILED';
+
+export interface SkillMatrixData {
+  matchedSkills: string[];
+  missingSkills: string[];
+  weakSkills: string[];
+  strongSkills: string[];
+  atsKeywordCoverageRatio: number;
+  technologyCoverageRatio: number;
+  responsibilityCoverageRatio: number;
+  experienceCoverageRatio: number;
+}
+
+export interface AtsCategoryScoreData {
+  category: string;
+  label: string;
+  weight: number;
+  applicable: boolean;
+  rawScore: number;
+  weightedScore: number;
+  matchedEvidence: string[];
+  missingEvidence: string[];
+  confidence: number;
+  explanation: string;
+}
+
+export interface AtsScoreData {
+  overallScore: number;
+  categories: AtsCategoryScoreData[];
+  weightsVersion: string;
+}
+
+export interface TailoringChangeData {
+  section: string;
+  description: string;
+}
+
+export interface TailoringRejectedChangeData {
+  text: string;
+  reason: string;
+}
+
+export interface TailoringHallucinationCheckData {
+  flaggedEntities: Array<{ text: string; type: string; reason: string }>;
+  overallRisk: 'low' | 'medium' | 'high';
+}
+
+export interface TailoringResultData {
+  tailoredResumeText: string;
+  skillMatrix?: SkillMatrixData;
+  atsScoreBefore?: AtsScoreData;
+  atsScoreAfter?: AtsScoreData;
+  changesApplied: TailoringChangeData[];
+  changesRejected: TailoringRejectedChangeData[];
+  hallucinationCheck?: TailoringHallucinationCheckData;
+  confidence?: number;
+}
+
+export interface TailoringStatusResult {
+  jobId: string;
+  status: 'queued' | 'cached' | 'processing' | 'completed' | 'failed';
+  currentStage: TailoringStage;
+  cached: boolean;
+  result?: TailoringResultData;
+  error?: string;
 }
 
 export interface CoverLetterResultData {
@@ -226,11 +291,19 @@ export async function analyzeVacancy(data: { vacancyId: string; searchProfileId:
   });
 }
 
-export async function tailorResume(data: { vacancyId: string; resumeId: string }): Promise<ExecuteAIResult<TailorResumeResultData>> {
-  return apiClient<ExecuteAIResult<TailorResumeResultData>>('/api/v1/ai/tailor-resume', {
+export async function tailorResume(data: {
+  vacancyId: string;
+  resumeId: string;
+  forceRegenerate?: boolean;
+}): Promise<TailoringStatusResult> {
+  return apiClient<TailoringStatusResult>('/api/v1/ai/tailor-resume', {
     method: 'POST',
     body: data,
   });
+}
+
+export async function getTailoringStatus(jobId: string): Promise<TailoringStatusResult> {
+  return apiClient<TailoringStatusResult>(`/api/v1/ai/tailor-resume/${encodeURIComponent(jobId)}/status`);
 }
 
 export async function generateCoverLetter(data: { vacancyId: string; resumeId: string }): Promise<ExecuteAIResult<CoverLetterResultData>> {

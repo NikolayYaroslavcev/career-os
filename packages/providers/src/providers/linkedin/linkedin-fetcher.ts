@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from '../../resilience/resilient-fetch.js';
+import { decodeHtmlEntities } from '../../shared/html-entities.js';
 import type { Fetcher, FetchResult } from '../../interfaces/fetcher.js';
 import type { ProviderResult, ResultMeta } from '../../interfaces/result.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
@@ -572,14 +573,7 @@ export class LinkedInFetcher implements Fetcher {
   }
 
   private cleanHtml(text: string): string {
-    return text
-      .replace(/<[^>]*>/g, '')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
+    return decodeHtmlEntities(text.replace(/<[^>]*>/g, ''))
       .replace(/\s+/g, ' ')
       .trim();
   }

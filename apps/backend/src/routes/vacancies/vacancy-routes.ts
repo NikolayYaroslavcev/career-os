@@ -4,6 +4,7 @@ import type { Vacancy, VacancySourceEntity, ExperienceLevel, ProviderType, Vacan
 import { createVacancyId, createUserId, SourceLifecycleServiceImpl } from '@careeros/career';
 import type { InteractionAction } from '@careeros/career';
 import { UnauthorizedError, NotFoundError } from '../../middleware/error-handler.js';
+import { isNonVacancyContentShape } from '../../services/non-vacancy-content.js';
 
 const sourceLifecycleService = new SourceLifecycleServiceImpl();
 
@@ -231,14 +232,16 @@ export async function vacancyRoutes(fastify: FastifyInstance): Promise<void> {
       offset: query.offset,
     });
 
-    const companiesById = await batchFindCompanies(fastify, vacancies);
-    const sourcesById = await batchFindSources(fastify, vacancies.map((v) => v.id));
+    const visibleVacancies = vacancies.filter((vacancy) => !isNonVacancyContentShape(vacancy));
+    const hiddenCount = vacancies.length - visibleVacancies.length;
+    const companiesById = await batchFindCompanies(fastify, visibleVacancies);
+    const sourcesById = await batchFindSources(fastify, visibleVacancies.map((v) => v.id));
 
     return reply.send({
-      vacancies: vacancies.map((vacancy) =>
+      vacancies: visibleVacancies.map((vacancy) =>
         serializeVacancySummary(vacancy, companiesById.get(vacancy.companyId) ?? null, sourcesById.get(vacancy.id) ?? [])
       ),
-      total,
+      total: Math.max(0, total - hiddenCount),
       limit: query.limit,
       offset: query.offset,
     });
@@ -267,6 +270,7 @@ export async function vacancyRoutes(fastify: FastifyInstance): Promise<void> {
       workspaceId
     );
     if (!vacancy) throw new NotFoundError(`Vacancy '${params.id}' not found`);
+    if (isNonVacancyContentShape(vacancy)) throw new NotFoundError(`Vacancy '${params.id}' not found`);
 
     const companiesById = await batchFindCompanies(fastify, [vacancy]);
     const sources = await fastify.container.repositories.vacancySource.findByVacancyId(vacancy.id);
@@ -301,7 +305,8 @@ export async function vacancyRoutes(fastify: FastifyInstance): Promise<void> {
 
     const sources = await fastify.container.repositories.vacancySource.findByProviderAndExternalId(
       'manual' as never,
-      body.url
+      body.url,
+      workspaceId
     );
 
     if (!sources) {
@@ -343,14 +348,16 @@ export async function vacancyRoutes(fastify: FastifyInstance): Promise<void> {
       offset: body.offset,
     });
 
-    const companiesById = await batchFindCompanies(fastify, vacancies);
-    const sourcesById = await batchFindSources(fastify, vacancies.map((v) => v.id));
+    const visibleVacancies = vacancies.filter((vacancy) => !isNonVacancyContentShape(vacancy));
+    const hiddenCount = vacancies.length - visibleVacancies.length;
+    const companiesById = await batchFindCompanies(fastify, visibleVacancies);
+    const sourcesById = await batchFindSources(fastify, visibleVacancies.map((v) => v.id));
 
     return reply.send({
-      vacancies: vacancies.map((vacancy) =>
+      vacancies: visibleVacancies.map((vacancy) =>
         serializeVacancySummary(vacancy, companiesById.get(vacancy.companyId) ?? null, sourcesById.get(vacancy.id) ?? [])
       ),
-      total,
+      total: Math.max(0, total - hiddenCount),
       limit: body.limit,
       offset: body.offset,
     });

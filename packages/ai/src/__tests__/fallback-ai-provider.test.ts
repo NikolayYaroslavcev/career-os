@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { FallbackAIProvider } from '../providers/fallback-ai-provider.js';
+import { OpenAIProvider } from '../providers/openai-provider.js';
+import { AnthropicProvider } from '../providers/anthropic-provider.js';
 import { AIRetryPolicy } from '../resilience/retry-policy.js';
 import { AIProviderHealthMonitor } from '../resilience/health-monitor.js';
 import { AIConcurrencyLimiter } from '../resilience/concurrency-limiter.js';
@@ -170,5 +172,36 @@ describe('FallbackAIProvider', () => {
     await inFlight;
 
     expect(concurrencyLimiter.activeCount).toBe(0);
+  });
+
+  it('falls back from a real primary provider to a real secondary provider on a transient 503', async () => {
+    const originalFetch = global.fetch;
+    try {
+      const fetchMock = vi.fn()
+        // Primary (OpenAI) 503s on every attempt within its retry budget.
+        .mockResolvedValueOnce({ ok: false, status: 503, text: () => Promise.resolve('{"error":{"message":"unavailable"}}') })
+        .mockResolvedValueOnce({ ok: false, status: 503, text: () => Promise.resolve('{"error":{"message":"unavailable"}}') })
+        // Secondary (Anthropic) succeeds.
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ content: [{ text: 'ok' }], usage: { input_tokens: 1, output_tokens: 1 } }),
+        });
+      global.fetch = fetchMock;
+
+      const primary = new OpenAIProvider({ apiKey: 'openai-key' });
+      const secondary = new AnthropicProvider({ apiKey: 'anthropic-key' });
+      const fallback = new FallbackAIProvider([primary, secondary], {
+        retryPolicy: new AIRetryPolicy({ maxAttempts: 2, baseDelayMs: 0, maxDelayMs: 0, backoffMultiplier: 1, jitter: false }),
+      });
+
+      const response = await fallback.complete(baseRequest);
+
+      expect(response.content).toBe('ok');
+      expect(response.provider).toBe('anthropic');
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });

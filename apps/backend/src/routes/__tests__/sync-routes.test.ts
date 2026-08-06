@@ -33,7 +33,7 @@ function createMockContainer(): {
     services: {
       syncScheduler: {
         getStatuses: vi.fn().mockReturnValue([
-          { providerId: 'remote_ok', lastSyncAt: null, lastSyncResult: 'pending', nextSyncAt: null, totalJobsSynced: 0 },
+          { providerId: 'hh', lastSyncAt: null, lastSyncResult: 'pending', nextSyncAt: null, totalJobsSynced: 0 },
         ]),
         syncAll: vi.fn().mockResolvedValue({ results: [], totalDurationMs: 100 }),
         syncProvider: vi.fn().mockResolvedValue({ status: 'success', jobsSynced: 5, durationMs: 200 }),
@@ -71,7 +71,7 @@ describe('Sync Routes', () => {
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.payload);
     expect(body.statuses).toHaveLength(1);
-    expect(body.statuses[0].providerId).toBe('remote_ok');
+    expect(body.statuses[0].providerId).toBe('hh');
   });
 
   it('POST /all triggers sync for all providers', async () => {
@@ -87,11 +87,11 @@ describe('Sync Routes', () => {
   it('POST /:providerId triggers sync for specific provider and returns the expected response shape', async () => {
     const response = await app.inject({
       method: 'POST',
-      url: '/api/v1/sync/remote_ok',
+      url: '/api/v1/sync/hh',
     });
 
     expect(response.statusCode).toBe(200);
-    expect(container.services.syncScheduler.syncProvider).toHaveBeenCalledWith('remote_ok', 'ws-1');
+    expect(container.services.syncScheduler.syncProvider).toHaveBeenCalledWith('hh', 'ws-1');
     const body = JSON.parse(response.payload);
     expect(body).toEqual({ status: 'success', jobsSynced: 5, durationMs: 200 });
   });
@@ -104,11 +104,11 @@ describe('Sync Routes', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/v1/sync/remote_ok',
+      url: '/api/v1/sync/hh',
     });
 
     expect(response.statusCode).toBe(200);
-    expect(container.services.syncScheduler.syncProvider).toHaveBeenCalledWith('remote_ok', 'ws-42');
+    expect(container.services.syncScheduler.syncProvider).toHaveBeenCalledWith('hh', 'ws-42');
   });
 
   it('a user with no workspace gets a 404 NotFoundError, not a 500', async () => {
@@ -119,7 +119,7 @@ describe('Sync Routes', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/v1/sync/remote_ok',
+      url: '/api/v1/sync/hh',
     });
 
     expect(response.statusCode).toBe(404);
@@ -133,7 +133,7 @@ describe('Sync Routes', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/v1/sync/remote_ok',
+      url: '/api/v1/sync/hh',
     });
 
     expect(response.statusCode).toBe(404);
@@ -145,17 +145,17 @@ describe('Sync Routes', () => {
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false);
 
-    const first = await app.inject({ method: 'POST', url: '/api/v1/sync/remote_ok' });
+    const first = await app.inject({ method: 'POST', url: '/api/v1/sync/hh' });
     expect(first.statusCode).toBe(200);
 
-    const second = await app.inject({ method: 'POST', url: '/api/v1/sync/remote_ok' });
+    const second = await app.inject({ method: 'POST', url: '/api/v1/sync/hh' });
     expect(second.statusCode).toBe(429);
     const body = JSON.parse(second.payload);
     expect(body.error.code).toBe('TOO_MANY_REQUESTS');
   });
 
   it('consults the distributed rate limiter keyed by the caller userId, not an in-process map', async () => {
-    await app.inject({ method: 'POST', url: '/api/v1/sync/remote_ok' });
+    await app.inject({ method: 'POST', url: '/api/v1/sync/hh' });
 
     expect(container.services.syncRateLimiter.checkAndRecord).toHaveBeenCalledWith('user-1');
   });
@@ -177,7 +177,7 @@ describe('Sync Routes', () => {
     await unauthApp.register(syncRoutes, { prefix: '/api/v1/sync' });
     await unauthApp.ready();
 
-    const response = await unauthApp.inject({ method: 'POST', url: '/api/v1/sync/remote_ok' });
+    const response = await unauthApp.inject({ method: 'POST', url: '/api/v1/sync/hh' });
     expect(response.statusCode).toBe(401);
   });
 });

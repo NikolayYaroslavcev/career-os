@@ -399,6 +399,38 @@ describe('TelegramFetcher', () => {
       expect(result.data[0]?.title).toBe('Senior Java Developer');
     });
   });
+
+  describe('deterministic precheck rejection', () => {
+    it('never turns a course/bootcamp ad into a RawJob, even though it names a tech stack', async () => {
+      const html = `<div class="tgme_widget_message_wrap">
+        <div class="tgme_widget_message" data-post="frontend_jobs/20">
+          <div class="tgme_widget_message_text"><p>Онлайн-курс по React и TypeScript, старт потока уже в понедельник, запись на курс открыта</p></div>
+        </div>
+      </div>`;
+      vi.mocked(fetch).mockResolvedValueOnce(htmlResponse(html));
+
+      const result = await fetcher.search({});
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data).toHaveLength(0);
+    });
+
+    it('never turns a candidate "looking for work" post into a RawJob', async () => {
+      const html = `<div class="tgme_widget_message_wrap">
+        <div class="tgme_widget_message" data-post="frontend_jobs/21">
+          <div class="tgme_widget_message_text"><p>Ищу работу Frontend разработчиком, опыт с React 3 года, рассмотрю предложения</p></div>
+        </div>
+      </div>`;
+      vi.mocked(fetch).mockResolvedValueOnce(htmlResponse(html));
+
+      const result = await fetcher.search({});
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data).toHaveLength(0);
+    });
+  });
 });
 
 describe('TelegramFetcher - Dynamic Channel Loading', () => {
@@ -516,5 +548,196 @@ describe('TelegramFetcher - Dynamic Channel Loading', () => {
     expect(result.data).toHaveLength(1);
     expect(result.data[0]!.sourceId).toBe('enabled_only:1');
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Phase 2.5 (ADR-032 addendum): when a TransportManager is configured, this
+// fetcher must obtain messages through it instead of scraping directly —
+// while classification/extraction (buildRawJob) and the RawJob[] output
+// contract stay exactly as covered by the suites above.
+describe('TelegramFetcher - TransportManager routing', () => {
+  const logger = new ConsoleLogger('error');
+  const metrics = new InMemoryMetricsCollector();
+  const tracer = new InMemoryTracer();
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function fakeTransportManager(messages: unknown[]) {
+    return {
+      fetch: vi.fn().mockResolvedValue({
+        ok: true,
+        data: { messages, hasMore: false, meta: {} },
+        meta: { durationMs: 1, providerMeta: { transportType: 'HTML_PREVIEW' } },
+      }),
+    };
+  }
+
+  it('routes search() through TransportManager.fetch() instead of scraping directly, preserving the RawJob contract', async () => {
+    const transportManager = fakeTransportManager([
+      {
+        sourceId: 'frontend_jobs',
+        externalMessageId: '200',
+        publishedAt: new Date('2026-01-01T00:00:00Z'),
+        rawText: 'Senior Frontend Developer | Remote | Rocket Sci\nApply: https://company.com/careers/200',
+        rawHtml: '',
+        links: ['https://company.com/careers/200'],
+      },
+    ]);
+    const fetcher = new TelegramFetcher({
+      channels: ['frontend_jobs'],
+      logger,
+      metrics,
+      tracer,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      transportManager: transportManager as any,
+    });
+
+    const result = await fetcher.search({});
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(transportManager.fetch).toHaveBeenCalledWith(
+      'telegram',
+      { sourceId: 'frontend_jobs' },
+      { capability: 'PULL' },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.sourceId).toBe('frontend_jobs:200');
+    expect(result.data[0]?.title).toBe('Senior Frontend Developer');
+  });
+
+  it('routes getVacancy() through TransportManager.fetch() as well', async () => {
+    const transportManager = fakeTransportManager([
+      {
+        sourceId: 'frontend_jobs',
+        externalMessageId: '201',
+        publishedAt: new Date('2026-01-01T00:00:00Z'),
+        rawText: 'QA Engineer | Remote | Company',
+        rawHtml: '',
+        links: [],
+      },
+    ]);
+    const fetcher = new TelegramFetcher({
+      channels: ['frontend_jobs'],
+      logger,
+      metrics,
+      tracer,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      transportManager: transportManager as any,
+    });
+
+    const result = await fetcher.getVacancy('frontend_jobs:201');
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(transportManager.fetch).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data?.sourceId).toBe('frontend_jobs:201');
+  });
+
+  it('surfaces a non-ok TransportManager result as a per-channel error, matching the direct-scrape failure path', async () => {
+    const transportManager = {
+      fetch: vi.fn().mockResolvedValue({
+        ok: false,
+        error: 'NETWORK_ERROR',
+        message: 'transport down',
+        retryable: true,
+        meta: { durationMs: 1 },
+      }),
+    };
+    const fetcher = new TelegramFetcher({
+      channels: ['frontend_jobs'],
+      logger,
+      metrics,
+      tracer,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      transportManager: transportManager as any,
+    });
+
+    const result = await fetcher.search({});
+
+    // Per-channel failures are caught and logged inside search(), same as a
+    // failed resilientFetch() today — the overall search() still succeeds
+    // with zero jobs rather than failing outright.
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toHaveLength(0);
+  });
+
+  it('falls back to direct scraping when no TransportManager is configured (regression guard)', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(htmlResponse(fixtureHtml));
+    const fetcher = new TelegramFetcher({ channels: ['frontend_jobs'], logger, metrics, tracer });
+
+    const result = await fetcher.search({});
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toHaveLength(4);
+  });
+
+  describe('extractionLookup (ADR-032 Phase 4/5 V2 seam)', () => {
+    it('builds RawJob fields from the AI extraction instead of regex when a qualifying extraction exists', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(htmlResponse(fixtureHtml));
+      const extractionLookup = vi.fn(async (channel: string, messageId: string) =>
+        channel === 'frontend_jobs' && messageId === '103'
+          ? {
+              company: 'TechCorp AI-Extracted',
+              title: 'AI-Extracted Backend Role',
+              technologies: ['python'],
+              skills: [],
+              seniority: 'senior',
+              salaryMin: 250000,
+              salaryMax: 350000,
+              currency: 'RUB',
+              country: null,
+              city: 'Москва',
+              employmentType: 'full_time',
+              remoteType: null,
+              links: ['https://example.com/apply'],
+              requirements: [],
+              responsibilities: [],
+            }
+          : undefined
+      );
+      const fetcher = new TelegramFetcher({ channels: ['frontend_jobs'], logger, metrics, tracer, extractionLookup });
+
+      const result = await fetcher.search({});
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // Only the one message the lookup resolved for survives — the rest have
+      // no qualifying extraction yet and are skipped, not regex-filled.
+      expect(result.data).toHaveLength(1);
+      const job = result.data[0]!;
+      expect(job.sourceId).toBe('frontend_jobs:103');
+      expect(job.title).toBe('AI-Extracted Backend Role');
+      expect(job.companyName).toBe('TechCorp AI-Extracted');
+      expect(job.salary).toEqual({ from: 250000, to: 350000, currency: 'RUB', period: 'monthly' });
+      expect(job.experienceLevel).toBe('senior');
+      expect(job.employmentType).toBe('full_time');
+      expect(job.url).toBe('https://example.com/apply');
+    });
+
+    it('skips a message entirely (no regex fallback) when the extraction lookup has nothing for it yet', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(htmlResponse(fixtureHtml));
+      const extractionLookup = vi.fn(async () => undefined);
+      const fetcher = new TelegramFetcher({ channels: ['frontend_jobs'], logger, metrics, tracer, extractionLookup });
+
+      const result = await fetcher.search({});
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data).toHaveLength(0);
+      expect(extractionLookup).toHaveBeenCalled();
+    });
   });
 });

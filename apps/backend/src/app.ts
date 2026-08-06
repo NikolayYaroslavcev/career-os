@@ -4,7 +4,7 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
 import { Telegraf } from 'telegraf';
-import { registerTelegramLinkingBot } from '@careeros/telegram';
+import { registerTelegramLinkingBot, registerChannelPostForwarder } from '@careeros/telegram';
 import { loadConfig, validateEncryptionConfig } from '@careeros/shared';
 import { checkDatabaseHealth, prisma } from '@careeros/database';
 import { checkRedisHealth, getRedis } from '@careeros/shared';
@@ -15,15 +15,19 @@ import { buildContainer } from './container.js';
 import type { Container } from './container.js';
 
 /**
- * Long-polls Telegram for inbound /start and /link commands. Colocated with
- * the HTTP server for MVP simplicity (mirrors ManualDigestScheduler's
- * "no separate infra yet" deferral) — a real deployment could move this to
- * its own process without changing TelegramLinkingService or the bot layer.
- * No-ops without a bot token (e.g. in tests), so it never touches the network there.
+ * Long-polls Telegram for inbound /start and /link commands, plus (EPIC-12
+ * Phase 2) forwards any channel_post/edited_channel_post updates the bot
+ * receives into BotApiTransport — the same bot instance and poller, no
+ * second getUpdates loop. Colocated with the HTTP server for MVP simplicity
+ * (mirrors ManualDigestScheduler's "no separate infra yet" deferral) — a real
+ * deployment could move this to its own process without changing
+ * TelegramLinkingService or the bot layer. No-ops without a bot token (e.g.
+ * in tests), so it never touches the network there.
  */
 function launchTelegramLinkingBot(botToken: string, container: Container): void {
   const bot = new Telegraf(botToken);
   registerTelegramLinkingBot(bot, container.services.telegramLinking);
+  registerChannelPostForwarder(bot, (post) => container.botApiTransport.ingest(post));
   bot.launch();
 
   process.once('SIGINT', () => bot.stop('SIGINT'));

@@ -12,6 +12,8 @@ export interface RecommendedVacancy {
   currency: string | null;
   technologies: string[];
   publishedAt: string | null;
+  sourceUrl: string | null;
+  applyUrl: string | null;
 }
 
 export type VacancyTier = 'HOT' | 'WARM' | 'COLD' | 'REJECT';

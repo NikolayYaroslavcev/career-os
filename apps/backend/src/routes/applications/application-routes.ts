@@ -570,11 +570,11 @@ export async function applicationRoutes(fastify: FastifyInstance): Promise<void>
     }
   });
 
-  // Tailor Resume for Application
+  // Tailor Resume for Application (ADR-031: async pipeline, apps/worker — see TailoringRequestService)
   fastify.post('/:id/tailor-resume', async (request, reply) => {
     const userId = requireUserId(request);
     const params = request.params as { id: string };
-    const body = z.object({ resumeId: z.string().uuid() }).parse(request.body);
+    const body = z.object({ resumeId: z.string().uuid(), forceRegenerate: z.boolean().optional() }).parse(request.body);
 
     let application: Application;
     try {
@@ -584,7 +584,6 @@ export async function applicationRoutes(fastify: FastifyInstance): Promise<void>
     }
     const vacancyRepo = fastify.container.repositories.vacancy;
     const resumeRepo = fastify.container.repositories.resume;
-    const companyRepo = fastify.container.repositories.company;
 
     const vacancy = await vacancyRepo.findById(createVacancyId(application.vacancyId));
     if (!vacancy) throw new NotFoundError('Vacancy');
@@ -593,46 +592,15 @@ export async function applicationRoutes(fastify: FastifyInstance): Promise<void>
     if (!resume) throw new NotFoundError('Resume');
     if (resume.userId !== userId) throw new UnauthorizedError('Not your resume');
 
-    const company = await companyRepo.findById(vacancy.companyId);
-    const inputHash = `${vacancy.id}:${resume.id}:${resume.updatedAt.getTime()}`;
-
-    const result = await fastify.container.aiOrchestrator.execute({
-      feature: 'tailor_resume',
+    const result = await fastify.container.services.tailoringRequest.requestTailoring({
       userId,
-      input: {
-        vacancyId: vacancy.id,
-        vacancyTitle: vacancy.title,
-        vacancyDescription: vacancy.description,
-        companyName: company?.name ?? 'Unknown',
-        technologies: vacancy.requirements,
-        resumeId: resume.id,
-        resumeText: resume.rawText ?? resume.summary,
-        structuredResume: {
-          summary: resume.summary,
-          skills: resume.skills.map((s) => s.name),
-          technologies: resume.technologies.map((t) => t.name),
-          experience: resume.experience.map((e) => ({
-            company: e.company,
-            position: e.position,
-            description: e.description,
-            technologies: e.technologies.map((t) => t.name),
-          })),
-          education: resume.education.map((e) => ({
-            institution: e.institution,
-            degree: e.degree,
-            field: e.field,
-          })),
-        },
-      },
-      inputHash,
+      resumeId: resume.id,
+      resumeUpdatedAt: resume.updatedAt,
+      vacancyId: vacancy.id,
+      vacancyUpdatedAt: vacancy.updatedAt,
+      applicationId: application.id,
+      forceRegenerate: body.forceRegenerate,
     });
-
-    if (result.jobId) {
-      await fastify.container.repositories.aiJob.update(result.jobId, {
-        vacancyId: vacancy.id,
-        applicationId: application.id,
-      });
-    }
 
     return reply.send(result);
   });
@@ -737,19 +705,24 @@ export async function applicationRoutes(fastify: FastifyInstance): Promise<void>
       userId,
       input: {
         vacancyId: vacancy.id,
+        vacancyUpdatedAt: vacancy.updatedAt,
         vacancyTitle: vacancy.title,
         vacancyDescription: vacancy.description,
         companyName: company?.name ?? 'Unknown',
         technologies: vacancy.requirements,
         experienceLevel: vacancy.experienceLevel,
         location: vacancy.location.toString(),
+        userId,
         searchProfileId: profile.id,
+        searchProfileUpdatedAt: profile.updatedAt,
         desiredPositions: profile.desiredPositions,
         desiredTechnologies: profile.desiredTechnologies.map((t) => t.name),
         desiredExperienceLevel: profile.experienceLevel,
         isRemoteOnly: profile.isRemoteOnly,
         desiredLocations: profile.desiredLocations.map((l) => l.toString()),
         resume: resume ? {
+          resumeId: resume.id,
+          resumeUpdatedAt: resume.updatedAt,
           summary: resume.summary,
           skills: resume.skills.map((s) => s.name),
           technologies: resume.technologies.map((t) => t.name),

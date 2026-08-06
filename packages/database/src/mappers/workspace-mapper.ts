@@ -1,4 +1,4 @@
-import type { Workspace } from '@careeros/career';
+import type { Workspace, WorkspaceRole } from '@careeros/career';
 import { Workspace as WorkspaceEntity } from '@careeros/career';
 import { createWorkspaceId, createUserId } from '@careeros/career';
 
@@ -21,7 +21,7 @@ export class WorkspaceMapper {
     return WorkspaceEntity.reconstitute(createWorkspaceId(record.id), {
       name: record.name,
       ownerId: owner ? createUserId(owner.userId) : createUserId(''),
-      memberIds: members.map((m) => createUserId(m.userId)),
+      memberRoles: new Map(members.map((m) => [createUserId(m.userId), m.role as WorkspaceRole])),
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
     });
@@ -39,10 +39,7 @@ export class WorkspaceMapper {
       name: workspace.name,
       createdAt: workspace.createdAt,
       updatedAt: workspace.updatedAt,
-      members: workspace.memberIds.map((userId) => ({
-        userId,
-        role: workspace.isOwner(userId) ? 'OWNER' : 'MEMBER',
-      })),
+      members: workspace.members.map(({ userId, role }) => ({ userId, role })),
     };
   }
 }

@@ -33,7 +33,7 @@ pnpm dev
 
 Then open the dashboard at **http://localhost:3001** and register an account.
 
-RemoteOK and HH (hh.ru) need no configuration and are always active, so a fresh
+HH (hh.ru) needs no configuration and is always active, so a fresh
 checkout can search real jobs immediately — no API keys required for that part.
 AI matching needs one API key (see [AI Configuration](#ai-configuration) below);
 without one, search and persistence still work, only AI analysis is skipped.
@@ -85,7 +85,7 @@ default or degrades gracefully when unset.
 ### Provider Configuration
 
 See [`docs/LOCAL_DEVELOPMENT.md#job-providers`](docs/LOCAL_DEVELOPMENT.md#job-providers)
-for the full table. Summary: RemoteOK and HH need nothing and are always on; Greenhouse,
+for the full table. Summary: HH needs nothing and is always on; Greenhouse,
 Lever, Ashby, Workday, and Teamtailor each need a board/tenant identifier and are silently
 skipped (with a startup warning in the logs) when unset — never a crash.
 
@@ -152,7 +152,7 @@ career-os/
 │   ├── career/            # Career domain logic
 │   ├── database/         # Prisma ORM + repositories
 │   ├── notifications/    # Notification providers
-│   ├── providers/        # Job providers (RemoteOK, HH, Greenhouse, Lever, Ashby, Workday, Teamtailor)
+│   ├── providers/        # Job providers (HH, Greenhouse, Lever, Ashby, Workday, Teamtailor)
 │   ├── resume/           # Resume parsing
 │   ├── shared/           # Config, Redis, health checks
 │   └── telegram/         # Telegram bot integration

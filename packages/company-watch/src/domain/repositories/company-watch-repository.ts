@@ -1,3 +1,5 @@
+import type { CompanyWatchHealthStatus } from '../health.js';
+
 export interface CompanyWatchData {
   id: string;
   name: string;
@@ -17,6 +19,10 @@ export interface CompanyWatchData {
   workspaceId: string;
   createdAt: Date;
   updatedAt: Date;
+  consecutiveFailureCount: number;
+  healthStatus: CompanyWatchHealthStatus;
+  priorityScore: number;
+  lastSuccessfulSyncAt?: Date;
 }
 
 export interface CompanyWatchRepository {

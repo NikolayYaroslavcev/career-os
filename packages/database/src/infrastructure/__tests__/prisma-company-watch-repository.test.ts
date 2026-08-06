@@ -31,6 +31,9 @@ describe('PrismaCompanyWatchRepository', () => {
     workspaceId: 'workspace-1',
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-01-01'),
+    consecutiveFailureCount: 0,
+    healthStatus: 'ACTIVE',
+    priorityScore: 50,
   };
 
   beforeEach(() => {

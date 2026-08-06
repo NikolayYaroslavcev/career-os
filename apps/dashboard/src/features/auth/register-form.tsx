@@ -78,13 +78,15 @@ export function RegisterForm(): React.JSX.Element {
             <Alert variant="destructive">
               <AlertDescription className="flex items-center justify-between gap-2">
                 <span>{error}</span>
-                <button
+                <Button
                   type="button"
                   onClick={clearError}
-                  className="text-xs font-medium underline underline-offset-2 hover:no-underline"
+                  variant="link"
+                  size="xs"
+                  className="h-auto px-0"
                 >
                   {t('common.dismiss')}
-                </button>
+                </Button>
               </AlertDescription>
             </Alert>
           )}

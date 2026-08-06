@@ -100,7 +100,7 @@ export interface DashboardData {
   readonly today: UsageStats;
   readonly week: UsageStats;
   readonly month: UsageStats;
-  readonly estimatedMonthlyCost: number;
+  readonly monthlyCost: number;
   readonly savedTokens: number;
   readonly mostExpensiveFeature: string;
   readonly mostFrequentFeature: string;

@@ -1,144 +1,91 @@
 import type { AtsAdapter, AtsConfig, AtsJob } from './base-adapter.js';
+import { extractTechnologies } from './technology-keywords.js';
+import {
+  WorkdayAdapter as SharedWorkdayAdapter,
+  AtsHttpError,
+  type AtsRawJob,
+  type WorkdayAdapterConfig,
+  type WorkdayJobPostingPayload,
+} from '@careeros/ats-adapters';
 
-interface WorkdayJob {
-  bulletFields: string[];
-  externalPath: string;
-  locationsText: string;
-  postedOn: string;
-  title: string;
-}
-
-interface WorkdayResponse {
-  jobPostings: WorkdayJob[];
-  total: number;
-  facets: unknown[];
-}
-
+/**
+ * ADR-033 Workday migration: this **replaces**, rather than diffs against,
+ * the prior company-watch `WorkdayAdapter`. That implementation built its
+ * request subdomain as `wd${site}` — conflating the job board's `site` path
+ * segment (e.g. `External`) with Workday's actual per-tenant pod number
+ * (`wd1`, `wd2`, `wd3`, ...), which are unrelated values. Its single-job URL
+ * was also missing the `/job/` path segment real Workday external paths
+ * require, and it mapped `postedOn` (free text like "Posted 3 Days Ago")
+ * straight through `new Date()`, which always produces `Invalid Date`. It
+ * had zero test coverage. None of that was a genuine, working alternate
+ * shape worth preserving (contrast Lever's real paginated-vs-bare URL
+ * split). This wrapper delegates to the same documented tenant/host/site
+ * URL scheme and relative-date parsing providers' fetcher already used
+ * successfully. See ADR-033 addendum "Workday migration".
+ *
+ * Description is built from `bulletFields` here (more useful than
+ * providers' placeholder "full description available at the listing page"
+ * text) — a deliberate per-consumer enrichment from `rawMetadata`, same
+ * pattern as Lever's wrapper computing its own `departments`.
+ */
 export class WorkdayAdapter implements AtsAdapter {
   readonly atsType = 'WORKDAY' as const;
+  private readonly adapter = new SharedWorkdayAdapter();
 
   async fetchJobs(config: AtsConfig): Promise<AtsJob[]> {
-    const jobs: AtsJob[] = [];
-    let offset = 0;
-    const limit = 20;
-    let hasMore = true;
-
-    while (hasMore) {
-      const url = this.buildUrl(config);
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          appliedFacets: {},
-          limit,
-          offset,
-          searchText: '',
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Workday API error: ${response.status} ${response.statusText}`);
-      }
-
-      const data = (await response.json()) as WorkdayResponse;
-      jobs.push(...data.jobPostings.map((job) => this.mapJob(job, config)));
-
-      hasMore = offset + limit < data.total;
-      offset += limit;
+    try {
+      const jobs = await this.adapter.fetchJobs(this.toAdapterConfig(config));
+      return jobs.map((job) => this.toAtsJob(job));
+    } catch (error) {
+      throw toWorkdayError(error);
     }
-
-    return jobs;
   }
 
   async fetchJob(config: AtsConfig, externalId: string): Promise<AtsJob | null> {
-    const baseUrl = this.buildBaseUrl(config);
-    const url = `${baseUrl}/${externalId}`;
-    const response = await fetch(url, {
-      headers: { Accept: 'application/json' },
-    });
-
-    if (response.status === 404) return null;
-    if (!response.ok) {
-      throw new Error(`Workday API error: ${response.status} ${response.statusText}`);
+    try {
+      const job = await this.adapter.fetchJob(this.toAdapterConfig(config), externalId);
+      return job ? this.toAtsJob(job) : null;
+    } catch (error) {
+      throw toWorkdayError(error);
     }
-
-    const job = (await response.json()) as WorkdayJob;
-    return this.mapJob(job, config);
   }
 
   async ping(config: AtsConfig): Promise<boolean> {
     try {
-      const url = this.buildUrl(config);
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          appliedFacets: {},
-          limit: 1,
-          offset: 0,
-          searchText: '',
-        }),
-      });
-      return response.ok;
+      return await this.adapter.ping(this.toAdapterConfig(config));
     } catch {
       return false;
     }
   }
 
-  private buildUrl(config: AtsConfig): string {
-    const baseUrl = this.buildBaseUrl(config);
-    return `${baseUrl}/jobs`;
-  }
-
-  private buildBaseUrl(config: AtsConfig): string {
-    const metadata = config.metadata as { tenant?: string; site?: string } | undefined;
+  private toAdapterConfig(config: AtsConfig): WorkdayAdapterConfig {
+    const metadata = config.metadata as { tenant?: string; site?: string; host?: string } | undefined;
     const tenant = metadata?.tenant;
     const site = metadata?.site;
     if (!tenant || !site) {
       throw new Error('Workday adapter requires tenant and site in metadata');
     }
-    return `https://${tenant}.wd${site}.myworkdayjobs.com/wday/cxs/${tenant}/${site}`;
+    return { tenant, site, host: metadata?.host };
   }
 
-  private mapJob(job: WorkdayJob, config: AtsConfig): AtsJob {
-    const metadata = config.metadata as { tenant?: string; site?: string } | undefined;
-    const tenant = metadata?.tenant;
-    const site = metadata?.site;
-
+  private toAtsJob(job: AtsRawJob): AtsJob {
+    const raw = job.rawMetadata as WorkdayJobPostingPayload;
     return {
-      externalId: job.externalPath,
+      externalId: job.externalId,
       title: job.title,
-      description: job.bulletFields?.join('\n') || '',
-      url: `https://${tenant}.wd${site}.myworkdayjobs.com${job.externalPath}`,
-      location: job.locationsText,
-      technologies: this.extractTechnologies(job.bulletFields?.join(' ') || ''),
-      publishedAt: job.postedOn ? new Date(job.postedOn) : undefined,
+      description: raw.bulletFields?.join('\n') || job.description,
+      url: job.url,
+      location: job.location,
+      technologies: extractTechnologies(raw.bulletFields?.join(' ') || ''),
+      publishedAt: job.publishedAt,
     };
   }
+}
 
-  private extractTechnologies(description: string): string[] {
-    const techPatterns = [
-      /typescript|javascript|python|java|golang|go|rust|ruby|php|c\+\+|c#|swift|kotlin/i,
-      /react|vue|angular|svelte|next\.?js|nuxt/i,
-      /node\.?js|deno|bun/i,
-      /aws|gcp|azure|docker|kubernetes|k8s/i,
-      /postgresql|mysql|mongodb|redis|elasticsearch/i,
-    ];
-
-    const technologies: string[] = [];
-    for (const pattern of techPatterns) {
-      const matches = description.match(pattern);
-      if (matches) {
-        technologies.push(...matches.map((m) => m.toLowerCase()));
-      }
-    }
-
-    return [...new Set(technologies)];
+/** Preserves this adapter's own thrown-error message format at the boundary (ADR-033: adapters throw typed errors; consumers compose their own message). */
+function toWorkdayError(error: unknown): Error {
+  if (error instanceof AtsHttpError) {
+    return new Error(`Workday API error: ${error.status} ${error.statusText}`);
   }
+  return error instanceof Error ? error : new Error(String(error));
 }

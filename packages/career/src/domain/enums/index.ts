@@ -44,3 +44,9 @@ export { FollowUpType } from './follow-up-type.js';
 export { SourceStatus, SOURCE_STATUS_LABELS } from './source-status.js';
 
 export { SourcePriority, PROVIDER_PRIORITY } from './source-priority.js';
+
+export { SocialPlatform } from './social-platform.js';
+
+export { TransportType } from './transport-type.js';
+
+export { MessageProcessingStatus } from './message-processing-status.js';

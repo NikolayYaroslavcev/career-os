@@ -109,7 +109,6 @@ changing business logic:
 -   LinkedIn
 -   HH
 -   Habr Career
--   RemoteOK
 -   Wellfound
 -   Otta
 -   RSS feeds
@@ -616,7 +615,6 @@ Post-MVP: additional providers, e.g.
 -   HH
 -   LinkedIn (isolated provider)
 -   Habr
--   RemoteOK
 
 ------------------------------------------------------------------------
 

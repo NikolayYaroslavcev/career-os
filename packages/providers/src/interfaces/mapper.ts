@@ -11,6 +11,7 @@ export interface MappedJob {
   readonly description: string;
   readonly companyName: string;
   readonly companySourceId?: string;
+  readonly companyUrl?: string;
   readonly location: {
     readonly raw: string;
     readonly city?: string;

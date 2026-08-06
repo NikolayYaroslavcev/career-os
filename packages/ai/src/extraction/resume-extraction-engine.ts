@@ -6,6 +6,9 @@ import type { AILogger } from '../observability/ai-logger.js';
 import type { AIMetricsCollector } from '../observability/ai-metrics.js';
 import { AIError, AIErrorType } from '../domain/ai-error.js';
 import { AI_METRICS } from '../observability/ai-metrics.js';
+import { estimateCost } from '../cost/cost-tracker.js';
+import { getModelPricing } from '../cost/pricing.js';
+import type { UsageRecorder } from '../cost/usage-recorder.js';
 
 export interface StructuredResumeExtractionResult {
   readonly summary: string;
@@ -15,6 +18,8 @@ export interface StructuredResumeExtractionResult {
   readonly technologies: readonly string[];
   readonly experience: readonly StructuredResumeExperience[];
   readonly education: readonly StructuredResumeEducation[];
+  readonly certifications: readonly string[];
+  readonly languages: readonly string[];
 }
 
 export interface ResumeExtractionEngineDeps {
@@ -22,6 +27,8 @@ export interface ResumeExtractionEngineDeps {
   readonly promptBuilder: StructuredResumeExtractionPromptBuilder;
   readonly logger: AILogger;
   readonly metrics: AIMetricsCollector;
+  /** Persists usage to AIUsageRepository (bypasses AIOrchestrator.execute()) — optional so existing callers/tests keep working. */
+  readonly usageRecorder?: UsageRecorder;
 }
 
 export interface ResumeExtractionEngineConfig {
@@ -44,7 +51,7 @@ export class ResumeExtractionEngine {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
-  async extract(rawText: string): Promise<StructuredResumeExtractionResult> {
+  async extract(rawText: string, userId?: string): Promise<StructuredResumeExtractionResult> {
     const builtPrompt = this.deps.promptBuilder.build({ rawText });
 
     const request: AIRequest = {
@@ -67,6 +74,9 @@ export class ResumeExtractionEngine {
     const result = this.parseResponse(response);
 
     this.recordMetrics(response);
+    if (userId) {
+      this.recordUsage(response, userId);
+    }
 
     this.deps.logger.info('Resume extraction completed', {
       provider: response.provider,
@@ -127,6 +137,8 @@ export class ResumeExtractionEngine {
         technologies: toStringArray(parsed['technologies']),
         experience: parseExperience(parsed['experience']),
         education: parseEducation(parsed['education']),
+        certifications: toStringArray(parsed['certifications']),
+        languages: toStringArray(parsed['languages']),
       };
     } catch (error) {
       throw new AIError({
@@ -150,6 +162,33 @@ export class ResumeExtractionEngine {
     this.deps.metrics.recordHistogram(AI_METRICS.TOKENS_TOTAL, response.usage.totalTokens);
     this.deps.metrics.recordHistogram(AI_METRICS.TOKENS_PROMPT, response.usage.promptTokens);
     this.deps.metrics.recordHistogram(AI_METRICS.TOKENS_COMPLETION, response.usage.completionTokens);
+  }
+
+  private recordUsage(response: AIResponse, userId: string): void {
+    try {
+      const pending = this.deps.usageRecorder?.record({
+        userId,
+        provider: response.provider,
+        model: response.model,
+        feature: 'resume_extraction',
+        tokensIn: response.usage.promptTokens,
+        tokensOut: response.usage.completionTokens,
+        totalTokens: response.usage.totalTokens,
+        estimatedCost: estimateCost(response.usage, getModelPricing(response.provider, response.model)),
+        latencyMs: response.latencyMs,
+      });
+      if (pending) {
+        void Promise.resolve(pending).catch((error) => {
+          this.deps.logger.warn('Failed to record resume_extraction usage', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
+    } catch (error) {
+      this.deps.logger.warn('Failed to record resume_extraction usage', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }
 
@@ -185,6 +224,7 @@ function parseExperience(raw: unknown): StructuredResumeExperience[] {
         position: '',
         startDate: new Date(),
         description: '',
+        bullets: [],
         technologies: [],
       };
     }
@@ -195,6 +235,7 @@ function parseExperience(raw: unknown): StructuredResumeExperience[] {
       startDate: parseDate(obj['startDate']),
       endDate: obj['endDate'] ? parseDate(obj['endDate']) : undefined,
       description: typeof obj['description'] === 'string' ? obj['description'] : '',
+      bullets: toStringArray(obj['bullets']),
       technologies: toStringArray(obj['technologies']),
     };
   });

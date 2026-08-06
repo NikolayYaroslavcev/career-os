@@ -29,7 +29,7 @@ import { buildFixtureResume, buildFixtureSearchProfile, FIXTURE_USER_ID } from '
 describe('Provider -> AI matching -> Recommendation pipeline', () => {
   it('fetches vacancies from the provider, matches them against a resume, and produces sorted recommendations', async () => {
     const providerRegistry = new ProviderRegistry();
-    providerRegistry.register(new FakeProvider('remote_ok', { jobsToReturn: 3 }));
+    providerRegistry.register(new FakeProvider('hh',{ jobsToReturn: 3 }));
 
     const vacancyRepository = new InMemoryVacancyRepository();
     const vacancySourceRepository = new InMemoryVacancySourceRepository();
@@ -100,7 +100,7 @@ describe('Provider -> AI matching -> Recommendation pipeline', () => {
 
   it('does not duplicate vacancies already persisted from a prior search (dedup by source + sourceId)', async () => {
     const providerRegistry = new ProviderRegistry();
-    providerRegistry.register(new FakeProvider('remote_ok', { jobsToReturn: 2 }));
+    providerRegistry.register(new FakeProvider('hh',{ jobsToReturn: 2 }));
 
     const vacancyRepository = new InMemoryVacancyRepository();
     const vacancySourceRepository = new InMemoryVacancySourceRepository();

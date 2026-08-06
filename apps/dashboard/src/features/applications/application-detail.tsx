@@ -27,6 +27,7 @@ import { Loading } from '@/components/ui/loading';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ArrowLeft, ExternalLink, CheckCircle } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
+import { APPLICATION_STATUS_VARIANT } from '@/lib/application-status';
 
 const FOLLOW_UP_VARIANT: Record<FollowUp['status'], 'default' | 'secondary' | 'success' | 'destructive' | 'warning'> = {
   pending: 'default',
@@ -189,9 +190,9 @@ export function ApplicationDetail({ applicationId, vacancy, onBack, onChanged }:
         <Alert variant="destructive">
           <AlertDescription className="flex items-center justify-between gap-2">
             <span>{error}</span>
-            <button type="button" onClick={() => setError(null)} className="text-xs font-medium underline underline-offset-2 hover:no-underline">
+            <Button type="button" variant="link" size="xs" className="h-auto px-0" onClick={() => setError(null)}>
               {t('common.dismiss')}
-            </button>
+            </Button>
           </AlertDescription>
         </Alert>
       )}
@@ -204,12 +205,12 @@ export function ApplicationDetail({ applicationId, vacancy, onBack, onChanged }:
           {vacancy?.company && <p>{vacancy.company.name}</p>}
           {vacancy?.location && <p>{vacancy.location}</p>}
           <div className="flex items-center gap-2">
-            <Badge variant="secondary">{t(`applications.statuses.${application.status}`)}</Badge>
+            <Badge variant={APPLICATION_STATUS_VARIANT[application.status]}>{t(`applications.statuses.${application.status}`)}</Badge>
             {application.startedAt && (
-              <span className="text-xs">Started {new Date(application.startedAt).toLocaleDateString(locale)}</span>
+              <span className="text-xs">{t('applications.startedOn', { date: new Date(application.startedAt).toLocaleDateString(locale) })}</span>
             )}
             {application.submittedAt && (
-              <span className="text-xs">Submitted {new Date(application.submittedAt).toLocaleDateString(locale)}</span>
+              <span className="text-xs">{t('applications.submittedOn', { date: new Date(application.submittedAt).toLocaleDateString(locale) })}</span>
             )}
           </div>
           <div className="flex gap-2 pt-2">

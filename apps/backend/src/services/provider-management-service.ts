@@ -1,6 +1,9 @@
 import type { ProviderRegistry, Logger, HealthState } from '@careeros/providers';
+import type { TelegramChannelStatsData } from '@careeros/database';
+import { parseTelegramChannelList } from '@careeros/shared';
 import type { SyncSchedulerService } from './sync-scheduler-service.js';
 import type { ProviderDiagnosticsService } from './provider-diagnostics-service.js';
+import { computeChannelQualityScore } from './telegram-channel-stats-service.js';
 
 interface ProviderConfigData {
   id: string;
@@ -23,7 +26,10 @@ interface TelegramChannelData {
   lastSyncAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  stats?: TelegramChannelStatsData | null;
 }
+
+export type TelegramChannelWithQuality = TelegramChannelData & { qualityScore: number };
 
 interface ProviderConfigRepo {
   upsert(input: { providerId: string; enabled?: boolean; syncEnabled?: boolean; status?: string; settings?: unknown; qualityScore?: number }): Promise<ProviderConfigData>;
@@ -90,8 +96,11 @@ export interface QualityMetrics {
   qualityScore: number;
 }
 
+function attachQualityScore(channel: TelegramChannelData): TelegramChannelWithQuality {
+  return { ...channel, qualityScore: channel.stats ? computeChannelQualityScore(channel.stats) : 0 };
+}
+
 const KNOWN_PROVIDER_NAMES: Record<string, string> = {
-  remote_ok: 'RemoteOK',
   hh: 'HeadHunter',
   adzuna: 'Adzuna',
   greenhouse: 'Greenhouse',
@@ -100,7 +109,6 @@ const KNOWN_PROVIDER_NAMES: Record<string, string> = {
   workday: 'Workday',
   teamtailor: 'Teamtailor',
   remotive: 'Remotive',
-  himalayas: 'Himalayas',
   arbeitnow: 'Arbeitnow',
   jobicy: 'Jobicy',
   we_work_remotely: 'We Work Remotely',
@@ -114,14 +122,18 @@ const KNOWN_PROVIDER_NAMES: Record<string, string> = {
   superjob: 'SuperJob',
   telegram: 'Telegram',
   linkedin: 'LinkedIn',
+  personio: 'Personio',
+  workable: 'Workable',
+  pyjobs: 'PyJobs',
+  django_jobs: 'Django Jobs',
+  speedrun: 'a16z Speedrun',
+  france_travail: 'France Travail',
 };
 
 const DEFAULT_SYNC_INTERVALS: Record<string, number> = {
-  remote_ok: 60 * 60 * 1000,
   hh: 60 * 60 * 1000,
   adzuna: 60 * 60 * 1000,
   remotive: 60 * 60 * 1000,
-  himalayas: 2 * 60 * 60 * 1000,
   arbeitnow: 60 * 60 * 1000,
   jobicy: 60 * 60 * 1000,
   we_work_remotely: 2 * 60 * 60 * 1000,
@@ -139,7 +151,13 @@ const DEFAULT_SYNC_INTERVALS: Record<string, number> = {
   comeet: 60 * 60 * 1000,
   superjob: 60 * 60 * 1000,
   telegram: 15 * 60 * 1000,
+  personio: 60 * 60 * 1000,
+  workable: 60 * 60 * 1000,
   linkedin: 60 * 60 * 1000,
+  pyjobs: 60 * 60 * 1000,
+  django_jobs: 2 * 60 * 60 * 1000,
+  speedrun: 60 * 60 * 1000,
+  france_travail: 60 * 60 * 1000,
 };
 
 export class ProviderManagementService {
@@ -155,7 +173,7 @@ export class ProviderManagementService {
 
   // ── Provider Config ──
 
-  async getAllProviders(): Promise<ProviderWithInfo[]> {
+  async getAllProviders(workspaceId: string): Promise<ProviderWithInfo[]> {
     const configs = await this.providerConfigRepo.findAll();
     const configMap = new Map(configs.map((c) => [c.providerId, c]));
     const registered = this.providerRegistry.getAll();
@@ -173,7 +191,7 @@ export class ProviderManagementService {
       // SyncSchedulerService is the sole owner of live provider state (health,
       // sync results, counts) — ProviderRegistry.getState() only ever returns
       // the boot-time snapshot and is never updated after registration.
-      const syncStatus = this.syncScheduler.getStatus('global', providerId);
+      const syncStatus = this.syncScheduler.getStatus(workspaceId, providerId);
       const diag = diagnosticsMap.get(providerId);
 
       result.push({
@@ -200,11 +218,11 @@ export class ProviderManagementService {
     return result.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async getProvider(providerId: string): Promise<ProviderWithInfo | null> {
+  async getProvider(providerId: string, workspaceId: string): Promise<ProviderWithInfo | null> {
     const config = await this.providerConfigRepo.findByProviderId(providerId);
     const isRegistered = this.providerRegistry.getAll().some((p) => p.info.id === providerId);
     const isEnabled = config?.enabled !== false && isRegistered;
-    const syncStatus = this.syncScheduler.getStatus('global', providerId);
+    const syncStatus = this.syncScheduler.getStatus(workspaceId, providerId);
     const diag = this.diagnostics?.getSnapshot().find((d) => d.providerId === providerId);
 
     return {
@@ -264,12 +282,14 @@ export class ProviderManagementService {
 
   // ── Telegram Channels ──
 
-  async getAllTelegramChannels(): Promise<TelegramChannelData[]> {
-    return this.telegramChannelRepo.findAll();
+  async getAllTelegramChannels(): Promise<TelegramChannelWithQuality[]> {
+    const channels = await this.telegramChannelRepo.findAll();
+    return channels.map(attachQualityScore);
   }
 
-  async getEnabledTelegramChannels(): Promise<TelegramChannelData[]> {
-    return this.telegramChannelRepo.findEnabled();
+  async getEnabledTelegramChannels(): Promise<TelegramChannelWithQuality[]> {
+    const channels = await this.telegramChannelRepo.findEnabled();
+    return channels.map(attachQualityScore);
   }
 
   async getEnabledTelegramUsernames(): Promise<string[]> {
@@ -313,14 +333,7 @@ export class ProviderManagementService {
     const dbChannels = await this.telegramChannelRepo.findEnabledUsernames();
     if (dbChannels.length > 0) return dbChannels;
 
-    if (envChannels) {
-      return envChannels
-        .split(',')
-        .map((c) => c.trim().replace(/^@/, '').replace(/^https?:\/\/t\.me\//i, ''))
-        .filter(Boolean);
-    }
-
-    return [];
+    return parseTelegramChannelList(envChannels);
   }
 
   /**
@@ -391,8 +404,8 @@ export class ProviderManagementService {
     return baseMetrics;
   }
 
-  async getAllProviderQualities(): Promise<QualityMetrics[]> {
-    const providers = await this.getAllProviders();
+  async getAllProviderQualities(workspaceId: string): Promise<QualityMetrics[]> {
+    const providers = await this.getAllProviders(workspaceId);
     const qualities: QualityMetrics[] = [];
     for (const p of providers) {
       qualities.push(await this.calculateProviderQuality(p.providerId));

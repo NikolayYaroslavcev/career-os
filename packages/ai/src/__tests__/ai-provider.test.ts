@@ -12,6 +12,7 @@ class MockAIProvider extends BaseAIProvider {
   private responseContent: string;
   private shouldFail = false;
   private failureMessage = 'Mock provider failure';
+  private failureError: Error | null = null;
 
   constructor(config: AIProviderConfig, responseContent: string) {
     super(config);
@@ -20,7 +21,14 @@ class MockAIProvider extends BaseAIProvider {
 
   setShouldFail(fail: boolean, message?: string): void {
     this.shouldFail = fail;
+    this.failureError = null;
     if (message !== undefined) this.failureMessage = message;
+  }
+
+  /** Throws an arbitrary Error instance (e.g. one carrying `.cause`/`.code`, or a SyntaxError/DOMException) instead of building one from a message. */
+  setFailureError(error: Error): void {
+    this.shouldFail = true;
+    this.failureError = error;
   }
 
   setResponseContent(content: string): void {
@@ -38,7 +46,7 @@ class MockAIProvider extends BaseAIProvider {
 
   protected async doComplete(_request: AIRequest): Promise<Omit<AIResponse, 'latencyMs' | 'provider'>> {
     if (this.shouldFail) {
-      throw new Error(this.failureMessage);
+      throw this.failureError ?? new Error(this.failureMessage);
     }
 
     return {
@@ -215,6 +223,120 @@ describe('BaseAIProvider', () => {
       const aiError = error as AIError;
       expect(aiError.type).toBe(AIErrorType.QUOTA_EXCEEDED);
       expect(aiError.retryable).toBe(false);
+    }
+  });
+
+  it.each([500, 502, 503])('classifies an HTTP %d provider response as a retryable NETWORK_ERROR', async (status) => {
+    const provider = new MockAIProvider({ apiKey: 'test' }, '{}');
+    provider.setShouldFail(true, `OpenAI API error ${status}: {"error":{"message":"internal server error"}}`);
+
+    try {
+      await provider.complete({ prompt: 'test', promptId: 'test', promptVersion: '1.0', promptChecksum: 'abc' });
+      expect.fail('Should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(AIError);
+      const aiError = error as AIError;
+      expect(aiError.type).toBe(AIErrorType.NETWORK_ERROR);
+      expect(aiError.retryable).toBe(true);
+    }
+  });
+
+  it('classifies an HTTP 504 provider response as a retryable TIMEOUT', async () => {
+    const provider = new MockAIProvider({ apiKey: 'test' }, '{}');
+    provider.setShouldFail(true, 'Anthropic API error 504: {"error":{"message":"upstream connection closed unexpectedly"}}');
+
+    try {
+      await provider.complete({ prompt: 'test', promptId: 'test', promptVersion: '1.0', promptChecksum: 'abc' });
+      expect.fail('Should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(AIError);
+      const aiError = error as AIError;
+      expect(aiError.type).toBe(AIErrorType.TIMEOUT);
+      expect(aiError.retryable).toBe(true);
+    }
+  });
+
+  it.each(['ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'ECONNABORTED'])(
+    'classifies a %s network failure surfaced via error.cause as a retryable NETWORK_ERROR',
+    async (code) => {
+      const provider = new MockAIProvider({ apiKey: 'test' }, '{}');
+      const cause = Object.assign(new Error(`low-level ${code}`), { code });
+      const fetchError = Object.assign(new TypeError('fetch failed'), { cause });
+      provider.setFailureError(fetchError);
+
+      try {
+        await provider.complete({ prompt: 'test', promptId: 'test', promptVersion: '1.0', promptChecksum: 'abc' });
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(AIError);
+        const aiError = error as AIError;
+        expect(aiError.type).toBe(AIErrorType.NETWORK_ERROR);
+        expect(aiError.retryable).toBe(true);
+      }
+    }
+  );
+
+  it('classifies a TLS certificate failure surfaced via error.cause as a non-retryable failure', async () => {
+    const provider = new MockAIProvider({ apiKey: 'test' }, '{}');
+    const cause = Object.assign(new Error('certificate has expired'), { code: 'CERT_HAS_EXPIRED' });
+    const fetchError = Object.assign(new TypeError('fetch failed'), { cause });
+    provider.setFailureError(fetchError);
+
+    try {
+      await provider.complete({ prompt: 'test', promptId: 'test', promptVersion: '1.0', promptChecksum: 'abc' });
+      expect.fail('Should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(AIError);
+      const aiError = error as AIError;
+      expect(aiError.type).toBe(AIErrorType.NETWORK_ERROR);
+      expect(aiError.retryable).toBe(false);
+    }
+  });
+
+  it('classifies an SSL handshake failure surfaced via error.cause message as a retryable NETWORK_ERROR', async () => {
+    const provider = new MockAIProvider({ apiKey: 'test' }, '{}');
+    const cause = new Error('40101F65 SSL routines: SSL_do_handshake: ssl handshake failure');
+    const fetchError = Object.assign(new TypeError('fetch failed'), { cause });
+    provider.setFailureError(fetchError);
+
+    try {
+      await provider.complete({ prompt: 'test', promptId: 'test', promptVersion: '1.0', promptChecksum: 'abc' });
+      expect.fail('Should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(AIError);
+      const aiError = error as AIError;
+      expect(aiError.type).toBe(AIErrorType.NETWORK_ERROR);
+      expect(aiError.retryable).toBe(true);
+    }
+  });
+
+  it('classifies an invalid JSON response body as a non-retryable PARSE_ERROR', async () => {
+    const provider = new MockAIProvider({ apiKey: 'test' }, '{}');
+    provider.setFailureError(new SyntaxError('Unexpected token < in JSON at position 0'));
+
+    try {
+      await provider.complete({ prompt: 'test', promptId: 'test', promptVersion: '1.0', promptChecksum: 'abc' });
+      expect.fail('Should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(AIError);
+      const aiError = error as AIError;
+      expect(aiError.type).toBe(AIErrorType.PARSE_ERROR);
+      expect(aiError.retryable).toBe(false);
+    }
+  });
+
+  it('classifies an AbortSignal timeout as a retryable TIMEOUT even without "timeout" in the message', async () => {
+    const provider = new MockAIProvider({ apiKey: 'test' }, '{}');
+    provider.setFailureError(new DOMException('The operation was aborted', 'TimeoutError'));
+
+    try {
+      await provider.complete({ prompt: 'test', promptId: 'test', promptVersion: '1.0', promptChecksum: 'abc' });
+      expect.fail('Should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(AIError);
+      const aiError = error as AIError;
+      expect(aiError.type).toBe(AIErrorType.TIMEOUT);
+      expect(aiError.retryable).toBe(true);
     }
   });
 });

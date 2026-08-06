@@ -63,6 +63,7 @@ export class DefaultNormalizationPipeline implements NormalizationPipeline {
       description,
       companyName,
       companySourceId: job.companySourceId,
+      companyUrl: job.companyUrl,
       location,
       salary,
       experienceLevel,

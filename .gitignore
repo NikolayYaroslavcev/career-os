@@ -55,3 +55,4 @@ graphify-out/
 
 # Local file storage (resume uploads written to disk at runtime)
 apps/backend/uploads/
+apps/e2e/test-results/

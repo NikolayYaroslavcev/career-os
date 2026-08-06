@@ -72,13 +72,16 @@ export function buildFixtureResume(): Resume {
   return resume;
 }
 
-export function buildFixtureSearchProfile(): SearchProfile {
+export function buildFixtureSearchProfile(overrides?: {
+  desiredPositions?: string[];
+  desiredTechnologies?: Technology[];
+}): SearchProfile {
   return SearchProfile.create({
     id: createSearchProfileId('33333333-3333-4333-8333-333333333333'),
     userId: FIXTURE_USER_ID,
     name: 'Remote Backend Roles',
-    desiredPositions: ['Backend Engineer', 'Software Engineer'],
-    desiredTechnologies: [
+    desiredPositions: overrides?.desiredPositions ?? ['Backend Engineer', 'Software Engineer'],
+    desiredTechnologies: overrides?.desiredTechnologies ?? [
       Technology.create('typescript', 'language'),
       Technology.create('node.js', 'framework'),
       Technology.create('postgresql', 'database'),

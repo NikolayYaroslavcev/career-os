@@ -1,4 +1,3 @@
-import { fetchWithTimeout } from '../../resilience/resilient-fetch.js';
 import type { Fetcher, FetchResult } from '../../interfaces/fetcher.js';
 import type { ProviderResult, ResultMeta } from '../../interfaces/result.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
@@ -9,6 +8,15 @@ import type { MetricsCollector } from '../../observability/metrics.js';
 import type { Tracer } from '../../observability/tracer.js';
 import { PROVIDER_METRICS } from '../../observability/metrics.js';
 import { ProviderErrorType } from '../../errors/provider-errors.js';
+import {
+  fetchAshbyJobBoard,
+  pingAshbyJobBoard,
+  parseAshbyJobsResponse,
+  AtsHttpError,
+  type AtsRawJob,
+  type AshbyJobPayload,
+  type AshbyEmploymentTypePayload,
+} from '@careeros/ats-adapters';
 
 export interface AshbyFetcherConfig {
   readonly baseUrl: string;
@@ -19,28 +27,7 @@ export interface AshbyFetcherConfig {
   readonly tracer: Tracer;
 }
 
-export type AshbyEmploymentType = 'FullTime' | 'PartTime' | 'Intern' | 'Contract' | 'Temporary';
-
-export interface AshbyRawJob {
-  readonly id: string;
-  readonly title: string;
-  readonly departmentName?: string | null;
-  readonly teamName?: string | null;
-  readonly locationName: string;
-  readonly isRemote: boolean;
-  readonly descriptionHtml: string;
-  readonly publishedAt: string;
-  readonly employmentType?: AshbyEmploymentType;
-  readonly jobUrl: string;
-  readonly applyUrl?: string;
-}
-
-export interface AshbyJobsResponse {
-  readonly jobs: readonly AshbyRawJob[];
-  readonly apiVersion?: string;
-}
-
-const EMPLOYMENT_TYPE_MAP: Record<AshbyEmploymentType, string> = {
+const EMPLOYMENT_TYPE_MAP: Record<AshbyEmploymentTypePayload, string> = {
   FullTime: 'full_time',
   PartTime: 'part_time',
   Intern: 'internship',
@@ -80,30 +67,10 @@ export class AshbyFetcher implements Fetcher {
         jobBoardName: this.jobBoardName,
       });
 
-      const url = this.buildJobsUrl();
-      const response = await fetchWithTimeout(url, {
-        headers: { Accept: 'application/json' },
-      });
-
-      if (!response.ok) {
-        span.setAttribute('error', true);
-        span.setAttribute('http.status', response.status);
-
-        if (response.status === 429) {
-          return {
-            ok: false,
-            error: ProviderErrorType.RATE_LIMITED,
-            message: `HTTP ${response.status}: Rate limited by Ashby API`,
-            retryable: true,
-            meta: { durationMs: Date.now() - startTime },
-          };
-        }
-
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = (await response.json()) as AshbyJobsResponse;
-      const jobs = this.parseResponse(data).filter((job) => matchesCriteria(job, criteria));
+      const payload = await fetchAshbyJobBoard(this.transportConfig());
+      const jobs = parseAshbyJobsResponse(payload)
+        .map((raw) => this.toRawJob(raw))
+        .filter((job) => matchesCriteria(job, criteria));
 
       const durationMs = Date.now() - startTime;
       this.metrics.recordHistogram(PROVIDER_METRICS.FETCH_DURATION, durationMs, {
@@ -139,17 +106,27 @@ export class AshbyFetcher implements Fetcher {
       span.setAttribute('error', true);
       span.end();
 
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      if (error instanceof AtsHttpError) {
+        if (error.status === 429) {
+          return {
+            ok: false,
+            error: ProviderErrorType.RATE_LIMITED,
+            message: `HTTP ${error.status}: Rate limited by Ashby API`,
+            retryable: true,
+            meta: { durationMs },
+          };
+        }
 
-      if (message.startsWith('HTTP')) {
         return {
           ok: false,
           error: ProviderErrorType.NETWORK_ERROR,
-          message,
+          message: `HTTP ${error.status}: ${error.statusText}`,
           retryable: true,
           meta: { durationMs },
         };
       }
+
+      const message = error instanceof Error ? error.message : 'Unknown error';
 
       if (message.includes('JSON')) {
         return {
@@ -282,13 +259,13 @@ export class AshbyFetcher implements Fetcher {
         operation: 'ping',
       });
 
-      const response = await fetchWithTimeout(this.buildJobsUrl(), { method: 'HEAD' });
+      const ok = await pingAshbyJobBoard(this.transportConfig());
       const durationMs = Date.now() - startTime;
 
-      span.setAttribute('http.status', response.status);
+      span.setAttribute('http.status', ok ? 200 : 0);
       span.end();
 
-      return { ok: true, data: response.ok, meta: { durationMs } };
+      return { ok: true, data: ok, meta: { durationMs } };
     } catch (error) {
       const durationMs = Date.now() - startTime;
       span.setAttribute('error', true);
@@ -304,38 +281,23 @@ export class AshbyFetcher implements Fetcher {
     }
   }
 
-  private buildJobsUrl(): string {
-    return `${this.baseUrl}/${this.jobBoardName}?includeCompensation=true`;
+  private transportConfig(): { jobBoardName: string; baseUrl: string } {
+    return { jobBoardName: this.jobBoardName, baseUrl: this.baseUrl };
   }
 
-  private parseResponse(data: AshbyJobsResponse): RawJob[] {
-    if (!data || !Array.isArray(data.jobs)) {
-      throw new Error('Response is not a valid Ashby job board payload');
-    }
-
-    const jobs: RawJob[] = [];
-    for (const item of data.jobs) {
-      const job = this.parseSingleJob(item);
-      if (job) jobs.push(job);
-    }
-    return jobs;
-  }
-
-  private parseSingleJob(item: AshbyRawJob): RawJob | null {
-    if (!this.isValidJob(item)) {
-      return null;
-    }
+  private toRawJob(raw: AtsRawJob): RawJob {
+    const item = raw.rawMetadata as AshbyJobPayload;
 
     return {
-      sourceId: String(item.id),
-      title: item.title,
-      description: item.descriptionHtml,
+      sourceId: raw.externalId,
+      title: raw.title,
+      description: raw.description,
       companyName: this.companyName,
-      location: item.locationName ?? '',
+      location: raw.location ?? '',
       salary: undefined,
       technologies: [],
-      url: item.jobUrl,
-      publishedAt: new Date(item.publishedAt),
+      url: raw.url,
+      publishedAt: raw.publishedAt ?? new Date(item.publishedAt),
       fetchedAt: new Date(),
       remote: item.isRemote,
       employmentType: this.mapEmploymentType(item.employmentType),
@@ -347,18 +309,7 @@ export class AshbyFetcher implements Fetcher {
     };
   }
 
-  private isValidJob(item: unknown): item is AshbyRawJob {
-    return (
-      typeof item === 'object' &&
-      item !== null &&
-      'id' in item &&
-      'title' in item &&
-      'descriptionHtml' in item &&
-      'jobUrl' in item
-    );
-  }
-
-  private mapEmploymentType(type: AshbyEmploymentType | undefined): string | undefined {
+  private mapEmploymentType(type: AshbyEmploymentTypePayload | undefined): string | undefined {
     if (!type) return undefined;
     return EMPLOYMENT_TYPE_MAP[type];
   }

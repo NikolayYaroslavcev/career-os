@@ -2,7 +2,16 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 const createWorkspaceSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().trim().min(1),
+});
+
+const inviteMemberSchema = z.object({
+  email: z.string().email(),
+  role: z.enum(['ADMIN', 'MEMBER']).default('MEMBER'),
+});
+
+const updateMemberRoleSchema = z.object({
+  role: z.enum(['ADMIN', 'MEMBER']),
 });
 
 export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
@@ -22,16 +31,9 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    handler: async (_request, reply) => {
-      // TODO: Implement actual workspace list logic
-      // This is a placeholder
-      return reply.send([
-        {
-          id: 'placeholder-id',
-          name: 'My Workspace',
-          role: 'OWNER',
-        },
-      ]);
+    handler: async (request, reply) => {
+      const workspaces = await fastify.container.services.workspace.listForUser(request.user!.id);
+      return reply.send(workspaces);
     },
   });
 
@@ -56,13 +58,8 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
     },
     handler: async (request, reply) => {
       const body = createWorkspaceSchema.parse(request.body);
-
-      // TODO: Implement actual workspace creation logic
-      // This is a placeholder
-      return reply.status(201).send({
-        id: 'placeholder-id',
-        name: body.name,
-      });
+      const workspace = await fastify.container.services.workspace.create(request.user!.id, body.name);
+      return reply.status(201).send(workspace);
     },
   });
 
@@ -93,11 +90,12 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     handler: async (request, reply) => {
-      // TODO: Implement actual member invitation logic
-      // This is a placeholder
-      return reply.send({
-        success: true,
-      });
+      const { id } = request.params as { id: string };
+      const body = inviteMemberSchema.parse(request.body);
+
+      await fastify.container.services.workspace.inviteMember(id, request.user!.id, body.email, body.role);
+
+      return reply.send({ success: true });
     },
   });
 
@@ -128,11 +126,12 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     handler: async (request, reply) => {
-      // TODO: Implement actual role update logic
-      // This is a placeholder
-      return reply.send({
-        success: true,
-      });
+      const { id, userId } = request.params as { id: string; userId: string };
+      const body = updateMemberRoleSchema.parse(request.body);
+
+      await fastify.container.services.workspace.updateMemberRole(id, request.user!.id, userId, body.role);
+
+      return reply.send({ success: true });
     },
   });
 }

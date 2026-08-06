@@ -13,21 +13,29 @@ export const SOURCE_PRIORITY: Record<VacancySource, number> = {
   smartrecruiters: 90,
   recruitee: 90,
   comeet: 90,
+  personio: 90,
+  workable: 90,
   teamtailor: 85,
-  remote_ok: 80,
   remotive: 80,
   hh: 75,
   superjob: 75,
   habr_career: 75,
   linkedin: 70,
+  // wellfound/otta: reserved-but-dormant slots, not built and not to be
+  // built — see the VacancySource enum comments and
+  // research/free-provider-expansion/REPORT.md §4.5.
   wellfound: 70,
   otta: 70,
-  himalayas: 65,
   arbeitnow: 65,
   jobicy: 65,
+  france_travail: 65,
+  adzuna: 65,
   we_work_remotely: 65,
   working_nomads: 60,
   nodesk: 60,
+  pyjobs: 60,
+  django_jobs: 60,
+  speedrun: 60,
   hn_hiring: 55,
   rss_feed: 50,
   company_career_page: 45,
@@ -72,8 +80,8 @@ export function shouldOverride(
  * Map a VacancySource to its ProviderType.
  */
 export function inferProviderType(source: VacancySource): ProviderType {
-  const atsProviders = ['greenhouse', 'lever', 'ashby', 'workday', 'smartrecruiters', 'recruitee', 'comeet', 'teamtailor'];
-  const jobBoardProviders = ['remote_ok', 'remotive', 'hh', 'superjob', 'habr_career', 'linkedin', 'wellfound', 'otta', 'himalayas', 'arbeitnow', 'jobicy', 'we_work_remotely', 'working_nomads', 'nodesk'];
+  const atsProviders = ['greenhouse', 'lever', 'ashby', 'workday', 'smartrecruiters', 'recruitee', 'comeet', 'teamtailor', 'personio', 'workable'];
+  const jobBoardProviders = ['remotive', 'hh', 'superjob', 'habr_career', 'linkedin', 'wellfound', 'otta', 'arbeitnow', 'jobicy', 'we_work_remotely',   'working_nomads', 'nodesk', 'pyjobs', 'django_jobs', 'speedrun',   'france_travail', 'adzuna'];
   const communityProviders = ['hn_hiring', 'rss_feed', 'company_career_page', 'telegram'];
 
   if (atsProviders.includes(source)) return 'ATS';

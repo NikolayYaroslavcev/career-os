@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createTelegramProvider } from '../telegram-provider.js';
 import { TelegramFetcher } from '../telegram-fetcher.js';
-import { TelegramMapper } from '../telegram-mapper.js';
-import { TelegramNormalizer } from '../telegram-normalizer.js';
+import { SocialMessageMapper } from '../social-message-mapper.js';
+import { SocialMessageNormalizer } from '../social-message-normalizer.js';
 import { ConsoleLogger } from '../../../observability/logger.js';
 import { InMemoryMetricsCollector } from '../../../observability/metrics.js';
 import { InMemoryTracer } from '../../../observability/tracer.js';
@@ -42,8 +42,8 @@ describe('TelegramProvider', () => {
       const provider = createTelegramProvider({ channels: ['frontend_jobs'], logger, metrics, tracer });
 
       expect(provider.fetcher).toBeInstanceOf(TelegramFetcher);
-      expect(provider.mapper).toBeInstanceOf(TelegramMapper);
-      expect(provider.normalizer).toBeInstanceOf(TelegramNormalizer);
+      expect(provider.mapper).toBeInstanceOf(SocialMessageMapper);
+      expect(provider.normalizer).toBeInstanceOf(SocialMessageNormalizer);
     });
   });
 

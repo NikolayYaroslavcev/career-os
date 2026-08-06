@@ -9,7 +9,12 @@ import type { Tracer } from '../../observability/tracer.js';
 import { PROVIDER_METRICS } from '../../observability/metrics.js';
 import { ProviderErrorType } from '../../errors/provider-errors.js';
 import { resilientFetch } from '../../resilience/resilient-fetch.js';
+import { decodeHtmlEntities } from '../../shared/html-entities.js';
 import type { TelegramRawMessage } from './telegram-types.js';
+import type { TransportManager } from '../../transport/transport-manager.js';
+import type { SocialMessageCandidate } from '../../interfaces/social-message-transport.js';
+import { runTelegramPrecheck, TECH_KEYWORDS } from '../../shared/message-precheck-classifier.js';
+import type { TelegramExtractionLookup } from './social-message-mapper.js';
 
 export interface TelegramFetcherConfig {
   readonly channels: readonly string[];
@@ -20,36 +25,46 @@ export interface TelegramFetcherConfig {
    *  the current enabled channels from the database. When provided, the
    *  static `channels` array is used only as fallback. */
   readonly channelProvider?: () => Promise<readonly string[]>;
+  /**
+   * When provided, this fetcher stops scraping `t.me/s/<channel>` itself and
+   * instead routes every message fetch through TransportManager.fetch('telegram', ...),
+   * which resolves to whichever SocialMessageTransport is registered
+   * (HtmlPreviewTransport/BotApiTransport) and does the actual scrape/API call.
+   * Classification (runTelegramPrecheck) and extraction (buildRawJob) are
+   * unaffected either way — only where the raw messages come from changes.
+   * Omit this to keep the previous direct-scrape behavior (e.g. the
+   * TelegramFetcher instance HtmlPreviewTransport itself wraps must NOT set
+   * this, or fetch() would recurse into TransportManager indefinitely).
+   */
+  readonly transportManager?: TransportManager;
+  /**
+   * ADR-032 Phase 4/5: when provided, this is the V2 seam — buildRawJob()
+   * looks up the message's AI-extracted, confidence-gated fields (persisted
+   * by the SocialMessage pipeline) and uses them in place of regex extraction.
+   * A message that hasn't been extracted yet (or didn't clear the confidence
+   * gate) resolves to `undefined`, and buildRawJob() returns null for it, same
+   * as failing the deterministic precheck — it simply isn't offered to Mapper/Normalizer
+   * this cycle, and is retried on a later sync once extraction catches up.
+   * Omitting this keeps V1's regex-only extraction (the fetcher is otherwise
+   * identical either way — this is the only behavior this config toggles).
+   */
+  readonly extractionLookup?: TelegramExtractionLookup;
 }
 
-// Same keyword-bank approach as habr-career-fetcher.ts/hh-fetcher.ts — job
-// channel posts carry no structured skills field, so technologies are
-// best-effort keyword-scanned out of the free text.
-const TECH_KEYWORDS = [
-  'javascript', 'typescript', 'python', 'java', 'c++', 'c#', 'golang', 'go', 'rust',
-  '1c', '1с', 'php', 'ruby', 'scala', 'kotlin', 'swift', 'dart', 'flutter',
-  'react', 'vue', 'angular', 'node', 'node.js', 'nodejs', 'express', 'django', 'flask', 'spring', 'laravel',
-  'nextjs', 'next.js', 'nuxtjs', 'svelte', 'unity',
-  'aws', 'azure', 'gcp', 'docker', 'kubernetes', 'k8s', 'terraform', 'ansible',
-  'postgresql', 'postgres', 'mysql', 'mongodb', 'redis', 'elasticsearch', 'clickhouse', 'kafka',
-  'git', 'ci/cd', 'jenkins', 'gitlab', 'github actions',
-  'html', 'css', 'scss', 'less', 'tailwind',
-  'sql', 'nosql', 'graphql', 'rest', 'grpc',
-  'linux', 'bash', 'powershell',
-  'machine learning', 'ml', 'ai', 'data science', 'pandas', 'pytorch', 'tensorflow',
-  'android', 'ios', 'unreal',
-  'figma', 'sketch', 'qa', 'devops',
-];
-
-// Signals that a post is a vacancy at all (as opposed to channel chatter,
-// service messages, or an unrelated announcement) — required since a public
-// channel's preview page has no "this is a job" flag to key off of.
-const VACANCY_KEYWORDS = [
-  'vacancy', 'vacancies', 'hiring', 'we are looking', "we're looking", 'job opening', 'position',
-  'developer', 'engineer', 'designer', 'manager', 'analyst', 'tester', 'architect', 'fulltime', 'parttime',
-  'вакансия', 'вакансии', 'ищем', 'требуется', 'требуются', 'набираем', 'разработчик', 'программист',
-  'инженер', 'дизайнер', 'менеджер', 'аналитик', 'тестировщик', 'архитектор', 'откликнуться', 'резюме',
-];
+function candidateToRawMessage(candidate: SocialMessageCandidate): TelegramRawMessage {
+  return {
+    channel: candidate.sourceId,
+    messageId: candidate.externalMessageId,
+    textHtml: candidate.rawHtml ?? '',
+    text: candidate.rawText,
+    publishedAt: candidate.publishedAt,
+    links: candidate.links ?? [],
+    // Service messages are already filtered out by the transport
+    // (HtmlPreviewTransport.fetch() drops them before building candidates),
+    // so anything reaching here is real content.
+    isServiceMessage: false,
+  };
+}
 
 const CIS_CITIES = [
   'Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань', 'Нижний Новгород',
@@ -102,9 +117,6 @@ const FROM_SALARY_PATTERN = new RegExp(
 // Salary with "тыс" (thousands) suffix: "200-300 тыс", "150 тыс"
 const TYST_SALARY_PATTERN = /(\d{2,3})\s*(?:–|-|—)\s*(\d{2,3})\s*тыс|(\d{2,3})\s*тыс/u;
 
-// HTML-encoded currency symbols
-const HTML_CURRENCY_PATTERN = /&#036;|&#8381;|&#8364;/g;
-
 const EMAIL_PATTERN = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
 const TELEGRAM_USERNAME_PATTERN = /(?<![\w/@])@([A-Za-z]\w{4,31})/g;
 const TME_USERNAME_LINK_PATTERN = /^https?:\/\/t\.me\/([A-Za-z]\w{4,31})\/?$/i;
@@ -116,18 +128,12 @@ interface ExtractedContacts {
 }
 
 function htmlToText(html: string): string {
-  return html
+  const withoutTags = html
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
     .replace(/<p[^>]*>/gi, '')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(HTML_CURRENCY_PATTERN, (m) => (m === '&#036;' ? '$' : m === '&#8381;' ? '₽' : '€'))
+    .replace(/<[^>]+>/g, '');
+  return decodeHtmlEntities(withoutTags)
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .replace(/^[ \t]+|[ \t]+$/gm, '')
@@ -162,24 +168,14 @@ function mapCurrency(token: string): string {
   return token.toUpperCase();
 }
 
-function decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&#036;/g, '$')
-    .replace(/&#8381;/g, '₽')
-    .replace(/&#8364;/g, '€')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
-}
-
 export class TelegramFetcher implements Fetcher {
   private readonly channels: readonly string[];
   private readonly channelProvider?: () => Promise<readonly string[]>;
   private readonly logger: Logger;
   private readonly metrics: MetricsCollector;
   private readonly tracer: Tracer;
+  private readonly transportManager?: TransportManager;
+  private readonly extractionLookup?: TelegramExtractionLookup;
 
   constructor(config: TelegramFetcherConfig) {
     this.channels = config.channels;
@@ -187,6 +183,8 @@ export class TelegramFetcher implements Fetcher {
     this.logger = config.logger;
     this.metrics = config.metrics;
     this.tracer = config.tracer;
+    this.transportManager = config.transportManager;
+    this.extractionLookup = config.extractionLookup;
   }
 
   private async resolveChannels(): Promise<readonly string[]> {
@@ -221,9 +219,9 @@ export class TelegramFetcher implements Fetcher {
 
       for (const channel of channels) {
         try {
-          const messages = await this.fetchChannelMessages(channel);
+          const messages = await this.fetchMessages(channel);
           for (const msg of messages) {
-            const job = this.buildRawJob(msg);
+            const job = await this.buildRawJob(msg);
             if (job) allJobs.push(job);
           }
         } catch (channelError) {
@@ -267,9 +265,9 @@ export class TelegramFetcher implements Fetcher {
     }
 
     try {
-      const messages = await this.fetchChannelMessages(channel);
+      const messages = await this.fetchMessages(channel);
       const match = messages.find((m) => `${m.channel}:${m.messageId}` === sourceId);
-      const job = match ? this.buildRawJob(match, { skipClassification: true }) : null;
+      const job = match ? await this.buildRawJob(match, { skipClassification: true }) : null;
       return { ok: true, data: job, meta: { durationMs: Date.now() - startTime } };
     } catch (error) {
       return {
@@ -316,6 +314,44 @@ export class TelegramFetcher implements Fetcher {
     } catch {
       return { ok: false, error: ProviderErrorType.NETWORK_ERROR, message: 'Network error', retryable: true, meta: { durationMs: Date.now() - startTime } };
     }
+  }
+
+  /**
+   * Public entry point for callers that need the raw, unclassified messages
+   * a channel's preview page produced — e.g. HtmlPreviewTransport, which must
+   * not apply `isLikelyJobPost`/`buildRawJob`'s regex extraction (that's
+   * V1 Mapper territory). Reuses the exact same scrape+parse path `search()`
+   * uses internally rather than duplicating it.
+   */
+  async fetchRawMessages(channel: string): Promise<TelegramRawMessage[]> {
+    return this.fetchChannelMessages(channel);
+  }
+
+  /**
+   * Single point where search()/getVacancy() obtain a channel's messages.
+   * When a TransportManager was configured (the V1 provider's instance,
+   * wired by the container), this routes through it instead of scraping
+   * directly — TransportManager resolves the registered SocialMessageTransport
+   * (HtmlPreviewTransport/BotApiTransport), applying its own retry/timeout/
+   * health tracking. Falls back to the direct scrape when no TransportManager
+   * is configured, so existing callers/tests are unaffected.
+   */
+  private async fetchMessages(channel: string): Promise<TelegramRawMessage[]> {
+    if (!this.transportManager) {
+      return this.fetchChannelMessages(channel);
+    }
+
+    const result = await this.transportManager.fetch(
+      'telegram',
+      { sourceId: channel },
+      { capability: 'PULL' },
+    );
+
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+
+    return result.data.messages.map(candidateToRawMessage);
   }
 
   private async fetchChannelMessages(channel: string): Promise<TelegramRawMessage[]> {
@@ -386,19 +422,21 @@ export class TelegramFetcher implements Fetcher {
     };
   }
 
-  private isLikelyVacancyPost(msg: TelegramRawMessage): boolean {
-    if (msg.isServiceMessage) return false;
-    if (!msg.text || msg.text.trim().length < 15) return false;
-
-    const lower = msg.text.toLowerCase();
-    const hasVacancyKeyword = VACANCY_KEYWORDS.some((k) => lower.includes(k));
-    const hasTechKeyword = TECH_KEYWORDS.some((k) => lower.includes(k));
-    return hasVacancyKeyword || hasTechKeyword;
-  }
-
-  private buildRawJob(msg: TelegramRawMessage, options: { skipClassification?: boolean } = {}): RawJob | null {
-    if (!options.skipClassification && !this.isLikelyVacancyPost(msg)) {
-      return null;
+  private async buildRawJob(msg: TelegramRawMessage, options: { skipClassification?: boolean } = {}): Promise<RawJob | null> {
+    if (!options.skipClassification) {
+      const decision = runTelegramPrecheck(msg.text, { isServiceMessage: msg.isServiceMessage });
+      if (!decision.accepted) {
+        this.logger.debug('Telegram message rejected by deterministic precheck', {
+          providerId: 'telegram',
+          channel: msg.channel,
+          messageId: msg.messageId,
+          category: decision.category,
+          ruleId: decision.ruleId,
+          matchedText: decision.matchedText,
+        });
+        this.metrics.incrementCounter(PROVIDER_METRICS.PRECHECK_REJECTED, 1, { providerId: 'telegram', category: decision.category });
+        return null;
+      }
     }
 
     const { title, companyName, location: labeledLocation } = this.extractTitleCompanyLocation(msg.text);
@@ -413,6 +451,54 @@ export class TelegramFetcher implements Fetcher {
     const sourceUrlFromText = this.extractSourceUrlFromText(msg.text);
     const applyUrl = contacts.applyUrl ?? sourceUrlFromText ?? postUrl;
 
+    const extensions = {
+      channel: msg.channel,
+      postUrl,
+      sourceUrl: sourceUrlFromText,
+      emails: contacts.emails,
+      telegramUsernames: contacts.telegramUsernames,
+    };
+
+    if (this.extractionLookup) {
+      // V2 seam (ADR-032 Phase 4/5): defer to the AI-extracted, confidence-gated
+      // fields instead of regex extraction. No qualifying extraction yet (still
+      // pending, or below the confidence gate) means this message isn't offered
+      // to Mapper/Normalizer this cycle — never a silent fall-back to regex,
+      // which would defeat the point of cutting over to V2 at all.
+      const extracted = await this.extractionLookup(msg.channel, msg.messageId);
+      if (!extracted || (!extracted.title && !extracted.company)) {
+        return null;
+      }
+
+      return {
+        sourceId: `${msg.channel}:${msg.messageId}`,
+        title: this.normalizeTitleCase(extracted.title || title || 'Untitled vacancy'),
+        description: msg.text,
+        companyName: extracted.company || companyName,
+        companySourceId: undefined,
+        location: extracted.city || extracted.country || location,
+        salary:
+          extracted.salaryMin != null || extracted.salaryMax != null
+            ? {
+                from: extracted.salaryMin ?? undefined,
+                to: extracted.salaryMax ?? undefined,
+                currency: extracted.currency ?? 'RUB',
+                period: 'monthly',
+              }
+            : salary,
+        experienceLevel: extracted.seniority ?? undefined,
+        technologies: technologies.length > 0 || extracted.technologies.length > 0 || extracted.skills.length > 0
+          ? [...new Set([...extracted.technologies, ...extracted.skills, ...technologies])]
+          : technologies,
+        url: extracted.links[0] ?? applyUrl,
+        publishedAt: msg.publishedAt,
+        fetchedAt: new Date(),
+        remote: extracted.remoteType ? extracted.remoteType.toLowerCase().includes('remote') : remote,
+        employmentType: extracted.employmentType ?? undefined,
+        extensions: { ...extensions, requirements: extracted.requirements, responsibilities: extracted.responsibilities },
+      };
+    }
+
     return {
       sourceId: `${msg.channel}:${msg.messageId}`,
       title: this.normalizeTitleCase(title || 'Untitled vacancy'),
@@ -425,13 +511,7 @@ export class TelegramFetcher implements Fetcher {
       publishedAt: msg.publishedAt,
       fetchedAt: new Date(),
       remote,
-      extensions: {
-        channel: msg.channel,
-        postUrl,
-        sourceUrl: sourceUrlFromText,
-        emails: contacts.emails,
-        telegramUsernames: contacts.telegramUsernames,
-      },
+      extensions,
     };
   }
 

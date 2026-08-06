@@ -31,7 +31,7 @@
 23 live providers, each implementing the same `Fetcher` / `Mapper` / `Normalizer` / `SyncStrategy` pattern:
 
 - **RU/CIS-relevant:** HeadHunter (`hh`), Habr Career (`habr_career`), SuperJob (`superjob`), Telegram channel scraping (`telegram`)
-- **Global ATS/aggregators:** RemoteOK, Adzuna, Greenhouse, Lever, Ashby, Workday, Teamtailor, SmartRecruiters, Recruitee, Comeet, Remotive, Himalayas, Arbeitnow, Jobicy, We Work Remotely, Working Nomads, NoDesk, HN Who's Hiring, LinkedIn
+- **Global ATS/aggregators:** Adzuna, Greenhouse, Lever, Ashby, Workday, Teamtailor, SmartRecruiters, Recruitee, Comeet, Remotive, Arbeitnow, Jobicy, We Work Remotely, Working Nomads, NoDesk, HN Who's Hiring, LinkedIn
 
 Most providers are always-on; several (Greenhouse, Lever, Ashby, Workday, Teamtailor, SmartRecruiters, Recruitee, Comeet, Adzuna, SuperJob, Telegram) are conditionally registered and silently skipped when their config (board token / API key / channel list) is unset — see `docs/JOB_PROVIDERS.md` for exact env vars. Two providers don't use official APIs: LinkedIn fetches directly from `www.linkedin.com` (`packages/providers/src/providers/linkedin/linkedin-fetcher.ts`), and Telegram scrapes each channel's public `t.me/s/<channel>` HTML preview page (`packages/providers/src/providers/telegram/telegram-fetcher.ts`) — this conflicts with `adr/ADR-013-linkedin-integration-strategy.md`'s original "no scraping" decision, see that ADR's audit note.
 
@@ -39,11 +39,17 @@ Most providers are always-on; several (Greenhouse, Lever, Ashby, Workday, Teamta
 
 **Status:** Implemented
 
-**Backend:** `packages/providers/src/providers/telegram/` (`telegram-fetcher.ts`, `telegram-mapper.ts`, `telegram-normalizer.ts`, `telegram-provider.ts`, `telegram-sync-strategy.ts`), config in `packages/shared/src/config.ts:162-167` (`TELEGRAM_CHANNELS`)
+**Backend:** `packages/providers/src/providers/telegram/` (`telegram-fetcher.ts`, `social-message-mapper.ts`, `social-message-normalizer.ts`, `telegram-provider.ts`, `telegram-sync-strategy.ts`), channel config via the `TelegramChannel` DB table (fallback: `TELEGRAM_CHANNELS` in `packages/shared/src/config.ts`)
 
-**Frontend:** None dedicated — vacancies surface in the normal search/dashboard flow like any other provider
+**Frontend:** None dedicated — vacancies surface in the normal search/dashboard flow like any other provider. Per-channel management (add/list/enable/disable/remove) and quality metrics are exposed via `/providers/telegram/channels` for the provider-management dashboard page.
 
-**Notes:** Configured via comma-separated bare channel usernames (`TELEGRAM_CHANNELS=remoteit,frontend_jobs`). No bot token or login required — scrapes each channel's public preview page. Skipped entirely if unset. Not confirmed whether it matches the specific `@remoteit` + 10-subchannel network described in `research/job-sources-russian-sw/REPORT.md`.
+**Notes:** Channel list source of truth is the `TelegramChannel` DB table (`resolveTelegramChannelSource()` in `apps/backend/src/container.ts`), managed via `/providers/telegram/channels`; `TELEGRAM_CHANNELS` env var is a fallback used only when the table is empty/unreachable. No bot token or login required — scrapes each channel's public preview page. Skipped entirely if no channels are configured either way. As of 2026-07-31 the curated set is 25 channels: the pre-existing 11 (after dropping `golangjob`, confirmed stale — reachable but no new posts since 2023-02-10) plus a Tier 1 expansion batch of 15 (`remotegeekjob`, `findwork`, `YotolabQA`, `forproducts`, `foranalysts`, `dev_connectablejobs`, `devs_it`, `myitjob`, `devops_jobs_feed`, `job_javadevs`, `job_react`, `fordesigner`, `junior_designers`, `forruby`, `godevjob`) — see `apps/backend/src/scripts/manage-telegram-channels.ts`.
+
+The deterministic precheck (`isLikelyJobPost`, `packages/providers/src/shared/message-precheck-classifier.ts`) now requires an actual IT/tech signal (a `TECH_KEYWORDS` stack mention or an `IT_ROLE_KEYWORDS` role word) rather than any generic hiring-intent word — a "вакансия: ищем менеджера по продажам" post no longer clears the gate on the word "вакансия" alone, cutting off obviously non-IT content (e.g. from mixed-content channels like `findwork`) before any AI call, rather than filtering it out after a `Vacancy` is created.
+
+Per-channel quality metrics (messages received, skipped-by-precheck/spam/low-confidence/extracted/failed counts, average extraction confidence, unique-vs-duplicate vacancy counts, and a deterministic 0-100 quality score) are computed into `TelegramChannelStats` after every sync — see `apps/backend/src/services/telegram-channel-stats-service.ts`. This table existed in the schema but was previously unpopulated by any code.
+
+Per ADR-032 (Telegram V1 → V2 migration), the pipeline now runs on AI-based extraction end-to-end: `TelegramFetcher` (regex-based classification only, via the shared `isLikelyJobPost` precheck) → `SocialMessageIngestionService` persists raw `SocialMessage` rows → `SocialMessagePipeline` (`apps/backend/src/services/social-message-pipeline.ts`) re-runs the same precheck to skip obvious non-job posts for free, then calls `MessageExtractionEngine` (`packages/ai`) to produce a confidence-scored `MessageExtraction` → `SocialMessageMapper`/`SocialMessageNormalizer` build the `Vacancy` from that extraction (never from regex) once its status is `SUCCESS`. All of this is driven off `SyncSchedulerService`'s `onProviderSynced('telegram')` hook, same cadence as vacancy sync. The regex-only V1 `TelegramMapper`/`TelegramNormalizer` pair has been removed — there is no coexistence flag, this is the only Telegram vacancy pipeline.
 
 This is distinct from the **Telegram bot integration** (account linking + digest delivery), which lives in `packages/telegram/` and `apps/backend/src/services/telegram-linking-service.ts` / `telegram-digest-formatter.ts` — see Applications CRM section for that.
 
@@ -65,7 +71,7 @@ This is distinct from the **Telegram bot integration** (account linking + digest
 
 **Frontend:** `apps/dashboard/src/app/app/sync/page.tsx`, `apps/dashboard/src/features/diagnostics`
 
-**Notes:** Per-provider sync intervals defined in `DEFAULT_SYNC_INTERVALS` (`sync-scheduler-service.ts:37-58`) — 1 hour for most, 2 hours for lower-volume providers (Himalayas, We Work Remotely, Working Nomads, NoDesk, Habr Career), 24 hours for HN Who's Hiring. SuperJob, Telegram, and LinkedIn have no entry in that map and fall back to a generic default interval (`this.defaultIntervalMs`) rather than a tuned one. Tracks last sync result, next sync time, total jobs synced, and last error per provider/workspace.
+**Notes:** Per-provider sync intervals defined in `DEFAULT_SYNC_INTERVALS` (`sync-scheduler-service.ts:37-58`) — 1 hour for most, 2 hours for lower-volume providers (We Work Remotely, Working Nomads, NoDesk, Habr Career), 24 hours for HN Who's Hiring. SuperJob, Telegram, and LinkedIn have no entry in that map and fall back to a generic default interval (`this.defaultIntervalMs`) rather than a tuned one. Tracks last sync result, next sync time, total jobs synced, and last error per provider/workspace.
 
 ---
 
@@ -93,23 +99,23 @@ This is distinct from the **Telegram bot integration** (account linking + digest
 
 ### Personalization
 
-**Status:** Backend implemented, not wired to any frontend (produces zero effect today)
+**Status:** Backend implemented, frontend wired (2026-08-01)
 
 **Backend:** `apps/backend/src/services/ranking/preference-boost.ts`; recording endpoints live in `apps/backend/src/routes/vacancies/vacancy-routes.ts` (`POST /:id/view`, `/:id/save`, `/:id/hide`, `GET /:id/interactions`)
 
-**Frontend:** No caller anywhere in `apps/dashboard` or `apps/extension` — verified by search, not just absence of a settings UI. Every user's interaction history is permanently empty, so `computePreferenceBoosts` always returns zero boosts in production.
+**Frontend:** `apps/dashboard/src/hooks/use-vacancy-interaction.ts` (hook); wired into vacancy detail page (`/app/search/[id]` — records VIEW on mount, SAVE on "Create Application") and intelligence search results (`/app/intelligence` — records SAVE on "Save to Pipeline"). The HIDE action endpoint exists but has no UI trigger yet (no dismiss/hide button on vacancy cards).
 
-**Notes:** Derives per-user boosts (technology, role, remote preference, location) from past `SAVE`/`APPLY`/`VIEW`/`HIDE`/`IGNORE` interactions, with time decay: full weight ≤7 days old, 70% at ≤30 days, 40% at ≤90 days (`getPreferenceDecayFactor`). The logic and its unit tests are correct; the gap is purely that nothing ever calls the recording endpoints, so no rows ever land in `UserVacancyInteraction`.
+**Notes:** Derives per-user boosts (technology, role, remote preference, location) from past `SAVE`/`APPLY`/`VIEW`/`HIDE`/`IGNORE` interactions, with time decay: full weight ≤7 days old, 70% at ≤30 days, 40% at ≤90 days (`getPreferenceDecayFactor`). Previously had zero frontend callers; now records VIEW and SAVE interactions from the two primary vacancy consumption flows (detail page + intelligence search results).
 
 ### Interaction learning
 
-**Status:** Backend implemented, not wired to any frontend (same gap as Personalization above)
+**Status:** Backend implemented, frontend wired (2026-08-01 — same pass as Personalization above)
 
 **Backend:** `apps/backend/src/services/ranking/vacancy-ranking-service.ts:8-14` (`INTERACTION_WEIGHTS`), `packages/career/src/domain/repositories/user-vacancy-interaction-repository.ts`
 
-**Frontend:** None. (Previously documented as "implicit — every save/dismiss/apply/view action in the dashboard feeds this"; that was inaccurate as of this audit — no dashboard or extension code calls the interaction-recording endpoints.)
+**Frontend:** VIEW and SAVE interactions are now recorded via `useVacancyInteraction` hook (see Personalization above). HIDE has no UI trigger yet.
 
-**Notes:** Weights: SAVE +10, APPLY +15, VIEW +2, IGNORE -10, HIDE -20. Feeds both the ranking service's `interactionBoost` and the personalization boosts above — both permanently 0 until the frontend/extension actually calls `POST /vacancies/:id/{view,save,hide}` on the corresponding user actions.
+**Notes:** Weights: SAVE +10, APPLY +15, VIEW +2, IGNORE -10, HIDE -20. Feeds both the ranking service's `interactionBoost` and the personalization boosts above. Previously had zero frontend callers; now receives VIEW and SAVE data from the two primary vacancy consumption flows.
 
 ### Quality scoring
 
@@ -133,7 +139,7 @@ This is distinct from the **Telegram bot integration** (account linking + digest
 
 **Frontend:** `apps/dashboard/src/features/match-explanation/` (routed at `apps/dashboard/src/app/app/match-explanation/[matchResultId]/page.tsx`), `apps/dashboard/src/features/ai/ai-dashboard.tsx` (routed at `apps/dashboard/src/app/app/ai/page.tsx`)
 
-**Notes:** 5 AI providers behind one interface with fallback: OpenAI, Anthropic, Gemini, Groq, OpenRouter (`packages/ai/src/providers/`, `fallback-ai-provider.ts`). `packages/ai-orchestrator` adds a resilience layer on top: provider routing, per-workspace budget enforcement (`usage/budget-enforcer.ts`), usage tracking, and a persistent cache — see ADR-025 and ADR-028. Match results include score, category, strengths/weaknesses/missing-skills, rendered via a radar chart and actionable-items list in the match-explanation UI. Matching runs decoupled from the search request (ADR-026) so a slow/rate-limited AI call can't hang the search response.
+**Notes:** 5 AI providers behind one interface with fallback: OpenAI, Anthropic, Gemini, Groq, OpenRouter (`packages/ai/src/providers/`, `fallback-ai-provider.ts`). `packages/ai-orchestrator` adds a resilience layer on top: provider routing, per-workspace budget enforcement (`usage/budget-enforcer.ts`), usage tracking, and a persistent cache — see ADR-025 and ADR-028. `AIOrchestrator.execute()` also prevents duplicate execution of an identical concurrent request (double-click, multi-tab, retry-after-timeout): an in-flight-job check plus a database-level partial unique index on `AIJob` guarantee only one job/provider call per (user, feature, input) at a time — see ADR-037. Match results include score, category, strengths/weaknesses/missing-skills, rendered via a radar chart and actionable-items list in the match-explanation UI. Matching runs decoupled from the search request (ADR-026) so a slow/rate-limited AI call can't hang the search response.
 
 ### Resume parsing
 
@@ -147,27 +153,23 @@ This is distinct from the **Telegram bot integration** (account linking + digest
 
 ### Resume tailoring
 
-**Status:** Partial — **two independent implementations**, each reachable from a different client
+**Status:** Implemented — async, evidence-based pipeline (ADR-031)
 
-**Backend:** Two separate endpoint pairs exist:
-1. `apps/backend/src/services/resume-tailoring-service.ts` → `apps/backend/src/routes/resumes/resume-tailoring-routes.ts` (`POST /resumes/tailor`)
-2. `packages/ai-orchestrator/src/queue/job-handlers/tailor-resume-handler.ts` → `apps/backend/src/routes/ai/ai-routes.ts` (`POST /ai/tailor-resume`)
+**Backend:** `packages/ai/src/tailoring/` (`tailoring-pipeline.ts` checkpointed orchestrator, `resume-evidence-builder.ts`, `skill-matrix-engine.ts`, `tailoring-reviewer.ts`, `tailored-resume-renderer.ts`), `packages/ai/src/ats/` (deterministic `ats-scoring-engine.ts`), `packages/ai/src/prompts/{resume-tailoring,resume-tailoring-review,vacancy-requirements-extraction}.ts`, `apps/worker/src/jobs/resume-tailoring-processor.ts` (BullMQ consumer), `apps/backend/src/services/tailoring-request-service.ts` + `apps/backend/src/queues/resume-tailoring-queue.ts` (BullMQ producer), `apps/backend/src/routes/ai/ai-routes.ts` (`POST /ai/tailor-resume`, `GET /ai/tailor-resume/:id/status`), `apps/backend/src/routes/applications/application-routes.ts` (`POST /applications/:id/tailor-resume`). Persisted on a dedicated `TailoredResume` Prisma model — not the generic `AIJob.result` blob.
 
-**Frontend:** `apps/dashboard/src/features/resume-tailoring/resume-tailoring-page.tsx` calls endpoint (1) via `fetch('/api/v1/resumes/tailor')` — but this page is **not imported by any route** under `apps/dashboard/src/app/`, so it's unreachable. Endpoint (2) is called by the **browser extension**'s panel "Tailor Resume" button (`apps/extension/src/content/core/panel-injector.ts:87`, `background/message-router.ts:62-63`) — reachable, but see Notes on what happens to the result.
+**Frontend:** `apps/dashboard/src/features/ai-panel/ai-actions-panel.tsx` (`TailorResumeTab`) polls the status endpoint (`apps/dashboard/src/hooks/use-job-polling.ts`) and renders a 9-stage progress stepper, then the tailored resume text, ATS score before/after, matched/missing skills, and changes-applied/rejected. The browser extension's "Tailor Resume" button (`panel-injector.ts`) is unchanged — the background script (`message-router.ts`) polls internally so the extension's request/response contract stayed synchronous-shaped from the content script's point of view.
 
-**Notes:** Neither path is fully usable end-to-end today: path (1) has a UI but no route to it; path (2) is reachable but fire-and-forget — see "AI action results are not surfaced anywhere" below.
+**Notes:** Previously documented here as "two independent implementations" — that was stale: the `resume-tailoring-service.ts`/`resume-tailoring-routes.ts`/`resume-tailoring-page.tsx` path described in an earlier pass never existed in committed source (only stale local `dist/` artifacts). The one real path (the `ai-orchestrator` job-handler) has now been migrated off that synchronous orchestrator entirely onto its own async, checkpointed pipeline: a deterministic ATS score (LLM never assigns the number), a per-bullet evidence citation from every rewritten line back to a specific original sentence, and a second-pass reviewer that reverts anything it can't verify. See `adr/ADR-031-resume-tailoring-pipeline.md` for the full design. AI action results ARE now surfaced for this feature specifically (contrast with the "AI action results are not surfaced anywhere" note below, which still applies to the other four extension-triggered actions).
 
 ### Cover letters
 
-**Status:** Partial — same dual-implementation pattern as resume tailoring
+**Status:** Implemented — unchanged synchronous path, one hallucination-guardrail fix
 
-**Backend:** Two separate endpoint pairs:
-1. `apps/backend/src/services/cover-letter-service.ts` → `apps/backend/src/routes/resumes/resume-tailoring-routes.ts` (`POST /resumes/cover-letter`)
-2. `packages/ai-orchestrator/src/queue/job-handlers/cover-letter-handler.ts` → `apps/backend/src/routes/ai/ai-routes.ts` (`POST /ai/cover-letter`)
+**Backend:** `packages/ai-orchestrator/src/queue/job-handlers/cover-letter-handler.ts` → `apps/backend/src/routes/ai/ai-routes.ts` (`POST /ai/cover-letter`) and `apps/backend/src/routes/applications/application-routes.ts` (`POST /applications/:id/cover-letter`). Still runs synchronously on `packages/ai-orchestrator` (Stack A) — intentionally not migrated in ADR-031, which scoped only Resume Tailoring.
 
-**Frontend:** `apps/dashboard/src/features/cover-letter/cover-letter-page.tsx` calls endpoint (1) via `fetch('/api/v1/resumes/cover-letter')` — not routed anywhere in `apps/dashboard/src/app`, unreachable. Endpoint (2) is wired to the extension panel's "Cover Letter" button, same as resume tailoring.
+**Frontend:** Wired into `ai-actions-panel.tsx` (`CoverLetterTab`, the only tab with an editable output textarea) and the extension panel's "Cover Letter" button.
 
-**Notes:** Same caveats as resume tailoring.
+**Notes:** Previously documented dual-implementation path was stale (see Resume tailoring above — same correction applies). `packages/ai/src/prompts/cover-letter.ts` gained one addition as part of the ADR-031 pass: an explicit "never fabricate experience, employers, projects, achievements, or anecdotes" rule (this prompt previously had no anti-hallucination instruction at all, unlike resume tailoring's).
 
 ### Interview preparation
 
@@ -191,7 +193,7 @@ This is distinct from the **Telegram bot integration** (account linking + digest
 
 ### AI action results are not surfaced anywhere
 
-This applies to all of: analyze-vacancy, tailor-resume, cover-letter, and interview-prep as triggered from the **extension**. Clicking any of those buttons fires `chrome.runtime.sendMessage(...)`, which calls the matching `/ai/*` endpoint and gets back `{ jobId }` — the extension's click handlers for these four buttons (`tailor`, `cover-letter`, `interview-prep`; `analyze` additionally tracks a loading state) don't do anything with the response beyond that. `apps/extension/src/background/notification-manager.ts` has a `notifyAiCompleted(jobId, feature)` method that would show a browser notification — it is defined but **never called** anywhere in the extension. On the dashboard side, `apps/dashboard/src/features/ai/ai-dashboard.tsx` shows AI usage/cost/budget stats only — it does not render individual job results (`getAIJob`/`getAIJobs` from `api/ai.ts` are not called from it either). So: the job runs, presumably completes and stores a result server-side (queryable via `GET /ai/jobs/:jobId`, unused by any client), but no UI anywhere displays it. This is distinct from `analyze-vacancy`'s older, separate AI-matching path (`ai-matching-service.ts` / `MatchingEngine`) that **does** have a results UI at `apps/dashboard/src/app/app/match-explanation/[matchResultId]/page.tsx` — not confirmed in this pass whether the two "analyze vacancy" code paths (the orchestrator job-handler vs. the original matching service) produce/share the same stored result type.
+This applies to all of: analyze-vacancy, tailor-resume, cover-letter, and interview-prep as triggered from the **extension**. Clicking any of those buttons fires `chrome.runtime.sendMessage(...)`, which calls the matching `/ai/*` endpoint and gets back `{ jobId }` — the extension's click handlers for these four buttons (`tailor`, `cover-letter`, `interview-prep`; `analyze` additionally tracks a loading state) don't do anything with the response beyond that. `apps/extension/src/background/notification-manager.ts` has a `notifyAiCompleted(jobId, feature)` method that would show a browser notification — it is defined but **never called** anywhere in the extension. On the dashboard side, `apps/dashboard/src/features/ai/ai-dashboard.tsx` shows AI usage/cost/budget stats only — it does not render individual job results (`getAIJob`/`getAIJobs` from `api/ai.ts` are not called from it either). So: the job runs, presumably completes and stores a result server-side (queryable via `GET /ai/jobs/:jobId`, unused by any client), but no UI anywhere displays it. This is distinct from `analyze-vacancy`'s older, separate AI-matching path (`ai-matching-service.ts` / `MatchingEngine`) that **does** have a results UI at `apps/dashboard/src/app/app/match-explanation/[matchResultId]/page.tsx`. As of the AI-matching token-optimization pass, both "analyze vacancy" code paths now share the same stored result: `AnalyzeVacancyHandler` (the orchestrator job-handler behind `POST /applications/:id/analyze`) delegates to `analyzeVacancyForSearchProfile()` — the same reuse-checked entry point `ai-matching-service.ts`'s bulk matching uses — instead of calling the LLM independently, so both paths read/write the same `MatchResult` row and a vacancy already scored by bulk matching is never silently re-analyzed (and re-billed) just because the user clicked "Analyze" on the application.
 
 ### Limitations
 
@@ -233,6 +235,8 @@ This applies to all of: analyze-vacancy, tailor-resume, cover-letter, and interv
 
 **Notes:** Automated scheduling + AI-generated follow-up message text (`follow-up-message.ts`), delivered through the notification dispatcher. `FollowUp` now carries an optional `type` (`FOLLOW_UP`/`INTERVIEW`/`REPLY_EXPECTED`/`CUSTOM`) so the lifecycle hooks can tell their own tasks apart and never stack duplicates for one application. The Telegram morning digest also gained a due-today follow-ups summary, separate from the existing 15-minute reminder sweep.
 
+**Limitations:** The manual-creation form's "Application ID" field (`follow-ups-dashboard.tsx`) is a plain free-text `Input` bound to raw `applicationId` string state, not a picker — the user must paste in a raw application UUID by hand. No application-selector/combobox/autocomplete component exists anywhere in the dashboard to build one from; adding one would be new frontend work, not a wiring fix.
+
 ### Interviews
 
 **Status:** Partial — scheduling only, no AI prep
@@ -256,6 +260,16 @@ This applies to all of: analyze-vacancy, tailor-resume, cover-letter, and interv
 ---
 
 ## User Profile
+
+### Account (name)
+
+**Status:** Backend-only — no dashboard UI
+
+**Backend:** `apps/backend/src/routes/users/user-routes.ts` (`GET /me`, `PUT /me`), `apps/backend/src/services/auth-service.ts` (`getUserById`, `updateProfile`)
+
+**Frontend:** None. Grepped across `apps/dashboard/src` for any call to `PUT /me` — there isn't one; the dashboard's `api/auth.ts` only exposes `register`/`login`/`refresh`/`logout`/`getStoredUser`. The "search-profiles" feature is a different concept (job search criteria, not account info) and shouldn't be confused with this.
+
+**Notes:** `PUT /me` persists `firstName`/`lastName` changes and is validated (non-empty, ≤100 chars, Zod-enforced, 400 on invalid input) and auth-required (401 without a valid token). It's genuinely production-ready as a backend endpoint. There is simply no account/settings page in the dashboard that calls it — this is a known scope gap, not a bug, and building that UI is out of scope for this pass.
 
 ### Resume
 
@@ -309,7 +323,7 @@ This applies to all of: analyze-vacancy, tailor-resume, cover-letter, and interv
 
 **Frontend:** `apps/dashboard/src/app/app/company-watch/page.tsx`
 
-**Notes:** Lets a user register a specific company's career page and get notified of changes, independent of the general job-provider pipeline. ATS adapters: Ashby, Greenhouse, Lever, Teamtailor, Workday, plus a generic custom-HTML adapter and a JSON-LD adapter (`packages/company-watch/src/adapters/`) — same ATS coverage pattern as the main provider list and the browser extension's detectors.
+**Notes:** Lets a user register a specific company's career page and get notified of changes, independent of the general job-provider pipeline. ATS adapters: Ashby, Greenhouse, Lever, Teamtailor, Workday, SmartRecruiters, plus a generic custom-HTML adapter and a JSON-LD adapter (`packages/company-watch/src/adapters/`) — same ATS coverage pattern as the main provider list and the browser extension's detectors. Greenhouse/Lever/SmartRecruiters now delegate their HTTP/parsing to the shared `packages/ats-adapters` layer (ADR-033); Recruitee/Personio/BambooHR are declared in `AtsType` but still have no adapter registered — a known gap, not a bug.
 
 ### Tracking
 
@@ -319,7 +333,17 @@ This applies to all of: analyze-vacancy, tailor-resume, cover-letter, and interv
 
 **Frontend:** `apps/dashboard/src/app/app/company-watch/page.tsx`
 
-**Notes:** Each sync diffs the watched company's current job list against the last known state and reports new / removed / changed jobs (`SyncResult` in `company-watch-service.ts:6-15`), logged via `CompanyWatchSyncLog`. Verified in this pass: there is **no automatic scheduling at all**. `CompanyWatchService` is wired only into `apps/backend`'s container for on-demand API-triggered syncs; it is not on `sync-scheduler-service.ts`'s cadence. A user who "watches" a company only gets an update when they (or something calling the API) manually triggers a sync. (The `company-watch-sync-processor.ts` BullMQ handler that would have enabled automatic polling was removed as dead code on 2026-07-24 — it was never registered in the worker.)
+**Notes:** Each sync diffs the watched company's current job list against the last known state and reports new / removed / changed jobs (`SyncResult` in `company-watch-service.ts:6-15`), logged via `CompanyWatchSyncLog`. **Updated (ADR-035 Phase 0/1):** automatic scheduling now exists — `apps/worker/src/jobs/company-watch-scheduler-processor.ts` sweeps due `CompanyWatch` rows (via `shouldSync()`) onto `COMPANY_WATCH_QUEUE`, consumed by `company-watch-sync-processor.ts`. Each `CompanyWatch` row also carries a failure-driven `healthStatus` (`ACTIVE`/`DEGRADED`/`BROKEN`/`RETIRED`, mirrors `VacancySource`'s ADR-030 model) and a `priorityScore` that drives its `pollingInterval` from trailing `NEW_JOB` velocity (`packages/company-watch/src/domain/health.ts`). A `BROKEN` company auto-retires (`RETIRED`, `active=false`) after 14 continuous days unrecovered.
+
+### Discovery (ADR-035 Phase 2)
+
+**Status:** Implemented (single-shot only — no bulk `DiscoverySource` ingestion yet, that's ADR-035 Phase 4)
+
+**Backend:** `packages/company-watch/src/domain/entities/company-candidate.ts`, `domain/discovery-confidence.ts`, `services/candidate-deduplication-service.ts`, `services/company-discovery-intake-service.ts`; `apps/backend/src/services/company-discovery-diagnostics-service.ts`; `apps/backend/src/routes/company-discovery/company-discovery-routes.ts` (`/api/v1/company-discovery`)
+
+**Frontend:** none — no review-queue dashboard page yet (ADR-035 §5/Phase 3 scope).
+
+**Notes:** Staging layer between "a URL was submitted" and "a `CompanyWatch` row exists." A submitted `{companyName, url}` is deduplicated against known `CompanyWatch`/`CompanyCandidate` names (Levenshtein similarity, `@careeros/shared`'s `computeLevenshteinSimilarity` — shared with `packages/providers`' `DeduplicationEngine`, no longer two copies), fingerprinted via the existing `CompanyDiscoveryService`, and scored by a deterministic weighted rubric (`computeDiscoveryConfidence`: ATS-type certainty 30%, reachability 20%, job-signal dry-run 25%, source authority 15%, dedup distance 10%) into `AUTO_APPROVED` (≥85, structured ATS types only)/`REVIEW_REQUIRED` (50-84, or any fallback `CUSTOM_HTML`/`JSON_LD` fingerprint regardless of score)/`REJECTED` (<50). Approval (auto or human, via `POST /company-discovery/:id/approve`) converts the candidate into a real `CompanyWatch` row through the existing `CompanyWatchService.addCompany()` — no parallel enrollment path. Auto-enrollment only fires when `DISCOVERY_WORKSPACE_ID` is configured; otherwise `AUTO_APPROVED` candidates wait for a human to approve them into an explicit workspace.
 
 ---
 
@@ -350,7 +374,7 @@ Explicit per-site detectors in `apps/extension/src/content/providers/`: **Linked
 
 - **AI action results aren't shown anywhere.** Clicking Analyze / Tailor Resume / Cover Letter / Interview Prep triggers a real backend job and gets a `jobId` back, but nothing in the extension or dashboard displays the result — see AI Features → "AI action results are not surfaced anywhere" for full detail. This is the most significant extension gap, more so than missing site coverage.
 - **Match-percentage and company-watched badges are dead code in the current data flow** — templated in the UI, never populated (see above). Not the same thing as "the AI matching system doesn't work" — it works (see AI Features → AI matching), this panel just doesn't fetch/display its output.
-- Coverage is capped at the 9 explicit sites above + generic JSON-LD. The extension's 9 sites overlap with only part of the 23-provider list from Vacancy Discovery (LinkedIn, HH, Greenhouse, Lever, Ashby, Workday, Teamtailor, Recruitee, SmartRecruiters are in both). The other 14 providers (RemoteOK, Adzuna, Comeet, Remotive, Himalayas, Arbeitnow, Jobicy, We Work Remotely, Working Nomads, NoDesk, HN Hiring, Habr Career, SuperJob, Telegram) have no corresponding extension detector — the extension and the main provider pipeline are two independent coverage sets that happen to overlap partially, not the same list.
+- Coverage is capped at the 9 explicit sites above + generic JSON-LD. The extension's 9 sites overlap with only part of the 22-provider list from Vacancy Discovery (LinkedIn, HH, Greenhouse, Lever, Ashby, Workday, Teamtailor, Recruitee, SmartRecruiters are in both). The other providers (Adzuna, Comeet, Remotive, Arbeitnow, Jobicy, We Work Remotely, Working Nomads, NoDesk, HN Hiring, Habr Career, SuperJob, Telegram) have no corresponding extension detector — the extension and the main provider pipeline are two independent coverage sets that happen to overlap partially, not the same list.
 - 4 of the 8 `/ai/*` actions (salary-analysis, company-analysis, resume-improvement, career-advice) have no button in the extension panel at all — only save/analyze/tailor/cover-letter/interview-prep are wired.
 
 ---
@@ -363,4 +387,4 @@ Explicit per-site detectors in `apps/extension/src/content/providers/`: **Linked
 4. Several items marked "not verified in this pass" above (whether the orchestrator's `analyze_vacancy` and the older `ai-matching-service.ts` path share result storage, quality-score UI surfacing) — flagged rather than guessed; worth a follow-up pass if precision matters for a specific decision. Company-watch sync cadence *was* verified in a later pass (see item 6 below): there isn't one.
 5. This document itself required a correction mid-creation: an initial read of `apps/extension/src/content/core/panel-injector.ts` stopped partway through the file and concluded the extension panel only supports Save — the file actually has 5 action buttons. Carried through to a fix of the same wrong claim in `adr/008-browser-extension-implementation-plan.md` from the prior documentation-audit session. Noted here as a caution against trusting a partial file read on a file this central.
 6. **Two fully-implemented worker job handlers were never registered and have been removed** (2026-07-24): `company-watch-sync-processor.ts` (would have given Company Watch automatic polling) and `notification-check-processor.ts` (would have driven `NotificationDispatcherService.checkHighScoreJobs`/`checkInterviewApproaching`). A third, `ai-job-processor.ts`, was an earlier alternative to the AI orchestrator's own job handling. All three were confirmed dead code via knip analysis and removed. `apps/worker/src/index.ts` currently registers only the vacancy-analysis and follow-up-reminder queues.
-7. **Interaction tracking and personalization ranking have zero frontend callers** (see Search and Ranking → Personalization / Interaction learning above, corrected in this pass from a previously-inaccurate "implicit" status) — the recording endpoints, service, and ranking-boost logic are all implemented and unit-tested, but nothing in `apps/dashboard` or `apps/extension` ever calls them, so every user's personalization boost is permanently zero in production.
+7. **Interaction tracking and personalization ranking now have frontend callers** (fixed 2026-08-01) — VIEW is recorded on vacancy detail page mount, SAVE is recorded on "Create Application" (detail page) and "Save to Pipeline" (intelligence search results). The HIDE interaction endpoint exists but has no UI trigger yet. See Personalization and Interaction learning sections above.

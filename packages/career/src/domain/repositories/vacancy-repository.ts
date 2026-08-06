@@ -48,7 +48,8 @@ export interface VacancyRepository {
   findByIdForWorkspace(id: VacancyId, workspaceId: string): Promise<Vacancy | null>;
   findByIds(ids: readonly VacancyId[]): Promise<Vacancy[]>;
   findByCompanyId(companyId: CompanyId): Promise<Vacancy[]>;
-  findByTitleAndCompany(title: string, companyId: CompanyId): Promise<Vacancy | null>;
+  /** Scoped to a single workspace — used for cross-source canonical-vacancy merging within that workspace only. */
+  findByTitleAndCompany(title: string, companyId: CompanyId, workspaceId: string): Promise<Vacancy | null>;
   findMany(criteria: VacancyListCriteria): Promise<VacancyListResult>;
   save(vacancy: Vacancy, options: SaveVacancyOptions): Promise<void>;
   delete(id: VacancyId): Promise<void>;

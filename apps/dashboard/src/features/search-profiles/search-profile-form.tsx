@@ -1,13 +1,15 @@
 'use client';
 
 import { useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { SearchProfile, CreateSearchProfileInput } from '@/api/search-profiles';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
 
@@ -71,6 +73,7 @@ export function SearchProfileForm({
   const profileSchema = useMemo(() => createProfileSchema(t), [t]);
 
   const {
+    control,
     register,
     handleSubmit,
     formState: { errors },
@@ -170,18 +173,28 @@ export function SearchProfileForm({
             <label className="block text-sm font-medium text-foreground">
               {t('searchProfiles.experienceLevelLabel')}
             </label>
-            <select
-              className="rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 outline-none w-full h-8"
-              {...register('experienceLevel')}
-            >
-              <option value="intern">{t('searchProfiles.experienceLevels.intern')}</option>
-              <option value="junior">{t('searchProfiles.experienceLevels.junior')}</option>
-              <option value="middle">{t('searchProfiles.experienceLevels.middle')}</option>
-              <option value="senior">{t('searchProfiles.experienceLevels.senior')}</option>
-              <option value="lead">{t('searchProfiles.experienceLevels.lead')}</option>
-              <option value="principal">{t('searchProfiles.experienceLevels.principal')}</option>
-              <option value="executive">{t('searchProfiles.experienceLevels.executive')}</option>
-            </select>
+            <Controller
+              control={control}
+              name="experienceLevel"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={(value) => value && field.onChange(value)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue>
+                      {(value: string) => t(`searchProfiles.experienceLevels.${value}`)}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="intern">{t('searchProfiles.experienceLevels.intern')}</SelectItem>
+                    <SelectItem value="junior">{t('searchProfiles.experienceLevels.junior')}</SelectItem>
+                    <SelectItem value="middle">{t('searchProfiles.experienceLevels.middle')}</SelectItem>
+                    <SelectItem value="senior">{t('searchProfiles.experienceLevels.senior')}</SelectItem>
+                    <SelectItem value="lead">{t('searchProfiles.experienceLevels.lead')}</SelectItem>
+                    <SelectItem value="principal">{t('searchProfiles.experienceLevels.principal')}</SelectItem>
+                    <SelectItem value="executive">{t('searchProfiles.experienceLevels.executive')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -203,16 +216,24 @@ export function SearchProfileForm({
             <label className="block text-sm font-medium text-foreground">
               {t('searchProfiles.currencyLabel')}
             </label>
-            <select
-              className="rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 outline-none w-full h-8"
-              {...register('salaryCurrency')}
-            >
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-              <option value="GBP">GBP</option>
-              <option value="UAH">UAH</option>
-              <option value="RUB">RUB</option>
-            </select>
+            <Controller
+              control={control}
+              name="salaryCurrency"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={(value) => value && field.onChange(value)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="USD">USD</SelectItem>
+                    <SelectItem value="EUR">EUR</SelectItem>
+                    <SelectItem value="GBP">GBP</SelectItem>
+                    <SelectItem value="UAH">UAH</SelectItem>
+                    <SelectItem value="RUB">RUB</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -232,27 +253,42 @@ export function SearchProfileForm({
             <label className="block text-sm font-medium text-foreground">
               {t('searchProfiles.workModeLabel')}
             </label>
-            <select
-              className="rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 outline-none w-full h-8"
-              {...register('workMode')}
-            >
-              <option value="remote">{t('searchProfiles.workModes.remote')}</option>
-              <option value="hybrid">{t('searchProfiles.workModes.hybrid')}</option>
-              <option value="onsite">{t('searchProfiles.workModes.onsite')}</option>
-            </select>
+            <Controller
+              control={control}
+              name="workMode"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={(value) => value && field.onChange(value)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue>
+                      {(value: string) => t(`searchProfiles.workModes.${value}`)}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="remote">{t('searchProfiles.workModes.remote')}</SelectItem>
+                    <SelectItem value="hybrid">{t('searchProfiles.workModes.hybrid')}</SelectItem>
+                    <SelectItem value="onsite">{t('searchProfiles.workModes.onsite')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="isRemoteOnly"
-              className="h-4 w-4 rounded border-input accent-primary"
-              {...register('isRemoteOnly')}
-            />
-            <label htmlFor="isRemoteOnly" className="text-sm text-foreground">
-              {t('searchProfiles.remoteOnlyLabel')}
-            </label>
-          </div>
+          <Controller
+            control={control}
+            name="isRemoteOnly"
+            render={({ field }) => (
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="isRemoteOnly"
+                  checked={field.value}
+                  onCheckedChange={(checked) => field.onChange(checked)}
+                />
+                <label htmlFor="isRemoteOnly" className="text-sm text-foreground">
+                  {t('searchProfiles.remoteOnlyLabel')}
+                </label>
+              </div>
+            )}
+          />
 
           <div className="flex gap-2">
             <Button type="submit" disabled={isLoading}>

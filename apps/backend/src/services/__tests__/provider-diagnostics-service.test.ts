@@ -63,7 +63,7 @@ describe('ProviderDiagnosticsService status representation', () => {
   it('marks a fully working, unrestricted provider as READY with bulk sync supported', () => {
     const service = createService();
     service.recordRegistrations([
-      { providerId: 'remote_ok', registered: true, configured: true, authenticated: 'not_required' },
+      { providerId: 'greenhouse', registered: true, configured: true, authenticated: 'not_required' },
     ]);
 
     const [snapshot] = service.getSnapshot();
@@ -77,9 +77,9 @@ describe('ProviderDiagnosticsService status representation', () => {
   it('derives health from lastFetch when health monitor has not checked', () => {
     const service = createService();
     service.recordRegistrations([
-      { providerId: 'remote_ok', registered: true, configured: true, authenticated: 'not_required' },
+      { providerId: 'greenhouse', registered: true, configured: true, authenticated: 'not_required' },
     ]);
-    service.recordFetch('remote_ok', {
+    service.recordFetch('greenhouse', {
       at: new Date(),
       durationMs: 200,
       ok: true,
@@ -123,15 +123,15 @@ describe('ProviderDiagnosticsService status representation', () => {
     const service = createService();
     service.setSyncScheduler({
       getStatus: (_workspaceId: string, providerId: string) =>
-        providerId === 'remote_ok' ? { health: 'degraded' } : undefined,
+        providerId === 'greenhouse' ? { health: 'degraded' } : undefined,
     } as unknown as import('../sync-scheduler-service.js').SyncSchedulerService);
 
     service.recordRegistrations([
-      { providerId: 'remote_ok', registered: true, configured: true, authenticated: 'not_required' },
+      { providerId: 'greenhouse', registered: true, configured: true, authenticated: 'not_required' },
     ]);
     // A successful lastFetch would otherwise say 'healthy' — the scheduler's
     // sync-derived state must win so Diagnostics and Provider Management agree.
-    service.recordFetch('remote_ok', {
+    service.recordFetch('greenhouse', {
       at: new Date(),
       durationMs: 200,
       ok: true,

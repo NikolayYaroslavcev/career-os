@@ -16,7 +16,7 @@ async function main(): Promise<void> {
   await workflow.repositories.searchProfile.save(searchProfile, {});
   console.log(`[2/5] Search profile "${searchProfile.name}" created and active (remote-only: ${searchProfile.isRemoteOnly})`);
 
-  console.log('[3/5] Running RemoteOK fixture search + AI matching (mock provider)...');
+  console.log('[3/5] Running fixture search + AI matching (mock provider)...');
   const result = await workflow.services.intelligenceWorkflow.run({
     userId: FIXTURE_USER_ID,
     searchProfileId: searchProfile.id,
@@ -69,7 +69,7 @@ async function main(): Promise<void> {
     throw new Error('Regression: Application did not preserve the AI match reference');
   }
 
-  console.log('\nDone. Pipeline executed end-to-end: Resume -> RemoteOK fixtures -> AI Matching -> Recommendations -> Application creation.');
+  console.log('\nDone. Pipeline executed end-to-end: Resume -> fixture search -> AI Matching -> Recommendations -> Application creation.');
 }
 
 main().catch((error) => {

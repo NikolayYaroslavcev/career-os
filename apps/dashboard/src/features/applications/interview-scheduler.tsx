@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Loading } from '@/components/ui/loading';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Calendar, CheckCircle } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
 import { formatDateTime } from '@/lib/format';
@@ -80,15 +81,18 @@ export function InterviewScheduler({ applicationId }: InterviewSchedulerProps): 
       <CardContent>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-2">
-            <select
-              value={newType}
-              onChange={(e) => setNewType(e.target.value as Interview['type'])}
-              className="rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 outline-none"
-            >
+            <Select value={newType} onValueChange={(value) => value && setNewType(value as Interview['type'])}>
+              <SelectTrigger className="w-full">
+                <SelectValue>
+                  {(value: Interview['type']) => t(`interviewScheduler.types.${value}`)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
               {INTERVIEW_TYPES.map((type) => (
-                <option key={type} value={type}>{t(`interviewScheduler.types.${type}`)}</option>
+                <SelectItem key={type} value={type}>{t(`interviewScheduler.types.${type}`)}</SelectItem>
               ))}
-            </select>
+              </SelectContent>
+            </Select>
             <Input
               type="datetime-local"
               value={newDate}

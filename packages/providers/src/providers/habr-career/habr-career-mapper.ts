@@ -1,18 +1,19 @@
 import type { Mapper, MappedJob } from '../../interfaces/mapper.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
+import { decodeHtmlEntities } from '../../shared/html-entities.js';
 
 export class HabrCareerMapper implements Mapper {
   readonly providerId = 'habr_career';
 
   map(raw: RawJob): MappedJob {
-    const title = raw.title.replace(/\s+/g, ' ').trim();
-    const description = raw.description.replace(/\s+/g, ' ').trim();
+    const title = decodeHtmlEntities(raw.title).replace(/\s+/g, ' ').trim();
+    const description = decodeHtmlEntities(raw.description).replace(/\s+/g, ' ').trim();
 
     return {
       sourceId: raw.sourceId,
       title,
       description,
-      companyName: raw.companyName.replace(/\s+/g, ' ').trim(),
+      companyName: decodeHtmlEntities(raw.companyName).replace(/\s+/g, ' ').trim(),
       location: this.normalizeLocation(raw.location),
       salary: this.normalizeSalary(raw.salary),
       experienceLevel: raw.experienceLevel ?? this.inferExperienceLevel(title, description),

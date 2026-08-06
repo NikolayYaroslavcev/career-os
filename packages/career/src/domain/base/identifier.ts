@@ -19,6 +19,7 @@ export type SearchProfileId = Brand<'SearchProfileId', string>;
 export type TelegramConnectionId = Brand<'TelegramConnectionId', string>;
 export type TelegramLinkingTokenId = Brand<'TelegramLinkingTokenId', string>;
 export type VacancySourceId = Brand<'VacancySourceId', string>;
+export type SocialMessageId = Brand<'SocialMessageId', string>;
 
 export function createUserId(value: string): UserId {
   return value as UserId;
@@ -86,4 +87,8 @@ export function createTelegramLinkingTokenId(value: string): TelegramLinkingToke
 
 export function createVacancySourceId(value: string): VacancySourceId {
   return value as VacancySourceId;
+}
+
+export function createSocialMessageId(value: string): SocialMessageId {
+  return value as SocialMessageId;
 }

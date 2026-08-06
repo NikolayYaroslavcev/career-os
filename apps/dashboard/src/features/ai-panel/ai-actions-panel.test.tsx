@@ -4,7 +4,7 @@ import { AiActionsPanel } from './ai-actions-panel';
 import { I18nProvider } from '@/lib/i18n/i18n-provider';
 import { listResumes } from '@/api/resumes';
 import { listSearchProfiles } from '@/api/search-profiles';
-import { getAIJobs } from '@/api/ai';
+import { getAIJobs, getTailoringStatus } from '@/api/ai';
 import { tailorResumeForApplication } from '@/api/applications';
 
 vi.mock('@/api/resumes', () => ({
@@ -18,6 +18,7 @@ vi.mock('@/api/search-profiles', () => ({
 vi.mock('@/api/ai', () => ({
   analyzeVacancy: vi.fn(),
   tailorResume: vi.fn(),
+  getTailoringStatus: vi.fn(),
   generateCoverLetter: vi.fn(),
   getInterviewPrep: vi.fn(),
   getAIJobs: vi.fn(),
@@ -34,6 +35,28 @@ function renderWithI18n(ui: React.ReactElement): ReturnType<typeof render> {
   return render(<I18nProvider initialLocale="en">{ui}</I18nProvider>);
 }
 
+// Base UI's Select resolves item activation from a pointerdown+pointerup
+// pair rather than a bare 'click' event — a plain fireEvent.click opens the
+// popup but never registers the selection.
+function clickViaPointer(el: HTMLElement): void {
+  fireEvent.pointerDown(el, { button: 0, pointerId: 1 });
+  fireEvent.pointerUp(el, { button: 0, pointerId: 1 });
+  fireEvent.click(el);
+}
+
+// The AI action switcher (Analyze/Tailor/Cover Letter/Interview Prep/History)
+// is a Select rendered before any tab-specific content, so it's always the
+// first combobox in the DOM regardless of which tab is currently active.
+async function selectAiAction(name: string): Promise<void> {
+  clickViaPointer(screen.getAllByRole('combobox')[0] as HTMLElement);
+  clickViaPointer(await screen.findByRole('option', { name }));
+}
+
+async function selectResume(name: string): Promise<void> {
+  clickViaPointer(screen.getAllByRole('combobox')[1] as HTMLElement);
+  clickViaPointer(await screen.findByRole('option', { name }));
+}
+
 describe('AiActionsPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -44,17 +67,32 @@ describe('AiActionsPanel', () => {
     vi.mocked(getAIJobs).mockResolvedValue({ jobs: [], total: 0 });
   });
 
-  it('generates a tailored resume for an application and renders the result', async () => {
+  it('generates a tailored resume for an application and renders the result (ADR-031 async pipeline)', async () => {
     vi.mocked(tailorResumeForApplication).mockResolvedValue({
-      jobId: 'job-1',
+      jobId: 'resume-1:vacancy-1',
+      status: 'queued',
+      currentStage: 'QUEUED',
+      cached: false,
+    });
+    vi.mocked(getTailoringStatus).mockResolvedValue({
+      jobId: 'resume-1:vacancy-1',
       status: 'completed',
+      currentStage: 'COMPLETED',
       cached: false,
       result: {
-        optimizedSummary: 'Optimized summary',
-        reorderedExperience: [],
-        emphasizedSkills: ['TypeScript'],
-        keywordOptimizations: ['React'],
-        tailoredResume: 'Tailored resume text',
+        tailoredResumeText: 'Tailored resume text',
+        skillMatrix: {
+          matchedSkills: ['TypeScript'],
+          missingSkills: [],
+          weakSkills: [],
+          strongSkills: [],
+          atsKeywordCoverageRatio: 1,
+          technologyCoverageRatio: 1,
+          responsibilityCoverageRatio: 1,
+          experienceCoverageRatio: 1,
+        },
+        changesApplied: [],
+        changesRejected: [],
       },
     });
 
@@ -62,34 +100,64 @@ describe('AiActionsPanel', () => {
       <AiActionsPanel vacancyId="vacancy-1" vacancyTitle="Senior Engineer" applicationId="app-1" />
     );
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Tailor Resume' }));
-    await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
+    await selectAiAction('Tailor Resume');
+    await waitFor(() => expect(screen.getAllByRole('combobox')).toHaveLength(2));
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'resume-1' } });
+    await selectResume('My Resume');
     fireEvent.click(screen.getByRole('button', { name: 'Tailor Resume' }));
 
     await waitFor(() => {
       expect(screen.getByText('Tailored resume text')).toBeInTheDocument();
     });
     expect(screen.getByText('TypeScript')).toBeInTheDocument();
-    expect(tailorResumeForApplication).toHaveBeenCalledWith('app-1', 'resume-1');
+    expect(tailorResumeForApplication).toHaveBeenCalledWith('app-1', 'resume-1', false);
   });
 
-  it('shows an error message when tailoring fails', async () => {
+  it('shows an error message when tailoring fails to enqueue', async () => {
     vi.mocked(tailorResumeForApplication).mockRejectedValue(new Error('Tailoring failed'));
 
     renderWithI18n(
       <AiActionsPanel vacancyId="vacancy-1" vacancyTitle="Senior Engineer" applicationId="app-1" />
     );
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Tailor Resume' }));
-    await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
+    await selectAiAction('Tailor Resume');
+    await waitFor(() => expect(screen.getAllByRole('combobox')).toHaveLength(2));
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'resume-1' } });
+    await selectResume('My Resume');
     fireEvent.click(screen.getByRole('button', { name: 'Tailor Resume' }));
 
     await waitFor(() => {
       expect(screen.getByText('Tailoring failed')).toBeInTheDocument();
+    });
+  });
+
+  it('shows a failed state when the async pipeline reports a failure', async () => {
+    vi.mocked(tailorResumeForApplication).mockResolvedValue({
+      jobId: 'resume-1:vacancy-1',
+      status: 'queued',
+      currentStage: 'QUEUED',
+      cached: false,
+    });
+    vi.mocked(getTailoringStatus).mockResolvedValue({
+      jobId: 'resume-1:vacancy-1',
+      status: 'failed',
+      currentStage: 'FAILED',
+      cached: false,
+      error: 'Simulated pipeline failure',
+    });
+
+    renderWithI18n(
+      <AiActionsPanel vacancyId="vacancy-1" vacancyTitle="Senior Engineer" applicationId="app-1" />
+    );
+
+    await selectAiAction('Tailor Resume');
+    await waitFor(() => expect(screen.getAllByRole('combobox')).toHaveLength(2));
+
+    await selectResume('My Resume');
+    fireEvent.click(screen.getByRole('button', { name: 'Tailor Resume' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Tailoring failed. Please try again.')).toBeInTheDocument();
     });
   });
 
@@ -113,9 +181,9 @@ describe('AiActionsPanel', () => {
 
     renderWithI18n(<AiActionsPanel vacancyId="vacancy-1" vacancyTitle="Senior Engineer" />);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
+    await selectAiAction('History');
 
-    const panel = await screen.findByRole('tabpanel', { name: 'History' });
+    const panel = await screen.findByRole('tabpanel');
     await waitFor(() => {
       expect(within(panel).getByText('Cover Letter')).toBeInTheDocument();
       expect(within(panel).getByText('COMPLETED')).toBeInTheDocument();

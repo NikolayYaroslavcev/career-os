@@ -11,7 +11,14 @@ const mockGetPipeline = vi.fn();
 const mockUpdateApplicationStatus = vi.fn();
 const mockGetApplication = vi.fn();
 const mockListFollowUps = vi.fn();
+const mockListCommunications = vi.fn();
+const mockListInterviews = vi.fn();
 
+// Opening a card renders ApplicationDetail, which mounts CommunicationLog and
+// InterviewScheduler — every export those call must be stubbed too, or their
+// fetch() calls hit the real network and resolve/reject after the test (and
+// its jsdom environment) have torn down, surfacing as an unhandled rejection
+// on a later, unrelated test. That's the "flaky" application-pipeline race.
 vi.mock('@/api/applications', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/applications')>();
   return {
@@ -20,6 +27,8 @@ vi.mock('@/api/applications', async (importOriginal) => {
     updateApplicationStatus: (...args: unknown[]): ReturnType<typeof mockUpdateApplicationStatus> => mockUpdateApplicationStatus(...args),
     getApplication: (...args: unknown[]): ReturnType<typeof mockGetApplication> => mockGetApplication(...args),
     listFollowUps: (...args: unknown[]): ReturnType<typeof mockListFollowUps> => mockListFollowUps(...args),
+    listCommunications: (...args: unknown[]): ReturnType<typeof mockListCommunications> => mockListCommunications(...args),
+    listInterviews: (...args: unknown[]): ReturnType<typeof mockListInterviews> => mockListInterviews(...args),
   };
 });
 
@@ -30,6 +39,36 @@ vi.mock('@/api/sync', async (importOriginal) => {
   return {
     ...actual,
     getVacancyDetail: (...args: unknown[]): ReturnType<typeof mockGetVacancy> => mockGetVacancy(...args),
+  };
+});
+
+// ApplicationDetail also renders AiActionsPanel (once the vacancy resolves),
+// which fetches resumes, search profiles, and AI job history on mount.
+const mockListResumes = vi.fn();
+const mockListSearchProfiles = vi.fn();
+const mockGetAIJobs = vi.fn();
+
+vi.mock('@/api/resumes', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/resumes')>();
+  return {
+    ...actual,
+    listResumes: (...args: unknown[]): ReturnType<typeof mockListResumes> => mockListResumes(...args),
+  };
+});
+
+vi.mock('@/api/search-profiles', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/search-profiles')>();
+  return {
+    ...actual,
+    listSearchProfiles: (...args: unknown[]): ReturnType<typeof mockListSearchProfiles> => mockListSearchProfiles(...args),
+  };
+});
+
+vi.mock('@/api/ai', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/ai')>();
+  return {
+    ...actual,
+    getAIJobs: (...args: unknown[]): ReturnType<typeof mockGetAIJobs> => mockGetAIJobs(...args),
   };
 });
 
@@ -70,6 +109,11 @@ describe('ApplicationPipeline', () => {
     });
     mockGetApplication.mockResolvedValue(application);
     mockListFollowUps.mockResolvedValue({ followUps: [] });
+    mockListCommunications.mockResolvedValue({ communications: [] });
+    mockListInterviews.mockResolvedValue({ interviews: [] });
+    mockListResumes.mockResolvedValue({ resumes: [], total: 0 });
+    mockListSearchProfiles.mockResolvedValue({ searchProfiles: [] });
+    mockGetAIJobs.mockResolvedValue({ jobs: [], total: 0 });
   });
 
   it('shows the empty state when there are no applications', async () => {
@@ -78,7 +122,7 @@ describe('ApplicationPipeline', () => {
     renderWithI18n(<ApplicationPipeline />);
 
     await waitFor(() => {
-      expect(screen.getByText(/no applications yet/i)).toBeInTheDocument();
+      expect(screen.getByText(/start tracking applications/i)).toBeInTheDocument();
     });
   });
 
@@ -109,9 +153,13 @@ describe('ApplicationPipeline', () => {
       expect(screen.getByText('Senior Backend Engineer')).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByLabelText(/move application to another status/i), {
-      target: { value: 'started' },
+    fireEvent.click(screen.getByLabelText(/move application to another status/i));
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Started' })).toBeInTheDocument();
     });
+
+    fireEvent.click(screen.getByRole('option', { name: 'Started' }));
 
     await waitFor(() => {
       expect(mockUpdateApplicationStatus).toHaveBeenCalledWith('app-1', 'started');

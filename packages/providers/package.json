@@ -16,8 +16,11 @@
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "provider:test": "tsx src/sandbox/provider-sandbox.ts",
     "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@careeros/ats-adapters": "workspace:*",
+    "@careeros/shared": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.8.0",

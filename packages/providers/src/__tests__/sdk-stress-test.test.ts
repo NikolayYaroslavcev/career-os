@@ -288,7 +288,7 @@ describe('Deduplication Engine', () => {
       createVacancy({ source: 'hh', contentHash: 'same-hash' }),
       createVacancy({ source: 'linkedin', contentHash: 'same-hash' }),
       createVacancy({ source: 'habr', contentHash: 'same-hash' }),
-      createVacancy({ source: 'remoteok', contentHash: 'unique-hash' }),
+      createVacancy({ source: 'remotive', contentHash: 'unique-hash' }),
     ];
 
     const result = engine.deduplicate(jobs);

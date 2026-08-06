@@ -11,11 +11,38 @@ import { ProviderSearchService } from '../provider-search-service.js';
 import { ProviderDiagnosticsService } from '../provider-diagnostics-service.js';
 import { InMemoryVacancyRepository, InMemoryVacancySourceRepository, InMemoryCompanyRepository } from '../../testing/in-memory-repositories.js';
 import { buildFixtureSearchProfile } from '../../testing/fixtures.js';
+import { Technology } from '@careeros/career';
+import type { SearchCriteria, NormalizedVacancy } from '@careeros/providers';
 
 /** A provider whose search() never resolves, to exercise the per-provider timeout. */
 class HangingProvider extends FakeProvider {
   override async search(): Promise<ProviderResult<SearchResult>> {
     return new Promise(() => {});
+  }
+}
+
+class StaticProvider extends FakeProvider {
+  constructor(
+    id: string,
+    private readonly vacancies: NormalizedVacancy[],
+  ) {
+    super(id);
+  }
+
+  override async search(_criteria: SearchCriteria): Promise<ProviderResult<SearchResult>> {
+    return {
+      ok: true,
+      data: {
+        vacancies: this.vacancies,
+        cursor: { cursor: { type: 'none', message: 'Done' }, strategy: 'none', exhausted: true, fetchedCount: this.vacancies.length },
+        normalization: {
+          succeeded: this.vacancies,
+          stats: { total: this.vacancies.length, succeeded: this.vacancies.length, failed: 0, durationMs: 0 },
+          failed: [],
+        },
+      },
+      meta: { durationMs: 0 },
+    };
   }
 }
 
@@ -269,5 +296,62 @@ describe('ProviderSearchService — resilient multi-provider search', () => {
 
     const allSources = await Promise.all(second.vacancies.map((v) => vacancySourceRepository.findByVacancyId(v.id)));
     expect(allSources.every((sources) => sources.length === 1)).toBe(true);
+  });
+
+  it('does not keep irrelevant vacancies only because they contain generic words like developer', async () => {
+    const registry = new ProviderRegistry();
+    registry.register(new StaticProvider('custom', [
+      {
+        id: 'custom:frontend-1',
+        source: 'custom',
+        sourceId: 'frontend-1',
+        contentHash: 'hash-frontend-1',
+        title: 'Frontend React Developer',
+        description: 'React and TypeScript role',
+        companyName: 'Frontend Co',
+        location: { raw: 'Remote, USA', city: 'Remote', country: 'USA', remoteEligible: true },
+        remote: { level: 'remote_only', explicit: true },
+        technologies: ['react', 'typescript'],
+        url: 'https://example.com/frontend-1',
+        publishedAt: new Date('2026-01-01'),
+        fetchedAt: new Date('2026-01-01'),
+        normalizedAt: new Date('2026-01-01'),
+      },
+      {
+        id: 'custom:ios-1',
+        source: 'custom',
+        sourceId: 'ios-1',
+        contentHash: 'hash-ios-1',
+        title: 'iOS Developer',
+        description: 'Swift and UIKit role',
+        companyName: 'Mobile Co',
+        location: { raw: 'Remote, USA', city: 'Remote', country: 'USA', remoteEligible: true },
+        remote: { level: 'remote_only', explicit: true },
+        technologies: ['swift', 'uikit'],
+        url: 'https://example.com/ios-1',
+        publishedAt: new Date('2026-01-01'),
+        fetchedAt: new Date('2026-01-01'),
+        normalizedAt: new Date('2026-01-01'),
+      },
+    ]));
+
+    const service = new ProviderSearchService(
+      registry,
+      new InMemoryVacancyRepository(),
+      new InMemoryVacancySourceRepository(),
+      new InMemoryCompanyRepository(),
+      new ProviderNoopLogger(),
+      new ProviderInMemoryMetricsCollector()
+    );
+
+    const profile = buildFixtureSearchProfile({
+      desiredPositions: ['Frontend Developer'],
+      desiredTechnologies: [Technology.create('react', 'framework'), Technology.create('typescript', 'language')],
+    });
+
+    const outcome = await service.searchAndPersist(profile, undefined, 'workspace-1');
+
+    expect(outcome.vacancies).toHaveLength(1);
+    expect(outcome.vacancies[0]?.title).toBe('Frontend React Developer');
   });
 });

@@ -12,7 +12,8 @@ export interface VacancySourceRepository {
   /** Batch variant of findByVacancyId — one query for many vacancies, avoiding N+1 in analytics/reporting paths. */
   findByVacancyIds(vacancyIds: readonly VacancyId[]): Promise<Map<string, VacancySourceEntity[]>>;
   findByVacancyIdAndProvider(vacancyId: VacancyId, providerId: VacancySourceEnum, externalId: string): Promise<VacancySourceEntity | null>;
-  findByProviderAndExternalId(providerId: VacancySourceEnum, externalId: string): Promise<VacancySourceEntity | null>;
+  /** Scoped to a single workspace — the same external listing may legitimately have a separate VacancySource per workspace. */
+  findByProviderAndExternalId(providerId: VacancySourceEnum, externalId: string, workspaceId: string): Promise<VacancySourceEntity | null>;
   save(source: VacancySourceEntity, options?: SaveVacancySourceOptions): Promise<void>;
   delete(id: VacancySourceId): Promise<void>;
   exists(id: VacancySourceId): Promise<boolean>;

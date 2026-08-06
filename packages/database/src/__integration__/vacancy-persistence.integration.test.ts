@@ -118,9 +118,9 @@ runIf('Vacancy persistence (real Postgres)', () => {
       id: createVacancySourceId(crypto.randomUUID()),
       vacancyId: vacancy.id,
       providerType: 'JOB_BOARD',
-      providerId: 'remote_ok',
-      externalId: 'rok-456',
-      sourceUrl: 'https://remoteok.com/remote-jobs/456',
+      providerId: 'hh',
+      externalId: 'hh-456',
+      sourceUrl: 'https://hh.ru/vacancy/456',
       isPrimary: false,
     });
 
@@ -134,7 +134,7 @@ runIf('Vacancy persistence (real Postgres)', () => {
     expect(primary?.providerId).toBe('greenhouse');
 
     const secondary = sources.find((s) => !s.isPrimary);
-    expect(secondary?.providerId).toBe('remote_ok');
+    expect(secondary?.providerId).toBe('hh');
 
     await prisma.vacancy.delete({ where: { id: vacancy.id } });
   });
@@ -165,10 +165,90 @@ runIf('Vacancy persistence (real Postgres)', () => {
 
     await sourceRepo.save(source, { workspaceId });
 
-    const found = await sourceRepo.findByProviderAndExternalId('lever', 'lever-789');
+    const found = await sourceRepo.findByProviderAndExternalId('lever', 'lever-789', workspaceId);
     expect(found).not.toBeNull();
     expect(found?.vacancyId).toBe(vacancy.id);
 
     await prisma.vacancy.delete({ where: { id: vacancy.id } });
+  });
+
+  it('scopes findByProviderAndExternalId to the requesting workspace, so a second workspace can import the same external listing independently', async () => {
+    const vacancyRepo = new PrismaVacancyRepository();
+    const sourceRepo = new PrismaVacancySourceRepository();
+
+    const otherWorkspace = await prisma.workspace.create({
+      data: { name: `integration-test-other-${crypto.randomUUID()}` },
+    });
+    const otherCompany = await prisma.company.create({
+      data: { name: 'Other Workspace Co', workspaceId: otherWorkspace.id },
+    });
+
+    const sharedExternalId = `shared-${crypto.randomUUID()}`;
+
+    const vacancyA = Vacancy.create({
+      id: createVacancyId(crypto.randomUUID()),
+      title: 'Shared Listing (Workspace A)',
+      description: 'desc',
+      companyId: createCompanyId(companyId),
+      location: Location.create({ workMode: 'remote' }),
+      experienceLevel: ExperienceLevel.MIDDLE,
+    });
+    await vacancyRepo.save(vacancyA, { workspaceId });
+    await sourceRepo.save(
+      VacancySourceEntity.create({
+        id: createVacancySourceId(crypto.randomUUID()),
+        vacancyId: vacancyA.id,
+        providerType: 'ATS',
+        providerId: 'lever',
+        externalId: sharedExternalId,
+        isPrimary: true,
+      }),
+      { workspaceId }
+    );
+
+    // Workspace B has never seen this externalId before — it must be able to
+    // import its own copy, not be blocked because workspace A already has one.
+    const foundInOtherWorkspace = await sourceRepo.findByProviderAndExternalId(
+      'lever',
+      sharedExternalId,
+      otherWorkspace.id
+    );
+    expect(foundInOtherWorkspace).toBeNull();
+
+    const vacancyB = Vacancy.create({
+      id: createVacancyId(crypto.randomUUID()),
+      title: 'Shared Listing (Workspace B)',
+      description: 'desc',
+      companyId: createCompanyId(otherCompany.id),
+      location: Location.create({ workMode: 'remote' }),
+      experienceLevel: ExperienceLevel.MIDDLE,
+    });
+    await vacancyRepo.save(vacancyB, { workspaceId: otherWorkspace.id });
+    await sourceRepo.save(
+      VacancySourceEntity.create({
+        id: createVacancySourceId(crypto.randomUUID()),
+        vacancyId: vacancyB.id,
+        providerType: 'ATS',
+        providerId: 'lever',
+        externalId: sharedExternalId,
+        isPrimary: true,
+      }),
+      { workspaceId: otherWorkspace.id }
+    );
+
+    const foundInWorkspaceA = await sourceRepo.findByProviderAndExternalId('lever', sharedExternalId, workspaceId);
+    expect(foundInWorkspaceA?.vacancyId).toBe(vacancyA.id);
+
+    const foundInWorkspaceB = await sourceRepo.findByProviderAndExternalId(
+      'lever',
+      sharedExternalId,
+      otherWorkspace.id
+    );
+    expect(foundInWorkspaceB?.vacancyId).toBe(vacancyB.id);
+
+    await prisma.vacancy.delete({ where: { id: vacancyA.id } });
+    await prisma.vacancy.delete({ where: { id: vacancyB.id } });
+    await prisma.company.delete({ where: { id: otherCompany.id } });
+    await prisma.workspace.delete({ where: { id: otherWorkspace.id } });
   });
 });

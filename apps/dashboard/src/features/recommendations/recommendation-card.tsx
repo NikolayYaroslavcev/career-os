@@ -1,17 +1,45 @@
 'use client';
 
-import { MapPin, Clock, DollarSign, Check, X } from 'lucide-react';
+import { useState } from 'react';
+import Link from 'next/link';
+import { MapPin, Clock, DollarSign, Check, X, CheckCircle } from 'lucide-react';
 import type { Recommendation } from '@/api/recommendations';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
 import { formatNumber, formatDate as formatLocaleDate } from '@/lib/format';
+import { createApplication } from '@/api/applications';
+import { recordVacancySave } from '@/api/sync';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 interface RecommendationCardProps {
   recommendation: Recommendation;
 }
 
 export function RecommendationCard({ recommendation }: RecommendationCardProps): React.JSX.Element {
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { vacancy, score, matchedSkills, reasons } = recommendation;
+  const [isApplied, setIsApplied] = useState(false);
+
+  const handleSaveToPipeline = async (e: React.MouseEvent): Promise<void> => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await createApplication({ vacancyId: vacancy.id });
+      setIsApplied(true);
+      recordVacancySave(vacancy.id).catch(() => {});
+    } catch (err) {
+      console.error('Failed to save to pipeline:', err);
+    }
+  };
+
+  const handleOpenApplicationPage = (e: React.MouseEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    const url = vacancy.applyUrl ?? vacancy.sourceUrl;
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
 
   const getScoreColor = (score: number): string => {
     if (score >= 80) return 'text-green-600 bg-green-50';
@@ -50,7 +78,10 @@ export function RecommendationCard({ recommendation }: RecommendationCardProps):
   };
 
   return (
-    <div className="rounded-lg border border-border bg-card p-6 shadow-sm hover:shadow-md transition-shadow">
+    <Link
+      href={`/app/search/${vacancy.id}`}
+      className="block rounded-lg border border-border bg-card p-6 shadow-sm hover:shadow-md transition-shadow"
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 mb-2">
@@ -127,7 +158,25 @@ export function RecommendationCard({ recommendation }: RecommendationCardProps):
             ))}
           </div>
         </div>
+
+        <div className="ml-4 flex flex-col gap-2">
+          {isApplied ? (
+            <Badge variant="success">
+              <CheckCircle className="mr-1 h-3 w-3" />
+              {t('intelligence.savedToPipeline')}
+            </Badge>
+          ) : (
+            <>
+              <Button size="sm" onClick={handleSaveToPipeline}>
+                {t('intelligence.saveToPipeline')}
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleOpenApplicationPage}>
+                {t('intelligence.openApplicationPage')}
+              </Button>
+            </>
+          )}
+        </div>
       </div>
-    </div>
+    </Link>
   );
 }

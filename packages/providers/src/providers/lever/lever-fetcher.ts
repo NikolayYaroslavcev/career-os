@@ -1,4 +1,3 @@
-import { fetchWithTimeout } from '../../resilience/resilient-fetch.js';
 import type { Fetcher, FetchResult } from '../../interfaces/fetcher.js';
 import type { ProviderResult, ResultMeta } from '../../interfaces/result.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
@@ -9,6 +8,15 @@ import type { MetricsCollector } from '../../observability/metrics.js';
 import type { Tracer } from '../../observability/tracer.js';
 import { PROVIDER_METRICS } from '../../observability/metrics.js';
 import { ProviderErrorType } from '../../errors/provider-errors.js';
+import {
+  fetchLeverPostingsPage,
+  pingLeverPostingsPage,
+  parseLeverJob,
+  isValidLeverPosting,
+  AtsHttpError,
+  type AtsRawJob,
+  type LeverPostingPayload,
+} from '@careeros/ats-adapters';
 
 const DEFAULT_PAGE_LIMIT = 100;
 
@@ -20,43 +28,6 @@ export interface LeverFetcherConfig {
   readonly metrics: MetricsCollector;
   readonly tracer: Tracer;
 }
-
-export interface LeverCategories {
-  readonly commitment?: string;
-  readonly department?: string;
-  readonly location?: string;
-  readonly team?: string;
-  readonly allLocations?: readonly string[];
-}
-
-export interface LeverSalaryRange {
-  readonly min?: number;
-  readonly max?: number;
-  readonly currency?: string;
-  readonly interval?: string;
-}
-
-export interface LeverList {
-  readonly text: string;
-  readonly content: string;
-}
-
-export interface LeverRawJob {
-  readonly id: string;
-  readonly text: string;
-  readonly categories?: LeverCategories;
-  readonly description?: string;
-  readonly descriptionPlain?: string;
-  readonly lists?: readonly LeverList[];
-  readonly hostedUrl: string;
-  readonly applyUrl?: string;
-  readonly createdAt: number;
-  readonly workplaceType?: 'remote' | 'hybrid' | 'on-site';
-  readonly salaryRange?: LeverSalaryRange;
-  readonly tags?: readonly string[];
-}
-
-export type LeverPostingsResponse = readonly LeverRawJob[];
 
 export class LeverFetcher implements Fetcher {
   private readonly baseUrl: string;
@@ -91,30 +62,10 @@ export class LeverFetcher implements Fetcher {
       });
 
       const limit = criteria.limit ?? DEFAULT_PAGE_LIMIT;
-      const url = this.buildPostingsUrl(0, limit);
-      const response = await fetchWithTimeout(url, {
-        headers: { Accept: 'application/json' },
-      });
-
-      if (!response.ok) {
-        span.setAttribute('error', true);
-        span.setAttribute('http.status', response.status);
-
-        if (response.status === 429) {
-          return {
-            ok: false,
-            error: ProviderErrorType.RATE_LIMITED,
-            message: `HTTP ${response.status}: Rate limited by Lever API`,
-            retryable: true,
-            meta: { durationMs: Date.now() - startTime },
-          };
-        }
-
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const jobs = this.parseResponse(data).filter((job) => matchesCriteria(job, criteria));
+      const payload = await fetchLeverPostingsPage(this.transportConfig(), 0, limit);
+      const jobs = this.parseJobsPayload(payload)
+        .map((raw) => this.toRawJob(raw))
+        .filter((job) => matchesCriteria(job, criteria));
 
       const durationMs = Date.now() - startTime;
       this.metrics.recordHistogram(PROVIDER_METRICS.FETCH_DURATION, durationMs, {
@@ -150,17 +101,27 @@ export class LeverFetcher implements Fetcher {
       span.setAttribute('error', true);
       span.end();
 
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      if (error instanceof AtsHttpError) {
+        if (error.status === 429) {
+          return {
+            ok: false,
+            error: ProviderErrorType.RATE_LIMITED,
+            message: `HTTP ${error.status}: Rate limited by Lever API`,
+            retryable: true,
+            meta: { durationMs },
+          };
+        }
 
-      if (message.startsWith('HTTP')) {
         return {
           ok: false,
           error: ProviderErrorType.NETWORK_ERROR,
-          message,
+          message: `HTTP ${error.status}: ${error.statusText}`,
           retryable: true,
           meta: { durationMs },
         };
       }
+
+      const message = error instanceof Error ? error.message : 'Unknown error';
 
       if (message.includes('not an array') || message.includes('JSON')) {
         return {
@@ -248,30 +209,8 @@ export class LeverFetcher implements Fetcher {
         limit: offsetCursor.limit,
       });
 
-      const url = this.buildPostingsUrl(offsetCursor.offset, offsetCursor.limit);
-      const response = await fetchWithTimeout(url, {
-        headers: { Accept: 'application/json' },
-      });
-
-      if (!response.ok) {
-        span.setAttribute('error', true);
-        span.setAttribute('http.status', response.status);
-
-        if (response.status === 429) {
-          return {
-            ok: false,
-            error: ProviderErrorType.RATE_LIMITED,
-            message: `HTTP ${response.status}: Rate limited by Lever API`,
-            retryable: true,
-            meta: { durationMs: Date.now() - startTime },
-          };
-        }
-
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const rawJobs = this.parseResponse(data);
+      const payload = await fetchLeverPostingsPage(this.transportConfig(), offsetCursor.offset, offsetCursor.limit);
+      const rawJobs = this.parseJobsPayload(payload).map((raw) => this.toRawJob(raw));
       const hasMore = rawJobs.length === offsetCursor.limit;
       const jobs = rawJobs.filter((job) => matchesCriteria(job, criteria));
 
@@ -313,17 +252,27 @@ export class LeverFetcher implements Fetcher {
       span.setAttribute('error', true);
       span.end();
 
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      if (error instanceof AtsHttpError) {
+        if (error.status === 429) {
+          return {
+            ok: false,
+            error: ProviderErrorType.RATE_LIMITED,
+            message: `HTTP ${error.status}: Rate limited by Lever API`,
+            retryable: true,
+            meta: { durationMs },
+          };
+        }
 
-      if (message.startsWith('HTTP')) {
         return {
           ok: false,
           error: ProviderErrorType.NETWORK_ERROR,
-          message,
+          message: `HTTP ${error.status}: ${error.statusText}`,
           retryable: true,
           meta: { durationMs },
         };
       }
+
+      const message = error instanceof Error ? error.message : 'Unknown error';
 
       if (message.includes('not an array') || message.includes('JSON')) {
         return {
@@ -358,13 +307,13 @@ export class LeverFetcher implements Fetcher {
         operation: 'ping',
       });
 
-      const response = await fetchWithTimeout(this.buildPostingsUrl(0, DEFAULT_PAGE_LIMIT), { method: 'HEAD' });
+      const ok = await pingLeverPostingsPage(this.transportConfig(), 0, DEFAULT_PAGE_LIMIT);
       const durationMs = Date.now() - startTime;
 
-      span.setAttribute('http.status', response.status);
+      span.setAttribute('http.status', ok ? 200 : 0);
       span.end();
 
-      return { ok: true, data: response.ok, meta: { durationMs } };
+      return { ok: true, data: ok, meta: { durationMs } };
     } catch (error) {
       const durationMs = Date.now() - startTime;
       span.setAttribute('error', true);
@@ -380,83 +329,53 @@ export class LeverFetcher implements Fetcher {
     }
   }
 
-  private buildPostingsUrl(skip: number, limit: number): string {
-    return `${this.baseUrl}/${this.company}?mode=json&skip=${skip}&limit=${limit}`;
+  private transportConfig(): { company: string; baseUrl: string } {
+    return { company: this.company, baseUrl: this.baseUrl };
   }
 
-  private parseResponse(data: unknown): RawJob[] {
-    if (!Array.isArray(data)) {
+  /** Mirrors the original `parseResponse`'s array check and per-posting validity filtering. */
+  private parseJobsPayload(payload: unknown): AtsRawJob[] {
+    if (!Array.isArray(payload)) {
       throw new Error('Response is not an array of Lever postings');
     }
 
-    const jobs: RawJob[] = [];
-    for (const item of data) {
-      const job = this.parseSingleJob(item);
-      if (job) jobs.push(job);
-    }
-    return jobs;
+    return payload.filter(isValidLeverPosting).map((item) => parseLeverJob(item));
   }
 
-  private parseSingleJob(item: unknown): RawJob | null {
-    if (!this.isValidJob(item)) {
-      return null;
-    }
-
-    const locationRaw = item.categories?.location ?? '';
-    const description = item.description ?? item.descriptionPlain ?? '';
+  private toRawJob(raw: AtsRawJob): RawJob {
+    const locationRaw = raw.location ?? '';
+    const rawPosting = raw.rawMetadata as LeverPostingPayload | undefined;
 
     return {
-      sourceId: item.id,
-      title: item.text,
-      description,
+      sourceId: raw.externalId,
+      title: raw.title,
+      description: raw.description,
       companyName: this.companyName,
       location: locationRaw,
-      salary: this.parseSalary(item.salaryRange),
-      technologies: item.tags ? [...item.tags] : [],
-      url: item.hostedUrl,
-      publishedAt: new Date(item.createdAt),
+      salary: raw.salary
+        ? { from: raw.salary.min, to: raw.salary.max, currency: raw.salary.currency ?? 'USD', period: 'yearly' }
+        : undefined,
+      technologies: rawPosting?.tags ? [...rawPosting.tags] : [],
+      url: raw.url,
+      publishedAt: raw.publishedAt ?? new Date(0),
       fetchedAt: new Date(),
-      remote: this.isRemote(item),
+      remote: this.isRemote(rawPosting, locationRaw),
       extensions: {
-        applyUrl: item.applyUrl,
-        department: item.categories?.department,
-        team: item.categories?.team,
-        commitment: item.categories?.commitment,
-        allLocations: item.categories?.allLocations ?? [],
-        workplaceType: item.workplaceType,
+        applyUrl: rawPosting?.applyUrl,
+        department: rawPosting?.categories?.department,
+        team: rawPosting?.categories?.team,
+        commitment: rawPosting?.categories?.commitment,
+        allLocations: rawPosting?.categories?.allLocations ?? [],
+        workplaceType: rawPosting?.workplaceType,
       },
     };
   }
 
-  private isRemote(item: LeverRawJob): boolean {
-    if (item.workplaceType === 'remote') {
+  private isRemote(rawPosting: LeverPostingPayload | undefined, locationRaw: string): boolean {
+    if (rawPosting?.workplaceType === 'remote') {
       return true;
     }
-    return /remote/i.test(item.categories?.location ?? '');
-  }
-
-  private isValidJob(item: unknown): item is LeverRawJob {
-    return (
-      typeof item === 'object' &&
-      item !== null &&
-      'id' in item &&
-      'text' in item &&
-      'hostedUrl' in item &&
-      'createdAt' in item
-    );
-  }
-
-  private parseSalary(range: LeverSalaryRange | undefined): RawJob['salary'] | undefined {
-    if (!range || (range.min == null && range.max == null)) {
-      return undefined;
-    }
-
-    return {
-      from: range.min,
-      to: range.max,
-      currency: range.currency ?? 'USD',
-      period: 'yearly',
-    };
+    return /remote/i.test(locationRaw);
   }
 }
 

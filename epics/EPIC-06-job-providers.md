@@ -2,7 +2,7 @@
 
 ## Status
 
-**Complete, far exceeds original scope.** The original plan called for 3 providers (HH, Habr, RemoteOK) plus a LinkedIn interface stub. `packages/providers/src/providers` now has 20+ live providers: HH, Habr Career, RemoteOK, LinkedIn, Greenhouse, Lever, Ashby, Workday, Teamtailor, Adzuna, Arbeitnow, Comeet, Himalayas, hnhiring, Jobicy, Nodesk, Recruitee, Remotive, SmartRecruiters, Superjob, WeWorkRemotely, WorkingNomads — see ADR-030 (multi-source vacancy support).
+**Complete, far exceeds original scope.** The original plan called for 3 providers (HH, Habr, RemoteOK) plus a LinkedIn interface stub. `packages/providers/src/providers` now has 20+ live providers: HH, Habr Career, LinkedIn, Greenhouse, Lever, Ashby, Workday, Teamtailor, Adzuna, Arbeitnow, Comeet, Himalayas, hnhiring, Jobicy, Nodesk, Recruitee, Remotive, SmartRecruiters, Superjob, WeWorkRemotely, WorkingNomads, Personio, Workable, DOU.ua, PyJobs, Django Jobs, a16z Speedrun (`speedrun`), France Travail (`france_travail`, conditionally enabled — needs `FRANCE_TRAVAIL_CLIENT_ID`/`SECRET`, unverified against a live response) — see ADR-030 (multi-source vacancy support) and `research/free-provider-expansion/EPIC.md` (Personio/Workable/DOU.ua/PyJobs/Django Jobs/Speedrun/France Travail expansion). RemoteOK was among them but was deprecated and removed — see ADR-034.
 
 ## Duration
 
@@ -63,7 +63,6 @@ Create pluggable job provider system with multiple adapters.
 - JobProvider interface
 - HH.ru adapter working
 - Habr Career adapter working
-- RemoteOK adapter working
 - LinkedIn interface defined (future)
 - Job normalization
 - Deduplication logic

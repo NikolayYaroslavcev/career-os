@@ -22,5 +22,5 @@ export interface CompanyWatchEventRepository {
   create(event: CompanyWatchEventData): Promise<CompanyWatchEventData>;
   update(event: CompanyWatchEventData): Promise<CompanyWatchEventData>;
   delete(id: string): Promise<void>;
-  countByCompanyWatch(companyWatchId: string, type?: string): Promise<number>;
+  countByCompanyWatch(companyWatchId: string, type?: string, since?: Date): Promise<number>;
 }

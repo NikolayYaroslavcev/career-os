@@ -1,4 +1,3 @@
-import { fetchWithTimeout } from '../../resilience/resilient-fetch.js';
 import type { Fetcher, FetchResult } from '../../interfaces/fetcher.js';
 import type { ProviderResult, ResultMeta } from '../../interfaces/result.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
@@ -9,7 +8,16 @@ import type { MetricsCollector } from '../../observability/metrics.js';
 import type { Tracer } from '../../observability/tracer.js';
 import { PROVIDER_METRICS } from '../../observability/metrics.js';
 import { ProviderErrorType } from '../../errors/provider-errors.js';
-import type { RecruiteeResponse } from './recruitee-types.js';
+import {
+  fetchRecruiteeOffersPage,
+  pingRecruiteeOffers,
+  parseRecruiteeJobsResponse,
+  type AtsRawJob,
+  type RecruiteeOfferPayload,
+} from '@careeros/ats-adapters';
+
+const PAGE_SIZE = 50;
+const MAX_PAGES = 10;
 
 export interface RecruiteeFetcherConfig {
   readonly company: string;
@@ -51,28 +59,23 @@ export class RecruiteeFetcher implements Fetcher {
 
       const allJobs: RawJob[] = [];
       let page = 1;
-      const perPage = 50;
-      const maxPages = 10;
 
-      while (page <= maxPages) {
-        const url = this.buildSearchUrl(criteria, page, perPage);
-        const response = await fetchWithTimeout(url);
-
-        if (!response.ok) {
-          span.setAttribute('error', true);
-          span.setAttribute('http.status', response.status);
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data: RecruiteeResponse = await response.json() as RecruiteeResponse;
-        const jobs = this.parseResponse(data);
+      while (page <= MAX_PAGES) {
+        const payload = await fetchRecruiteeOffersPage(
+          this.transportConfig(),
+          page,
+          PAGE_SIZE,
+          criteria.query,
+          criteria.remoteOnly,
+        );
+        const jobs = parseRecruiteeJobsResponse(payload).map((raw) => this.toRawJob(raw));
 
         if (jobs.length === 0) break;
 
         allJobs.push(...jobs);
         page++;
 
-        if (page > data.meta.total_pages) break;
+        if (page > payload.meta.total_pages) break;
       }
 
       const durationMs = Date.now() - startTime;
@@ -186,32 +189,25 @@ export class RecruiteeFetcher implements Fetcher {
 
     try {
       let page = 1;
-      let perPage = 50;
+      let perPage = PAGE_SIZE;
 
       if (cursor.type === 'page') {
         page = cursor.page;
         perPage = cursor.perPage;
       }
 
-      const url = this.buildSearchUrl(criteria, page, perPage);
-      const response = await fetchWithTimeout(url);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data: RecruiteeResponse = await response.json() as RecruiteeResponse;
-      const jobs = this.parseResponse(data);
+      const payload = await fetchRecruiteeOffersPage(this.transportConfig(), page, perPage, criteria.query);
+      const jobs = parseRecruiteeJobsResponse(payload).map((raw) => this.toRawJob(raw));
       const durationMs = Date.now() - startTime;
 
-      const hasMore = page < data.meta.total_pages;
+      const hasMore = page < payload.meta.total_pages;
 
       const cursorState: CursorState = {
         cursor: {
           type: 'page',
           page: page + 1,
           perPage,
-          totalPages: data.meta.total_pages,
+          totalPages: payload.meta.total_pages,
         },
         strategy: 'page',
         exhausted: !hasMore,
@@ -222,7 +218,7 @@ export class RecruiteeFetcher implements Fetcher {
         jobs,
         cursor: cursorState,
         hasMore,
-        meta: { totalResults: data.meta.total, page, totalPages: data.meta.total_pages },
+        meta: { totalResults: payload.meta.total, page, totalPages: payload.meta.total_pages },
       };
 
       span.setAttribute('jobs.fetched', jobs.length);
@@ -261,14 +257,13 @@ export class RecruiteeFetcher implements Fetcher {
         operation: 'ping',
       });
 
-      const url = `${this.baseUrl}/companies/${this.company}/offers?page=1&per_page=1`;
-      const response = await fetchWithTimeout(url);
+      const ok = await pingRecruiteeOffers(this.transportConfig());
       const durationMs = Date.now() - startTime;
 
-      span.setAttribute('http.status', response.status);
+      span.setAttribute('http.status', ok ? 200 : 0);
       span.end();
 
-      return { ok: true, data: response.ok, meta: { durationMs } };
+      return { ok: true, data: ok, meta: { durationMs } };
     } catch (error) {
       const durationMs = Date.now() - startTime;
       span.setAttribute('error', true);
@@ -284,80 +279,34 @@ export class RecruiteeFetcher implements Fetcher {
     }
   }
 
-  private buildSearchUrl(criteria: SearchCriteria, page: number, perPage: number): string {
-    const url = new URL(`${this.baseUrl}/companies/${this.company}/offers`);
-
-    url.searchParams.set('page', String(page));
-    url.searchParams.set('per_page', String(perPage));
-
-    if (criteria.query) {
-      url.searchParams.set('q', criteria.query);
-    }
-
-    if (criteria.remoteOnly) {
-      url.searchParams.set('remote', 'true');
-    }
-
-    return url.toString();
+  private transportConfig(): { company: string; baseUrl: string } {
+    return { company: this.company, baseUrl: this.baseUrl };
   }
 
-  private parseResponse(data: RecruiteeResponse): RawJob[] {
-    if (!data.offers || !Array.isArray(data.offers)) {
-      return [];
-    }
-
-    const jobs: RawJob[] = [];
-    const now = new Date();
-
-    for (const offer of data.offers) {
-      if (!this.isValidOffer(offer)) {
-        continue;
-      }
-
-      const rawJob: RawJob = {
-        sourceId: String(offer.id),
-        title: offer.title,
-        description: offer.description,
-        companyName: 'Unknown',
-        location: offer.location || 'Unknown',
-        salary: this.parseSalary(offer),
-        technologies: [],
-        url: offer.apply_url,
-        publishedAt: new Date(offer.created_at),
-        fetchedAt: now,
-        remote: offer.remote,
-        extensions: {
-          employmentType: offer.employment_type,
-          department: offer.department,
-          team: offer.team,
-          createdAt: offer.created_at,
-          updatedAt: offer.updated_at,
-        },
-      };
-
-      jobs.push(rawJob);
-    }
-
-    return jobs;
-  }
-
-  private isValidOffer(offer: Record<string, unknown>): boolean {
-    return (
-      typeof offer === 'object' &&
-      offer !== null &&
-      typeof offer['id'] === 'number' &&
-      typeof offer['title'] === 'string'
-    );
-  }
-
-  private parseSalary(offer: { salary_from?: number | null; salary_to?: number | null }): RawJob['salary'] | undefined {
-    if (!offer.salary_from && !offer.salary_to) return undefined;
+  private toRawJob(raw: AtsRawJob): RawJob {
+    const offer = raw.rawMetadata as RecruiteeOfferPayload;
 
     return {
-      from: offer.salary_from ?? undefined,
-      to: offer.salary_to ?? undefined,
-      currency: 'EUR',
-      period: 'yearly',
+      sourceId: raw.externalId,
+      title: raw.title,
+      description: raw.description,
+      companyName: 'Unknown',
+      location: raw.location ?? 'Unknown',
+      salary: raw.salary
+        ? { from: raw.salary.min, to: raw.salary.max, currency: raw.salary.currency ?? 'EUR', period: 'yearly' }
+        : undefined,
+      technologies: [],
+      url: raw.url,
+      publishedAt: raw.publishedAt ?? new Date(offer.created_at),
+      fetchedAt: new Date(),
+      remote: offer.remote,
+      extensions: {
+        employmentType: offer.employment_type,
+        department: offer.department,
+        team: offer.team,
+        createdAt: offer.created_at,
+        updatedAt: offer.updated_at,
+      },
     };
   }
 }

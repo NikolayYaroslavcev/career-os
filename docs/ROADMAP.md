@@ -316,7 +316,7 @@ Created all documentation, ADRs, and planning artifacts. No code.
 6. Mailpit for email (EPIC-02) — done
 7. Career CRM (EPIC-07) - **Core differentiator** — done
 8. Follow-up Engine (EPIC-08) - **Core differentiator** — done (no dedicated dashboard view yet)
-9. Job providers: HH, Habr, RemoteOK (EPIC-06) — done, plus 17+ more providers
+9. Job providers: HH, Habr Career (EPIC-06) — done, plus 17+ more providers
 10. AI matching (EPIC-05) — done, plus multi-provider resilience layer
 11. Telegram bot (EPIC-10) — done
 12. Resume parsing (EPIC-11) — partial, PDF only

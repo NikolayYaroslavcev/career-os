@@ -1,0 +1,61 @@
+{
+  "offset": 0,
+  "limit": 100,
+  "totalFound": 3,
+  "content": [
+    {
+      "id": "7f8a9b2c-0001",
+      "name": "Senior Backend Engineer",
+      "ref": "posting-0001",
+      "department": { "id": "d1", "name": "Engineering" },
+      "occupationArea": { "id": "o1", "name": "Software Engineering" },
+      "industry": null,
+      "city": "Berlin",
+      "country": "Germany",
+      "location": { "city": "Berlin", "region": "Berlin", "country": "Germany", "latitude": 52.52, "longitude": 13.405 },
+      "experienceLevel": { "id": "e1", "name": "Senior" },
+      "employmentType": { "id": "t1", "name": "Full-time" },
+      "salary": { "min": 70000, "max": 95000, "currency": "EUR", "unit": "Annual" },
+      "description": "<p>We are looking for a Senior Backend Engineer to join our platform team using Go and Kubernetes.</p>",
+      "releasedDate": "2026-07-10T12:00:00.000Z",
+      "applyUrl": "https://jobs.smartrecruiters.com/acme/7f8a9b2c-0001",
+      "language": "en"
+    },
+    {
+      "id": "7f8a9b2c-0002",
+      "name": "Product Designer",
+      "ref": "posting-0002",
+      "department": { "id": "d2", "name": "Design" },
+      "occupationArea": { "id": "o2", "name": "Design" },
+      "industry": null,
+      "city": "",
+      "country": "",
+      "location": null,
+      "experienceLevel": { "id": "e2", "name": "Mid" },
+      "employmentType": { "id": "t1", "name": "Full-time" },
+      "salary": null,
+      "description": "<p>Join our design team to shape the product experience.</p>",
+      "releasedDate": "2026-07-09T09:30:00.000Z",
+      "applyUrl": "https://jobs.smartrecruiters.com/acme/7f8a9b2c-0002",
+      "language": "en"
+    },
+    {
+      "id": "7f8a9b2c-0003",
+      "name": "Junior Frontend Developer",
+      "ref": "posting-0003",
+      "department": { "id": "d1", "name": "Engineering" },
+      "occupationArea": { "id": "o1", "name": "Software Engineering" },
+      "industry": null,
+      "city": "Warsaw",
+      "country": "Poland",
+      "location": { "city": "Warsaw", "region": "Mazovia", "country": "Poland", "latitude": 52.23, "longitude": 21.01 },
+      "experienceLevel": { "id": "e3", "name": "Junior" },
+      "employmentType": { "id": "t1", "name": "Full-time" },
+      "salary": { "min": 0, "max": 0, "currency": "PLN", "unit": "Annual" },
+      "description": "<p>Entry-level frontend role, great for a junior developer working with React and TypeScript.</p>",
+      "releasedDate": "2026-07-08T15:45:00.000Z",
+      "applyUrl": "https://jobs.smartrecruiters.com/acme/7f8a9b2c-0003",
+      "language": "en"
+    }
+  ]
+}

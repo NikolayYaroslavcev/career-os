@@ -21,6 +21,7 @@ export {
   type TelegramConnectionId,
   type TelegramLinkingTokenId,
   type VacancySourceId,
+  type SocialMessageId,
   createUserId,
   createWorkspaceId,
   createResumeId,
@@ -38,4 +39,5 @@ export {
   createTelegramConnectionId,
   createTelegramLinkingTokenId,
   createVacancySourceId,
+  createSocialMessageId,
 } from './identifier.js';

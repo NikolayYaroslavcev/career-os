@@ -17,6 +17,7 @@ export { PrismaFeedbackRepository } from './infrastructure/prisma-feedback-repos
 export { PrismaSearchProfileRepository } from './infrastructure/prisma-search-profile-repository.js';
 export { PrismaRefreshTokenRepository } from './infrastructure/prisma-refresh-token-repository.js';
 export { PrismaMatchResultRepository } from './infrastructure/prisma-match-result-repository.js';
+export { PrismaTailoredResumeRepository } from './infrastructure/prisma-tailored-resume-repository.js';
 export { PrismaNotificationHistoryRepository } from './infrastructure/prisma-notification-history-repository.js';
 export { PrismaTelegramConnectionRepository } from './infrastructure/prisma-telegram-connection-repository.js';
 export { PrismaTelegramLinkingTokenRepository } from './infrastructure/prisma-telegram-linking-token-repository.js';
@@ -24,8 +25,11 @@ export { PrismaStructuredResumeRepository } from './infrastructure/prisma-struct
 export { PrismaCompanyWatchRepository } from './infrastructure/prisma-company-watch-repository.js';
 export { PrismaCompanyWatchEventRepository } from './infrastructure/prisma-company-watch-event-repository.js';
 export { PrismaCompanyWatchSyncLogRepository } from './infrastructure/prisma-company-watch-sync-log-repository.js';
-export { PrismaAIJobRepository, type AIJobRepository } from './infrastructure/prisma-ai-job-repository.js';
+export { PrismaCompanyCandidateRepository } from './infrastructure/prisma-company-candidate-repository.js';
+export { PrismaDiscoverySourceRepository } from './infrastructure/prisma-discovery-source-repository.js';
+export { PrismaAIJobRepository, type AIJobRepository, DuplicateAIJobError } from './infrastructure/prisma-ai-job-repository.js';
 export { PrismaAICacheRepository, type AICacheRepository } from './infrastructure/prisma-ai-cache-repository.js';
+export { PrismaAICache } from './infrastructure/prisma-ai-cache.js';
 export { PrismaAIUsageRepository, type AIUsageRepository } from './infrastructure/prisma-ai-usage-repository.js';
 export { PrismaAIProviderConfigRepository, type AIProviderConfigRepository } from './infrastructure/prisma-ai-provider-config-repository.js';
 export { PrismaAIBudgetRepository, type AIBudgetRepository } from './infrastructure/prisma-ai-budget-repository.js';
@@ -36,9 +40,13 @@ export { PrismaProviderConfigRepository } from './infrastructure/prisma-provider
 export type { ProviderConfigData, CreateProviderConfigInput, UpdateProviderConfigInput } from './infrastructure/prisma-provider-config-repository.js';
 export { PrismaTelegramChannelRepository } from './infrastructure/prisma-telegram-channel-repository.js';
 export type { TelegramChannelData, CreateTelegramChannelInput, UpdateTelegramChannelInput } from './infrastructure/prisma-telegram-channel-repository.js';
+export { PrismaTelegramChannelStatsRepository } from './infrastructure/prisma-telegram-channel-stats-repository.js';
+export type { TelegramChannelStatsData, UpsertTelegramChannelStatsInput } from './infrastructure/prisma-telegram-channel-stats-repository.js';
 export { PrismaQualityDataRepository } from './infrastructure/prisma-quality-data-repository.js';
 export type { QualityDataRepository, QualityDataRecord } from './infrastructure/prisma-quality-data-repository.js';
 export { PrismaUserVacancyInteractionRepository } from './infrastructure/prisma-user-vacancy-interaction-repository.js';
+export { PrismaSocialMessageRepository } from './infrastructure/prisma-social-message-repository.js';
+export { PrismaMessageExtractionRepository } from './infrastructure/prisma-message-extraction-repository.js';
 export type { AIJobData, CreateAIJobInput, UpdateAIJobInput } from './mappers/ai-job-mapper.js';
 export type { AICacheData, CreateAICacheInput } from './mappers/ai-cache-mapper.js';
 export type { AIUsageData, CreateAIUsageInput } from './mappers/ai-usage-mapper.js';

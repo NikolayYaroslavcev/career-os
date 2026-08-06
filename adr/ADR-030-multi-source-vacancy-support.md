@@ -175,6 +175,12 @@ provides different values, a VacancyMergeAudit record is created:
 - Slightly more complex sync pipeline
 - Merge audit table grows over time (mitigated by TTL/archival)
 
+## Update (2026-07-30)
+
+RemoteOK, cited above as the example job-board source, was deprecated and
+removed — see ADR-034. The multi-source model itself is unaffected: it was
+designed to tolerate any single source disappearing.
+
 ## Testing
 
 23 new tests covering:

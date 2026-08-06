@@ -1,5 +1,6 @@
 import type { Mapper, MappedJob } from '../../interfaces/mapper.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
+import { decodeHtmlEntities } from '../../shared/html-entities.js';
 
 export class AdzunaMapper implements Mapper {
   readonly providerId = 'adzuna';
@@ -31,26 +32,19 @@ export class AdzunaMapper implements Mapper {
   }
 
   private normalizeTitle(title: string): string {
-    return title
+    return decodeHtmlEntities(title)
       .replace(/\s+/g, ' ')
       .trim();
   }
 
   private normalizeDescription(description: string): string {
-    return description
-      .replace(/<[^>]*>/g, '')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
+    return decodeHtmlEntities(description.replace(/<[^>]*>/g, ''))
       .replace(/\s+/g, ' ')
       .trim();
   }
 
   private normalizeCompanyName(companyName: string): string {
-    return companyName
+    return decodeHtmlEntities(companyName)
       .replace(/\s+/g, ' ')
       .trim();
   }

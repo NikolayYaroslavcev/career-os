@@ -112,7 +112,7 @@ Tracks which provider discovered a vacancy. One Vacancy can have many sources.
 VacancySource
 ├── id: UUID (primary key)
 ├── providerType: ProviderType (ATS | JOB_BOARD | COMMUNITY | MANUAL)
-├── providerId: string (e.g. "greenhouse", "remote_ok")
+├── providerId: string (e.g. "greenhouse", "hh")
 ├── externalId: string (ID in the source system)
 ├── sourceUrl: string? (link to listing)
 ├── applyUrl: string? (direct application link)

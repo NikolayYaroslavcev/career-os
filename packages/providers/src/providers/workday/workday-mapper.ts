@@ -1,5 +1,6 @@
 import type { Mapper, MappedJob } from '../../interfaces/mapper.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
+import { decodeHtmlEntities } from '../../shared/html-entities.js';
 
 export class WorkdayMapper implements Mapper {
   readonly providerId = 'workday';
@@ -7,9 +8,9 @@ export class WorkdayMapper implements Mapper {
   map(raw: RawJob): MappedJob {
     return {
       sourceId: raw.sourceId,
-      title: raw.title.trim(),
-      description: raw.description,
-      companyName: raw.companyName.trim(),
+      title: decodeHtmlEntities(raw.title).trim(),
+      description: decodeHtmlEntities(raw.description.replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim(),
+      companyName: decodeHtmlEntities(raw.companyName).trim(),
       companySourceId: raw.companySourceId,
       location: this.splitLocation(raw.location),
       salary: raw.salary
