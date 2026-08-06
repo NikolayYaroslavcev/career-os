@@ -40,7 +40,10 @@ const mockAuthProvider = vi.hoisted(() => ({
   generateAccessToken: vi.fn().mockReturnValue('mock-access-token'),
   verifyAccessToken: vi.fn().mockImplementation((token: string) => {
     if (token === 'valid-token') {
-      return { sub: 'user-id', email: 'test@example.com', iat: 0, exp: 999999999 };
+      return { sub: 'user-id', email: 'test@example.com', role: 'job_seeker', iat: 0, exp: 999999999 };
+    }
+    if (token === 'admin-token') {
+      return { sub: 'admin-id', email: 'admin@example.com', role: 'admin', iat: 0, exp: 999999999 };
     }
     return null;
   }),
@@ -79,7 +82,9 @@ vi.mock('../container.js', () => ({
       searchProfile: {},
       matchResult: {},
       notificationHistory: {},
-      telegramConnection: {},
+      telegramConnection: {
+        findByUserId: vi.fn().mockResolvedValue(null),
+      },
       telegramLinkingToken: {},
       workspace: {},
       refreshToken: {},
@@ -96,6 +101,30 @@ vi.mock('../container.js', () => ({
       execute: vi.fn().mockResolvedValue({ jobId: '', status: 'failed', cached: false }),
       getJobStatus: vi.fn().mockResolvedValue(null),
       getUserJobs: vi.fn().mockResolvedValue([]),
+      getMode: vi.fn().mockResolvedValue('auto'),
+      setMode: vi.fn().mockResolvedValue(undefined),
+      getCacheStats: vi.fn().mockResolvedValue({ hits: 0, misses: 0 }),
+      invalidateCache: vi.fn().mockResolvedValue(0),
+    },
+    companyDiscoveryDiagnostics: {
+      getSnapshot: vi.fn().mockResolvedValue({ pending: 0 }),
+    },
+    providerDiagnostics: {
+      getSnapshot: vi.fn().mockReturnValue([]),
+    },
+    queueDiagnostics: {
+      getJobCounts: vi.fn().mockResolvedValue({ waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 }),
+    },
+    searchRunTraces: {
+      getAll: vi.fn().mockReturnValue([]),
+      getById: vi.fn().mockReturnValue(undefined),
+    },
+    aiProviderHealthMonitor: {
+      getStatus: vi.fn().mockReturnValue(undefined),
+    },
+    aiMetrics: {
+      getCounter: vi.fn().mockReturnValue(0),
+      getHistogram: vi.fn().mockReturnValue([]),
     },
     applicationService: {},
     services: {
@@ -124,6 +153,10 @@ vi.mock('../container.js', () => ({
         cancel: vi.fn(),
       },
       recruiter: {},
+      providerManagement: {
+        getAllProviders: vi.fn().mockResolvedValue([]),
+        getAllTelegramChannels: vi.fn().mockResolvedValue([]),
+      },
       intelligenceWorkflow: {},
       morningDigest: {},
       digestDelivery: {},
@@ -202,6 +235,8 @@ vi.mock('@careeros/shared', async (importOriginal) => {
       ARGON2_PARALLELISM: 4,
       AI_ENABLED: true,
       AI_PROVIDER: 'openai',
+      AI_FALLBACK_PROVIDERS: '',
+      DIAGNOSTICS_ENABLED: true,
     }),
     checkRedisHealth: vi.fn().mockResolvedValue(true),
     getRedis: vi.fn().mockReturnValue({
@@ -1436,6 +1471,184 @@ describe('API Routes', () => {
       });
 
       expect(response.statusCode).toBe(401);
+    });
+  });
+
+  describe('Provider Settings endpoints (admin-only, EPIC-21 Phase 3)', () => {
+    it('GET /api/v1/providers/providers should require authentication', async () => {
+      const response = await app.inject({ method: 'GET', url: '/api/v1/providers/providers' });
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('GET /api/v1/providers/providers should reject a non-admin authenticated user with 403', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/providers/providers',
+        headers: { authorization: 'Bearer valid-token' },
+      });
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('GET /api/v1/providers/providers should accept an admin token', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/providers/providers',
+        headers: { authorization: 'Bearer admin-token' },
+      });
+      expect(response.statusCode).toBe(200);
+    });
+  });
+
+  describe('Telegram Channel Management endpoints (admin-only, EPIC-21 Phase 3)', () => {
+    it('GET /api/v1/providers/providers/telegram/channels should require authentication', async () => {
+      const response = await app.inject({ method: 'GET', url: '/api/v1/providers/providers/telegram/channels' });
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('GET /api/v1/providers/providers/telegram/channels should reject a non-admin authenticated user with 403', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/providers/providers/telegram/channels',
+        headers: { authorization: 'Bearer valid-token' },
+      });
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('GET /api/v1/providers/providers/telegram/channels should accept an admin token', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/providers/providers/telegram/channels',
+        headers: { authorization: 'Bearer admin-token' },
+      });
+      expect(response.statusCode).toBe(200);
+    });
+  });
+
+  describe('Diagnostics endpoints (admin-only, EPIC-21 Phase 3)', () => {
+    it('GET /api/v1/diagnostics/providers should require authentication', async () => {
+      const response = await app.inject({ method: 'GET', url: '/api/v1/diagnostics/providers' });
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('GET /api/v1/diagnostics/providers should reject a non-admin authenticated user with 403', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/diagnostics/providers',
+        headers: { authorization: 'Bearer valid-token' },
+      });
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('GET /api/v1/diagnostics/providers should accept an admin token', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/diagnostics/providers',
+        headers: { authorization: 'Bearer admin-token' },
+      });
+      expect(response.statusCode).toBe(200);
+    });
+  });
+
+  describe('AI global config endpoints (admin-only, EPIC-21 Phase 3)', () => {
+    it('GET /api/v1/ai/mode should require authentication', async () => {
+      const response = await app.inject({ method: 'GET', url: '/api/v1/ai/mode' });
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('GET /api/v1/ai/mode should reject a non-admin authenticated user with 403', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/ai/mode',
+        headers: { authorization: 'Bearer valid-token' },
+      });
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('GET /api/v1/ai/mode should accept an admin token', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/ai/mode',
+        headers: { authorization: 'Bearer admin-token' },
+      });
+      expect(response.statusCode).toBe(200);
+    });
+
+    it('PUT /api/v1/ai/mode should reject a non-admin authenticated user with 403', async () => {
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/ai/mode',
+        headers: { authorization: 'Bearer valid-token' },
+        payload: { mode: 'manual' },
+      });
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('DELETE /api/v1/ai/cache should reject a non-admin authenticated user with 403', async () => {
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/api/v1/ai/cache',
+        headers: { authorization: 'Bearer valid-token' },
+      });
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('DELETE /api/v1/ai/cache should accept an admin token', async () => {
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/api/v1/ai/cache',
+        headers: { authorization: 'Bearer admin-token' },
+      });
+      expect(response.statusCode).toBe(200);
+    });
+  });
+
+  describe('Company Discovery diagnostics endpoint (admin-only, EPIC-21 Phase 3)', () => {
+    it('GET /api/v1/company-discovery/diagnostics should require authentication', async () => {
+      const response = await app.inject({ method: 'GET', url: '/api/v1/company-discovery/diagnostics' });
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('GET /api/v1/company-discovery/diagnostics should reject a non-admin authenticated user with 403', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/company-discovery/diagnostics',
+        headers: { authorization: 'Bearer valid-token' },
+      });
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('GET /api/v1/company-discovery/diagnostics should accept an admin token', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/company-discovery/diagnostics',
+        headers: { authorization: 'Bearer admin-token' },
+      });
+      expect(response.statusCode).toBe(200);
+    });
+  });
+
+  describe('Non-admin-gated routes stay reachable for a regular authenticated user (regression guard)', () => {
+    it('GET /api/v1/telegram/connection (self-service Telegram linking) is not admin-gated', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/telegram/connection',
+        headers: { authorization: 'Bearer valid-token' },
+      });
+      expect(response.statusCode).toBe(200);
+    });
+
+    it('GET /api/v1/ai/budget (per-user AI budget) is not admin-gated', async () => {
+      const container = (app as unknown as { container: { repositories: Record<string, unknown> } }).container;
+      container.repositories.aiBudget = {
+        findByUserAndPeriod: async (): Promise<null> => null,
+      };
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/ai/budget',
+        headers: { authorization: 'Bearer valid-token' },
+      });
+      expect(response.statusCode).toBe(200);
     });
   });
 });

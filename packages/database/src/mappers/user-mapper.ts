@@ -8,6 +8,7 @@ interface PrismaUser {
   email: string;
   firstName: string | null;
   lastName: string | null;
+  role: string;
   createdAt: Date;
   updatedAt: Date;
   workspaces?: Array<{ workspaceId: string }>;
@@ -21,7 +22,7 @@ export class UserMapper {
       email,
       firstName: record.firstName ?? '',
       lastName: record.lastName ?? '',
-      role: 'JOB_SEEKER' as UserRole,
+      role: record.role.toLowerCase() as UserRole,
       workspaceIds: (record.workspaces ?? []).map((w) =>
         createWorkspaceId(w.workspaceId)
       ),
@@ -31,12 +32,13 @@ export class UserMapper {
     });
   }
 
-  static toPersistence(user: { id: string; email: { value: string }; firstName: string; lastName: string; createdAt: Date; updatedAt: Date }): {
+  static toPersistence(user: { id: string; email: { value: string }; firstName: string; lastName: string; role: UserRole; createdAt: Date; updatedAt: Date }): {
     id: string;
     email: string;
     passwordHash: string;
     firstName: string;
     lastName: string;
+    role: 'JOB_SEEKER' | 'RECRUITER' | 'ADMIN';
     createdAt: Date;
     updatedAt: Date;
   } {
@@ -46,6 +48,7 @@ export class UserMapper {
       passwordHash: '',
       firstName: user.firstName,
       lastName: user.lastName,
+      role: user.role.toUpperCase() as 'JOB_SEEKER' | 'RECRUITER' | 'ADMIN',
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

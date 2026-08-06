@@ -78,7 +78,7 @@ describe('authMiddleware', () => {
   });
 
   it('strips exactly the "Bearer " prefix, forwarding the raw token to the provider', async () => {
-    verifyAccessToken.mockReturnValue({ sub: 'user-1', email: 'jane@example.com', iat: 0, exp: 999999999 });
+    verifyAccessToken.mockReturnValue({ sub: 'user-1', email: 'jane@example.com', role: 'job_seeker', iat: 0, exp: 999999999 });
     const request = createRequest({ authorization: 'Bearer abc.def.ghi' }, { verifyAccessToken });
 
     await authMiddleware(request, reply);
@@ -86,15 +86,25 @@ describe('authMiddleware', () => {
     expect(verifyAccessToken).toHaveBeenCalledWith('abc.def.ghi');
   });
 
-  it('attaches { id, email } from the verified payload to request.user on success', async () => {
-    verifyAccessToken.mockReturnValue({ sub: 'user-42', email: 'jane@example.com', iat: 0, exp: 999999999 });
+  it('attaches { id, email, role } from the verified payload to request.user on success', async () => {
+    verifyAccessToken.mockReturnValue({ sub: 'user-42', email: 'jane@example.com', role: 'job_seeker', iat: 0, exp: 999999999 });
     const request = createRequest({ authorization: 'Bearer valid.jwt.token' }, { verifyAccessToken });
 
     await authMiddleware(request, reply);
 
-    expect((request as unknown as { user: { id: string; email: string } }).user).toEqual({
+    expect((request as unknown as { user: { id: string; email: string; role: string } }).user).toEqual({
       id: 'user-42',
       email: 'jane@example.com',
+      role: 'job_seeker',
     });
+  });
+
+  it('attaches an admin role from the verified payload to request.user', async () => {
+    verifyAccessToken.mockReturnValue({ sub: 'admin-1', email: 'admin@example.com', role: 'admin', iat: 0, exp: 999999999 });
+    const request = createRequest({ authorization: 'Bearer admin.jwt.token' }, { verifyAccessToken });
+
+    await authMiddleware(request, reply);
+
+    expect((request as unknown as { user: { role: string } }).user.role).toBe('admin');
   });
 });

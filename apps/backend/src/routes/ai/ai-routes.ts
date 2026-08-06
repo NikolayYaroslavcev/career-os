@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createUserId, createVacancyId, createSearchProfileId, createResumeId } from '@careeros/career';
 import { UnauthorizedError, NotFoundError } from '../../middleware/error-handler.js';
+import { requireAdmin } from '../../middleware/require-role.js';
 
 function requireUserId(request: { user?: { id: string } }): string {
   if (!request.user) {
@@ -492,9 +493,11 @@ export async function aiRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // ===== Mode =====
+  // Global, deployment-wide AI orchestrator settings (not scoped to a user
+  // or workspace) — admin-only (EPIC-21 Phase 3).
 
   // Get AI mode
-  fastify.get('/mode', async (request, reply) => {
+  fastify.get('/mode', { preHandler: requireAdmin }, async (request, reply) => {
     const orchestrator = fastify.container.aiOrchestrator;
     const mode = await orchestrator.getMode();
 
@@ -502,7 +505,7 @@ export async function aiRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // Set AI mode
-  fastify.put('/mode', async (request, reply) => {
+  fastify.put('/mode', { preHandler: requireAdmin }, async (request, reply) => {
     const body = updateModeSchema.parse(request.body);
 
     const orchestrator = fastify.container.aiOrchestrator;
@@ -512,9 +515,10 @@ export async function aiRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // ===== Cache =====
+  // Also global/deployment-wide — admin-only (EPIC-21 Phase 3).
 
   // Get cache stats
-  fastify.get('/cache/stats', async (request, reply) => {
+  fastify.get('/cache/stats', { preHandler: requireAdmin }, async (request, reply) => {
     const orchestrator = fastify.container.aiOrchestrator;
     const stats = await orchestrator.getCacheStats();
 
@@ -522,7 +526,7 @@ export async function aiRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // Clear cache
-  fastify.delete('/cache', async (request, reply) => {
+  fastify.delete('/cache', { preHandler: requireAdmin }, async (request, reply) => {
     const query = z.object({ feature: z.string().optional() }).parse(request.query);
 
     const orchestrator = fastify.container.aiOrchestrator;

@@ -1,9 +1,11 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import type { UserRole } from '@careeros/career';
 import { UnauthorizedError } from './error-handler.js';
 
 interface JwtPayload {
   sub: string;
   email: string;
+  role: string;
   iat: number;
   exp: number;
 }
@@ -36,8 +38,9 @@ export async function authMiddleware(
     throw new UnauthorizedError('Invalid or expired token');
   }
 
-  (request as unknown as { user: { id: string; email: string } }).user = {
+  (request as unknown as { user: { id: string; email: string; role: UserRole } }).user = {
     id: payload.sub,
     email: payload.email,
+    role: payload.role as UserRole,
   };
 }

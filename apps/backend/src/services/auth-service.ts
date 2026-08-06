@@ -1,7 +1,7 @@
 import { prisma } from '@careeros/database';
 import type { PrismaClient } from '@careeros/database';
 import type { IAuthProvider, AuthResult } from '@careeros/auth';
-import type { UserRepository } from '@careeros/career';
+import type { UserRepository, UserRole } from '@careeros/career';
 import { User, Email, createUserId, createWorkspaceId } from '@careeros/career';
 import type { WorkspaceRepository } from '@careeros/career';
 import { Workspace } from '@careeros/career';
@@ -69,6 +69,7 @@ export class AuthService {
     const accessToken = this.authProvider.generateAccessToken({
       sub: userId,
       email: email.value,
+      role: user.role,
     });
     const refreshTokenData = await this.authProvider.generateRefreshToken(userId);
 
@@ -118,6 +119,7 @@ export class AuthService {
       user: {
         id: userId,
         email: email.value,
+        role: user.role,
       },
     };
   }
@@ -143,6 +145,7 @@ export class AuthService {
     const accessToken = this.authProvider.generateAccessToken({
       sub: user.id,
       email: email.value,
+      role: user.role,
     });
 
     const refreshTokenData = await this.authProvider.generateRefreshToken(user.id);
@@ -160,6 +163,7 @@ export class AuthService {
       user: {
         id: user.id,
         email: email.value,
+        role: user.role,
       },
     };
   }
@@ -185,6 +189,7 @@ export class AuthService {
     const accessToken = this.authProvider.generateAccessToken({
       sub: user.id,
       email: user.email.value,
+      role: user.role,
     });
 
     const newRefreshTokenData = await this.authProvider.generateRefreshToken(user.id);
@@ -215,7 +220,7 @@ export class AuthService {
     await this.refreshTokenRepository.deleteAllForUser(userId);
   }
 
-  async getUserById(userId: string): Promise<{ id: string; email: string; firstName: string; lastName: string }> {
+  async getUserById(userId: string): Promise<{ id: string; email: string; firstName: string; lastName: string; role: UserRole }> {
     const user = await this.userRepository.findById(createUserId(userId));
     if (!user) {
       throw new NotFoundError('User');
@@ -226,13 +231,14 @@ export class AuthService {
       email: user.email.value,
       firstName: user.firstName,
       lastName: user.lastName,
+      role: user.role,
     };
   }
 
   async updateProfile(
     userId: string,
     input: { firstName?: string; lastName?: string }
-  ): Promise<{ id: string; email: string; firstName: string; lastName: string }> {
+  ): Promise<{ id: string; email: string; firstName: string; lastName: string; role: UserRole }> {
     const user = await this.userRepository.findById(createUserId(userId));
     if (!user) {
       throw new NotFoundError('User');
@@ -246,6 +252,7 @@ export class AuthService {
       email: user.email.value,
       firstName: user.firstName,
       lastName: user.lastName,
+      role: user.role,
     };
   }
 

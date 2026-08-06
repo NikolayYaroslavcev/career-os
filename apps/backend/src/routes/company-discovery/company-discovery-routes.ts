@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { CompanyCandidateStatus } from '@careeros/company-watch';
 import { createUserId } from '@careeros/career';
 import { UnauthorizedError, NotFoundError, ValidationError } from '../../middleware/error-handler.js';
+import { requireAdmin } from '../../middleware/require-role.js';
 
 const CANDIDATE_STATUSES: readonly CompanyCandidateStatus[] = [
   'DISCOVERED',
@@ -51,7 +52,7 @@ export async function companyDiscoveryRoutes(fastify: FastifyInstance): Promise<
     return reply.send(candidates);
   });
 
-  fastify.get('/diagnostics', async (request, reply) => {
+  fastify.get('/diagnostics', { preHandler: requireAdmin }, async (request, reply) => {
     requireUserId(request);
     const snapshot = await fastify.container.companyDiscoveryDiagnostics.getSnapshot();
     return reply.send(snapshot);

@@ -313,6 +313,20 @@ This applies to all of: analyze-vacancy, tailor-resume, cover-letter, and interv
 
 ---
 
+## Access Control (RBAC)
+
+**Status:** Implemented (EPIC-21 Phases 3-4) — replaces an earlier email-allowlist scheme, no coexistence period
+
+**Backend:** `packages/career/src/domain/enums/user-role.ts` (`UserRole`: `job_seeker`/`recruiter`/`admin`), `role` column on `User` (`packages/database/prisma/schema.prisma`, default `JOB_SEEKER`) added via migration `20260806150000_add_user_role`, `apps/backend/src/middleware/require-role.ts` (`requireRole(...roles)` / `requireAdmin` — 401 if unauthenticated, 403 if wrong role), `apps/backend/src/scripts/promote-user-to-admin.ts` (one-off CLI script; no self-service role-assignment API)
+
+**Frontend:** `apps/dashboard/src/lib/access/nav-visibility.ts` (`isAdmin`, `canViewNavItem`), `apps/dashboard/src/lib/access/admin-guard.tsx` (`AdminGuard` — renders an "Access restricted" view instead of children for non-admins), applied via `apps/dashboard/src/app/app/diagnostics/layout.tsx` and `apps/dashboard/src/app/app/settings/providers/layout.tsx`; nav items hidden for non-admins via `visibleFor: 'admin'` in `apps/dashboard/src/components/layout/app-shell.tsx`
+
+**Notes:** `role` is embedded in the JWT access token (`TokenPayload.role`, `packages/auth/src/types.ts`) at login/register/refresh, so `request.user.role` is available to route guards without a DB lookup per request. Admin-gated on the backend: `/ai/mode` (GET/PUT), `/ai/cache/stats`, `/ai/cache` (DELETE), `/company-discovery/diagnostics`, all of `diagnostics-routes.ts` (admin check runs after the `DIAGNOSTICS_ENABLED` flag check, so the flag still wins — off means 404 for everyone, admin included), and all of `provider-management-routes.ts` (provider settings + Telegram channel management) — these all configure global/deployment-wide state, not anything workspace-scoped. Admin-gated on the frontend (route-level, not just nav-hidden): `/app/diagnostics`, `/app/settings/providers`. `GET/PUT /users/me` now round-trips `role` so the dashboard's `AuthUser`/`UserProfile` types can read it.
+
+**Limitations:** `useAuthStore`'s `loadUser()` reads the cached user object from `localStorage` on page refresh rather than re-fetching `GET /users/me` — if an admin's role is revoked server-side, the dashboard won't reflect that until their next login (pre-existing store behavior, not introduced by RBAC). No self-service UI or API to change a user's role; `promote-user-to-admin.ts` is the only path, run directly against the database.
+
+---
+
 ## Company Features
 
 ### Company watch

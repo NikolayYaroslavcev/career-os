@@ -24,7 +24,7 @@ export class AuthProviderImpl implements AuthProvider {
     return argon2.verify(hash, password);
   }
 
-  generateAccessToken(payload: { sub: string; email: string }): string {
+  generateAccessToken(payload: { sub: string; email: string; role: string }): string {
     const expiresIn = this.parseExpiresIn(this.config.jwtAccessExpiresIn);
     const expirationTime = Math.floor(expiresIn.getTime() / 1000);
     const currentTime = Math.floor(Date.now() / 1000);

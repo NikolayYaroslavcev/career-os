@@ -67,7 +67,7 @@ describe('Vacancy Routes', () => {
     app.decorate('container', container);
     // Simulate auth middleware by adding user to request
     app.addHook('onRequest', async (request: FastifyRequest) => {
-      request.user = { id: 'user-1', email: 'user-1@example.com' };
+      request.user = { id: 'user-1', email: 'user-1@example.com', role: 'job_seeker' };
     });
     await app.register(vacancyRoutes, { prefix: '/api/v1/vacancies' });
     await app.ready();

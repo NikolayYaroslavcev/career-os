@@ -10,6 +10,7 @@ export interface AuthConfig {
 export interface TokenPayload {
   sub: string;
   email: string;
+  role: string;
   iat: number;
   exp: number;
 }
@@ -28,13 +29,14 @@ export interface AuthResult {
   user: {
     id: string;
     email: string;
+    role: string;
   };
 }
 
 export interface AuthProvider {
   hashPassword(password: string): Promise<string>;
   verifyPassword(hash: string, password: string): Promise<boolean>;
-  generateAccessToken(payload: { sub: string; email: string }): string;
+  generateAccessToken(payload: { sub: string; email: string; role: string }): string;
   verifyAccessToken(token: string): TokenPayload | null;
   generateRefreshToken(userId: string): Promise<RefreshTokenData>;
   verifyRefreshToken(token: string): Promise<RefreshTokenData | null>;

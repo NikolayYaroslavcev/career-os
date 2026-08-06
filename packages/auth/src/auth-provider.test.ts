@@ -57,7 +57,7 @@ describe('AuthProviderImpl', () => {
 
   describe('generateAccessToken', () => {
     it('should generate access token', () => {
-      const payload = { sub: 'user-id', email: 'test@example.com' };
+      const payload = { sub: 'user-id', email: 'test@example.com', role: 'job_seeker' };
       const token = authProvider.generateAccessToken(payload);
 
       expect(token).toBeDefined();
@@ -68,13 +68,14 @@ describe('AuthProviderImpl', () => {
 
   describe('verifyAccessToken', () => {
     it('should verify valid token', () => {
-      const payload = { sub: 'user-id', email: 'test@example.com' };
+      const payload = { sub: 'user-id', email: 'test@example.com', role: 'job_seeker' };
       const token = authProvider.generateAccessToken(payload);
 
       const verified = authProvider.verifyAccessToken(token);
       expect(verified).toBeDefined();
       expect(verified?.sub).toBe(payload.sub);
       expect(verified?.email).toBe(payload.email);
+      expect(verified?.role).toBe(payload.role);
     });
 
     it('should reject invalid token', () => {
@@ -88,7 +89,7 @@ describe('AuthProviderImpl', () => {
         jwtSecret: 'different-secret-key-at-least-32-characters',
       });
 
-      const payload = { sub: 'user-id', email: 'test@example.com' };
+      const payload = { sub: 'user-id', email: 'test@example.com', role: 'job_seeker' };
       const token = authProvider.generateAccessToken(payload);
 
       const verified = wrongProvider.verifyAccessToken(token);
@@ -99,7 +100,7 @@ describe('AuthProviderImpl', () => {
       // Crafted the way an attacker would: valid-looking payload, header
       // claims alg "none" so no signature is required/checked by a naive verifier.
       const forged = jwt.sign(
-        { sub: 'attacker-id', email: 'attacker@example.com' },
+        { sub: 'attacker-id', email: 'attacker@example.com', role: 'admin' },
         '',
         { algorithm: 'none' }
       );
@@ -109,7 +110,7 @@ describe('AuthProviderImpl', () => {
     });
 
     it('should generate tokens with the HS256 algorithm pinned in the header', () => {
-      const token = authProvider.generateAccessToken({ sub: 'user-id', email: 'test@example.com' });
+      const token = authProvider.generateAccessToken({ sub: 'user-id', email: 'test@example.com', role: 'job_seeker' });
       const decodedHeader = jwt.decode(token, { complete: true })?.header;
 
       expect(decodedHeader?.alg).toBe('HS256');
@@ -121,7 +122,7 @@ describe('AuthProviderImpl', () => {
       // own expiry check, not just signature verification.
       const now = Math.floor(Date.now() / 1000);
       const expired = jwt.sign(
-        { sub: 'user-id', email: 'test@example.com', iat: now - 3600, exp: now - 1800 },
+        { sub: 'user-id', email: 'test@example.com', role: 'job_seeker', iat: now - 3600, exp: now - 1800 },
         config.jwtSecret,
         { algorithm: 'HS256' }
       );
@@ -132,7 +133,7 @@ describe('AuthProviderImpl', () => {
 
     it('should accept a token issued with a short TTL until it actually expires', () => {
       const shortLivedProvider = new AuthProviderImpl({ ...config, jwtAccessExpiresIn: '1s' });
-      const token = shortLivedProvider.generateAccessToken({ sub: 'user-id', email: 'test@example.com' });
+      const token = shortLivedProvider.generateAccessToken({ sub: 'user-id', email: 'test@example.com', role: 'job_seeker' });
 
       expect(shortLivedProvider.verifyAccessToken(token)?.sub).toBe('user-id');
 

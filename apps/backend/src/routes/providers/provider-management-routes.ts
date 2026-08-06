@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { createUserId } from '@careeros/career';
 import { UnauthorizedError, NotFoundError, ValidationError } from '../../middleware/error-handler.js';
+import { requireAdmin } from '../../middleware/require-role.js';
 
 function requireUserId(request: { user?: { id: string } }): string {
   if (!request.user) throw new UnauthorizedError('User not authenticated');
@@ -15,7 +16,15 @@ async function getWorkspaceId(fastify: FastifyInstance, userId: string): Promise
   return workspaceId;
 }
 
+/**
+ * Provider Settings + Telegram Channel Management (EPIC-21 Phase 3). Both
+ * configure global, system-wide infrastructure (which search providers are
+ * enabled, which Telegram channels are scraped) rather than anything scoped
+ * to the caller's own workspace, so the whole plugin is admin-only.
+ */
 export async function providerManagementRoutes(fastify: FastifyInstance): Promise<void> {
+  fastify.addHook('onRequest', requireAdmin);
+
   fastify.get('/providers', async (_request, reply) => {
     const userId = requireUserId(_request);
     const workspaceId = await getWorkspaceId(fastify, userId);

@@ -28,7 +28,7 @@ describe('Workspace Routes', () => {
     app.decorate('container', container);
     app.setErrorHandler(errorHandler);
     app.addHook('onRequest', async (request: FastifyRequest) => {
-      request.user = { id: 'user-1', email: 'user-1@example.com' };
+      request.user = { id: 'user-1', email: 'user-1@example.com', role: 'job_seeker' };
     });
     await app.register(workspaceRoutes, { prefix: '/api/v1/workspaces' });
     await app.ready();

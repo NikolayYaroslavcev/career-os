@@ -161,7 +161,7 @@ describe('Application Routes - AI Integration', () => {
     app.decorate('container', container);
     app.setErrorHandler(errorHandler);
     app.addHook('onRequest', async (request: FastifyRequest) => {
-      request.user = { id: 'user-1', email: 'user-1@example.com' };
+      request.user = { id: 'user-1', email: 'user-1@example.com', role: 'job_seeker' };
     });
     await app.register(applicationRoutes, { prefix: '/api/v1/applications' });
     await app.ready();

@@ -23,7 +23,7 @@ describe('Match Explanation Routes - authorization', () => {
     app = Fastify();
     app.decorate('container', container);
     app.addHook('onRequest', async (request: FastifyRequest) => {
-      request.user = { id: 'user-1', email: 'user-1@example.com' };
+      request.user = { id: 'user-1', email: 'user-1@example.com', role: 'job_seeker' };
     });
     await app.register(matchExplanationRoutes, { prefix: '/api/v1/match-results' });
     await app.ready();

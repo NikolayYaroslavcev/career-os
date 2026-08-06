@@ -1,12 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import Fastify from 'fastify';
+import { UserRole } from '@careeros/career';
 import { errorHandler } from '../../../middleware/error-handler.js';
 import { diagnosticsRoutes } from '../diagnostics-routes.js';
 
-function buildTestApp(diagnosticsEnabled: boolean): ReturnType<typeof Fastify> {
+/**
+ * `user` mirrors what authMiddleware attaches in production; this isolated
+ * test never registers authMiddleware itself, so it fakes the same shape
+ * via an onRequest hook that runs before diagnosticsRoutes' own hooks
+ * (parent-registered hooks run first in Fastify's encapsulation model).
+ * Omit `user` to exercise the unauthenticated (401) path.
+ */
+function buildTestApp(diagnosticsEnabled: boolean, user?: { id: string; email: string; role: UserRole }): ReturnType<typeof Fastify> {
   const app = Fastify();
   app.setErrorHandler(errorHandler);
   app.decorate('config', { DIAGNOSTICS_ENABLED: diagnosticsEnabled, AI_PROVIDER: 'openai', AI_FALLBACK_PROVIDERS: 'anthropic' } as never);
+  if (user) {
+    app.addHook('onRequest', async (request) => {
+      (request as unknown as { user: typeof user }).user = user;
+    });
+  }
   app.decorate('container', {
     providerDiagnostics: {
       getSnapshot: () => [{ providerId: 'hh', registered: true, enabled: true, configured: true, authenticated: 'not_required', health: 'unknown' }],
@@ -30,6 +43,9 @@ function buildTestApp(diagnosticsEnabled: boolean): ReturnType<typeof Fastify> {
   return app;
 }
 
+const ADMIN_USER = { id: 'admin-1', email: 'admin@example.com', role: UserRole.ADMIN };
+const JOB_SEEKER_USER = { id: 'user-1', email: 'user@example.com', role: UserRole.JOB_SEEKER };
+
 describe('diagnosticsRoutes (EPIC-17 Part 4)', () => {
   it('404s every endpoint when DIAGNOSTICS_ENABLED is false — never exposes pipeline internals by accident', async () => {
     const app = buildTestApp(false);
@@ -44,7 +60,7 @@ describe('diagnosticsRoutes (EPIC-17 Part 4)', () => {
   });
 
   it('returns provider diagnostics when enabled', async () => {
-    const app = buildTestApp(true);
+    const app = buildTestApp(true, ADMIN_USER);
     await app.ready();
 
     const response = await app.inject({ method: 'GET', url: '/diagnostics/providers' });
@@ -57,7 +73,7 @@ describe('diagnosticsRoutes (EPIC-17 Part 4)', () => {
   });
 
   it('returns queue job counts when enabled', async () => {
-    const app = buildTestApp(true);
+    const app = buildTestApp(true, ADMIN_USER);
     await app.ready();
 
     const response = await app.inject({ method: 'GET', url: '/diagnostics/queue' });
@@ -68,7 +84,7 @@ describe('diagnosticsRoutes (EPIC-17 Part 4)', () => {
   });
 
   it('returns the list of recent search run traces', async () => {
-    const app = buildTestApp(true);
+    const app = buildTestApp(true, ADMIN_USER);
     await app.ready();
 
     const response = await app.inject({ method: 'GET', url: '/diagnostics/runs' });
@@ -79,7 +95,7 @@ describe('diagnosticsRoutes (EPIC-17 Part 4)', () => {
   });
 
   it('returns a single search run trace by id, or 404 if not found', async () => {
-    const app = buildTestApp(true);
+    const app = buildTestApp(true, ADMIN_USER);
     await app.ready();
 
     const found = await app.inject({ method: 'GET', url: '/diagnostics/runs/run-1' });
@@ -93,7 +109,7 @@ describe('diagnosticsRoutes (EPIC-17 Part 4)', () => {
   });
 
   it('returns AI provider health and metrics for the primary and fallback chain', async () => {
-    const app = buildTestApp(true);
+    const app = buildTestApp(true, ADMIN_USER);
     await app.ready();
 
     const response = await app.inject({ method: 'GET', url: '/diagnostics/ai' });
@@ -106,6 +122,40 @@ describe('diagnosticsRoutes (EPIC-17 Part 4)', () => {
     ]);
     expect(body.metrics.cacheReused).toBe(5);
     expect(body.metrics.avgBatchDurationMs).toBe(20);
+
+    await app.close();
+  });
+});
+
+describe('diagnosticsRoutes admin gate (EPIC-21 Phase 3)', () => {
+  it('rejects an unauthenticated request with 401 even when DIAGNOSTICS_ENABLED is true', async () => {
+    const app = buildTestApp(true);
+    await app.ready();
+
+    const response = await app.inject({ method: 'GET', url: '/diagnostics/providers' });
+    expect(response.statusCode).toBe(401);
+
+    await app.close();
+  });
+
+  it('rejects a non-admin authenticated user with 403', async () => {
+    const app = buildTestApp(true, JOB_SEEKER_USER);
+    await app.ready();
+
+    for (const url of ['/diagnostics/providers', '/diagnostics/queue', '/diagnostics/runs', '/diagnostics/ai']) {
+      const response = await app.inject({ method: 'GET', url });
+      expect(response.statusCode).toBe(403);
+    }
+
+    await app.close();
+  });
+
+  it('allows an admin user through to a 200', async () => {
+    const app = buildTestApp(true, ADMIN_USER);
+    await app.ready();
+
+    const response = await app.inject({ method: 'GET', url: '/diagnostics/providers' });
+    expect(response.statusCode).toBe(200);
 
     await app.close();
   });

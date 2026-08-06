@@ -1,13 +1,16 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { NotFoundError } from '../../middleware/error-handler.js';
+import { requireAdmin } from '../../middleware/require-role.js';
 
 /**
  * Developer diagnostics: provider status, queue depth, per-search-run
  * pipeline traces (with a per-vacancy exclusion reason), and AI provider
  * health/metrics. Gated behind existing JWT auth (registered inside the
- * protected route group) *and* DIAGNOSTICS_ENABLED, so a misconfigured
- * production deploy never exposes pipeline internals by accident — every
- * handler 404s when the flag is off, same as if the route didn't exist.
+ * protected route group), DIAGNOSTICS_ENABLED, and (EPIC-21 Phase 3)
+ * UserRole.ADMIN. The feature-flag hook runs first and stays first, so a
+ * misconfigured production deploy still 404s for everyone (admin included)
+ * when the flag is off, same as if the route didn't exist; the admin check
+ * only ever narrows who sees it once the flag is on.
  *
  * Deliberately reuses existing observability infrastructure rather than
  * introducing a parallel one: ProviderDiagnosticsService wraps the existing
@@ -23,6 +26,8 @@ export async function diagnosticsRoutes(fastify: FastifyInstance): Promise<void>
       return reply.status(404).send({ error: 'Not Found' });
     }
   });
+
+  fastify.addHook('onRequest', requireAdmin);
 
   fastify.get('/providers', async (_request, reply) => {
     return reply.send({ providers: fastify.container.providerDiagnostics.getSnapshot() });

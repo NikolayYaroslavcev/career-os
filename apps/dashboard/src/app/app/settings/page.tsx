@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
 import { useAuthStore } from '@/stores/auth-store';
 import { apiClient } from '@/api/client';
+import type { UserRole } from '@/api/auth';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +17,7 @@ interface UserProfile {
   email: string;
   firstName: string;
   lastName: string;
+  role: UserRole;
 }
 
 export default function SettingsPage(): React.JSX.Element {

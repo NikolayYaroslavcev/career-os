@@ -9,11 +9,14 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { LogOut, Briefcase, Search, Link as LinkIcon, FileText, KanbanSquare, Activity, Globe, Building2, Sparkles, LineChart, GitCompare, ListChecks, Wand2, Settings, Star, BellRing } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
+import { canViewNavItem, type NavVisibility } from '@/lib/access/nav-visibility';
 
 interface NavItem {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** Defaults to 'public' (visible to any authenticated user) when omitted. */
+  visibleFor?: NavVisibility;
 }
 
 interface NavSection {
@@ -78,17 +81,24 @@ export function AppShell({ children }: { children: React.ReactNode }): React.JSX
       items: [
         { href: '/app/telegram', label: t('nav.telegram'), icon: LinkIcon },
         { href: '/app/settings', label: t('settingsPage.title'), icon: Settings },
-        { href: '/app/settings/providers', label: t('nav.providerSettings'), icon: Settings },
+        { href: '/app/settings/providers', label: t('nav.providerSettings'), icon: Settings, visibleFor: 'admin' },
       ],
     },
     {
       key: 'system',
       label: t('shell.navSections.system'),
       items: [
-        { href: '/app/diagnostics', label: t('nav.diagnostics'), icon: Activity },
+        { href: '/app/diagnostics', label: t('nav.diagnostics'), icon: Activity, visibleFor: 'admin' },
       ],
     },
   ];
+
+  const visibleNavSections = navSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => canViewNavItem(item.visibleFor, user)),
+    }))
+    .filter((section) => section.items.length > 0);
 
   const handleLogout = async (): Promise<void> => {
     await logout();
@@ -107,7 +117,7 @@ export function AppShell({ children }: { children: React.ReactNode }): React.JSX
         </div>
 
         <nav className="flex-1 space-y-4 overflow-y-auto p-4">
-          {navSections.map((section) => (
+          {visibleNavSections.map((section) => (
             <div key={section.key}>
               <p className="mb-1 px-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                 {section.label}

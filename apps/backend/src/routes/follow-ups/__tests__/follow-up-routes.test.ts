@@ -40,7 +40,7 @@ describe('Follow-up Routes', () => {
     app = Fastify();
     app.decorate('container', container);
     app.addHook('onRequest', async (request: FastifyRequest) => {
-      request.user = { id: 'user-1', email: 'user-1@example.com' };
+      request.user = { id: 'user-1', email: 'user-1@example.com', role: 'job_seeker' };
     });
     await app.register(followUpRoutes, { prefix: '/api/v1/follow-ups' });
     await app.ready();

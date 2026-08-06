@@ -65,6 +65,13 @@
     "switchToLight": "Switch to light theme",
     "switchToDark": "Switch to dark theme"
   },
+  "access": {
+    "forbidden": {
+      "title": "Access restricted",
+      "description": "You don't have permission to view this page.",
+      "backToDashboard": "Back to dashboard"
+    }
+  },
   "auth": {
     "login": {
       "title": "Sign in to CareerOS",

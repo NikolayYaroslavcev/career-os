@@ -1,5 +1,6 @@
 import type { Container } from '../container.js';
 import type { Config } from '@careeros/shared';
+import type { UserRole } from '@careeros/career';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -11,6 +12,7 @@ declare module 'fastify' {
     user?: {
       id: string;
       email: string;
+      role: UserRole;
     };
   }
 }
