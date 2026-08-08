@@ -101,6 +101,51 @@ describe('createTelegramDiscoveryFilter', () => {
     expect(await filter(makeVacancy())).toBeUndefined();
   });
 
+  it.each(['t.me', 'telegram.me', 'telegram.org', 'teletype.in', 'telegra.ph'])(
+    'returns undefined when the only link is on the denylisted domain %s',
+    async (host) => {
+      const { socialMessageRepository, messageExtractionRepository } = fakeRepos(
+        makeExtraction({ deterministicConfidence: 85, links: [`https://${host}/acmecorp_hr`] })
+      );
+      const filter = createTelegramDiscoveryFilter(socialMessageRepository, messageExtractionRepository);
+
+      expect(await filter(makeVacancy())).toBeUndefined();
+    }
+  );
+
+  it('does not allow a denylist bypass via a lookalike domain (evil-telegram.me)', async () => {
+    const { socialMessageRepository, messageExtractionRepository } = fakeRepos(
+      makeExtraction({ deterministicConfidence: 85, links: ['https://evil-telegram.me/careers'] })
+    );
+    const filter = createTelegramDiscoveryFilter(socialMessageRepository, messageExtractionRepository);
+
+    const result = await filter(makeVacancy());
+    expect(result?.companyUrl).toBe('https://evil-telegram.me/careers');
+  });
+
+  it('picks the ordinary company URL when a denylisted Telegram link is also present', async () => {
+    const { socialMessageRepository, messageExtractionRepository } = fakeRepos(
+      makeExtraction({
+        deterministicConfidence: 85,
+        links: ['https://t.me/acmecorp_hr', 'https://acmecorp.example/careers'],
+      })
+    );
+    const filter = createTelegramDiscoveryFilter(socialMessageRepository, messageExtractionRepository);
+
+    const result = await filter(makeVacancy());
+    expect(result?.companyUrl).toBe('https://acmecorp.example/careers');
+  });
+
+  it('accepts a homepage/root company URL', async () => {
+    const { socialMessageRepository, messageExtractionRepository } = fakeRepos(
+      makeExtraction({ deterministicConfidence: 85, links: ['https://acmecorp.example/'] })
+    );
+    const filter = createTelegramDiscoveryFilter(socialMessageRepository, messageExtractionRepository);
+
+    const result = await filter(makeVacancy());
+    expect(result?.companyUrl).toBe('https://acmecorp.example/');
+  });
+
   it('returns undefined for a malformed sourceId with no channel:messageId separator', async () => {
     const { socialMessageRepository, messageExtractionRepository } = fakeRepos(makeExtraction({ deterministicConfidence: 85 }));
     const filter = createTelegramDiscoveryFilter(socialMessageRepository, messageExtractionRepository);

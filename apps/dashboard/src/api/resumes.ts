@@ -1,4 +1,4 @@
-import { API_BASE, getAccessToken } from './client';
+import { apiClient, ApiError } from './client';
 import { translate } from '@/lib/i18n/translate';
 
 export interface Resume {
@@ -34,65 +34,46 @@ export interface SearchProfileSuggestion {
   reasoning: string;
 }
 
+// Dashboard home renders several independent widgets that each want the
+// resume list on mount (see onboarding-checklist.tsx, resume-status-widget.tsx)
+// — without this, they'd fire one identical request apiece instead of sharing
+// the single one in flight.
+let listResumesInFlight: Promise<ListResumesResponse> | null = null;
+
 export async function listResumes(): Promise<ListResumesResponse> {
-  const token = getAccessToken();
-  const response = await fetch(`${API_BASE}/api/v1/resumes`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  if (listResumesInFlight) return listResumesInFlight;
+
+  listResumesInFlight = apiClient<ListResumesResponse>('/api/v1/resumes').finally(() => {
+    listResumesInFlight = null;
   });
-  if (!response.ok) {
-    const fallbackMessage = translate('resumes.loadFailed');
-    const body = await response.json().catch(() => ({ message: fallbackMessage }));
-    throw new Error(body.error?.message ?? body.message ?? fallbackMessage);
-  }
-  return response.json();
+  return listResumesInFlight;
 }
 
 export async function uploadResume(file: File): Promise<UploadResumeResponse> {
-  const token = getAccessToken();
   const formData = new FormData();
   formData.append('file', file);
 
-  const response = await fetch(`${API_BASE}/api/v1/resumes`, {
+  return apiClient<UploadResumeResponse>('/api/v1/resumes', {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
   });
-
-  if (!response.ok) {
-    const fallbackMessage = translate('resumes.uploadFailed');
-    const body = await response.json().catch(() => ({ message: fallbackMessage }));
-    throw new Error(body.error?.message ?? body.message ?? fallbackMessage);
-  }
-  return response.json();
 }
 
 export async function getSearchProfileSuggestion(resumeId: string): Promise<SearchProfileSuggestion> {
-  const token = getAccessToken();
-  const response = await fetch(`${API_BASE}/api/v1/resumes/${resumeId}/search-profile-suggestion`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-
-  if (!response.ok) {
-    const fallbackMessage = translate('resumes.suggestionFailed');
-    const body = await response.json().catch(() => ({ message: fallbackMessage }));
-    if (body.error?.code === 'SERVICE_UNAVAILABLE') {
+  try {
+    return await apiClient<SearchProfileSuggestion>(`/api/v1/resumes/${resumeId}/search-profile-suggestion`, {
+      method: 'POST',
+    });
+  } catch (err) {
+    // The backend returns this specific code when no AI provider is configured/reachable —
+    // worth a friendlier, translated message since it's a known/expected state, not a bug.
+    if (err instanceof ApiError && (err.data as { error?: { code?: string } })?.error?.code === 'SERVICE_UNAVAILABLE') {
       throw new Error(translate('resumes.suggestionUnavailable'));
     }
-    throw new Error(body.error?.message ?? body.message ?? fallbackMessage);
+    throw err;
   }
-  return response.json();
 }
 
 export async function deleteResume(id: string): Promise<void> {
-  const token = getAccessToken();
-  const response = await fetch(`${API_BASE}/api/v1/resumes/${id}`, {
-    method: 'DELETE',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!response.ok) {
-    const fallbackMessage = translate('resumes.deleteFailed');
-    const body = await response.json().catch(() => ({ message: fallbackMessage }));
-    throw new Error(body.error?.message ?? body.message ?? fallbackMessage);
-  }
+  await apiClient<void>(`/api/v1/resumes/${id}`, { method: 'DELETE' });
 }

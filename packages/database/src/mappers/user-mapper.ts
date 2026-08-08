@@ -32,10 +32,15 @@ export class UserMapper {
     });
   }
 
+  // Deliberately excludes passwordHash: the domain User entity never carries
+  // it (registration writes the real hash directly via a separate Prisma
+  // call — see AuthService.register), so this mapper has no real value to
+  // persist here. It previously defaulted to '', and since save() below used
+  // to upsert this payload, every profile update silently wiped the user's
+  // real password hash, permanently locking them out.
   static toPersistence(user: { id: string; email: { value: string }; firstName: string; lastName: string; role: UserRole; createdAt: Date; updatedAt: Date }): {
     id: string;
     email: string;
-    passwordHash: string;
     firstName: string;
     lastName: string;
     role: 'JOB_SEEKER' | 'RECRUITER' | 'ADMIN';
@@ -45,7 +50,6 @@ export class UserMapper {
     return {
       id: user.id,
       email: user.email.value,
-      passwordHash: '',
       firstName: user.firstName,
       lastName: user.lastName,
       role: user.role.toUpperCase() as 'JOB_SEEKER' | 'RECRUITER' | 'ADMIN',

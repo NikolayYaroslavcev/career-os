@@ -12,6 +12,7 @@ import { Sparkles, Copy, Check, RefreshCw } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
 import { listResumes, type Resume } from '@/api/resumes';
 import { listSearchProfiles } from '@/api/search-profiles';
+import { useTimedFlag } from '@/hooks/use-timed-flag';
 import {
   analyzeVacancy,
   tailorResume,
@@ -318,7 +319,7 @@ function TailorResumeTab({ vacancyId, applicationId }: { vacancyId: string; appl
   const [jobId, setJobId] = useState<string | null>(null);
   const [initialResponse, setInitialResponse] = useState<TailoringStatusResult | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, markCopied] = useTimedFlag();
   const [error, setError] = useState<string | null>(null);
 
   const isPollingEnabled = Boolean(jobId) && initialResponse?.status !== 'cached';
@@ -357,8 +358,7 @@ function TailorResumeTab({ vacancyId, applicationId }: { vacancyId: string; appl
   const handleCopy = async (): Promise<void> => {
     if (!result?.tailoredResumeText) return;
     await navigator.clipboard.writeText(result.tailoredResumeText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    markCopied();
   };
 
   if (isLoading) return <Loading />;
@@ -485,7 +485,7 @@ function CoverLetterTab({ vacancyId, applicationId }: { vacancyId: string; appli
   const [result, setResult] = useState<CoverLetterResultData | null>(null);
   const [editedText, setEditedText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, markCopied] = useTimedFlag();
   const [error, setError] = useState<string | null>(null);
 
   const handleGenerate = async (): Promise<void> => {
@@ -508,8 +508,7 @@ function CoverLetterTab({ vacancyId, applicationId }: { vacancyId: string; appli
   const handleCopy = async (): Promise<void> => {
     if (!editedText) return;
     await navigator.clipboard.writeText(editedText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    markCopied();
   };
 
   if (isLoading) return <Loading />;

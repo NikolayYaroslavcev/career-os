@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import { Button } from '@/components/ui/button';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { LogOut, Briefcase, Search, Link as LinkIcon, FileText, KanbanSquare, Activity, Globe, Building2, Sparkles, LineChart, GitCompare, ListChecks, Wand2, Settings, Star, BellRing } from 'lucide-react';
+import { LogOut, Briefcase, Search, Link as LinkIcon, FileText, KanbanSquare, Activity, Globe, Building2, Sparkles, LineChart, GitCompare, ListChecks, Wand2, Settings, Star, BellRing, Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
 import { canViewNavItem, type NavVisibility } from '@/lib/access/nav-visibility';
@@ -30,6 +31,12 @@ export function AppShell({ children }: { children: React.ReactNode }): React.JSX
   const pathname = usePathname();
   const { user, logout } = useAuthStore();
   const { t } = useTranslation();
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+
+  // Close the mobile drawer whenever the route changes (link click, back/forward, etc.)
+  useEffect(() => {
+    setIsMobileNavOpen(false);
+  }, [pathname]);
 
   const navSections: NavSection[] = [
     {
@@ -63,7 +70,7 @@ export function AppShell({ children }: { children: React.ReactNode }): React.JSX
       items: [
         { href: '/app/resume-intelligence', label: t('nav.resumeIntelligence'), icon: GitCompare },
         { href: '/app/career-intelligence', label: t('nav.careerIntelligence'), icon: LineChart },
-        { href: '/app/ai', label: t('nav.ai'), icon: Sparkles },
+        { href: '/app/ai', label: t('nav.ai'), icon: Sparkles, visibleFor: 'admin' },
       ],
     },
     {
@@ -72,7 +79,7 @@ export function AppShell({ children }: { children: React.ReactNode }): React.JSX
       items: [
         { href: '/app/resumes', label: t('nav.resumes'), icon: FileText },
         { href: '/app/search-profiles', label: t('nav.searchProfiles'), icon: Search },
-        { href: '/app/sync', label: t('nav.jobSources'), icon: Globe },
+        { href: '/app/sync', label: t('nav.jobSources'), icon: Globe, visibleFor: 'admin' },
       ],
     },
     {
@@ -111,9 +118,32 @@ export function AppShell({ children }: { children: React.ReactNode }): React.JSX
 
   return (
     <div className="flex h-screen bg-background">
-      <aside className="flex w-64 flex-col border-r border-border bg-card">
-        <div className="flex h-16 shrink-0 items-center border-b border-border px-6">
+      {isMobileNavOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/30 md:hidden"
+          onClick={() => setIsMobileNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-border bg-card transition-transform duration-200 ease-in-out',
+          'md:relative md:z-auto md:translate-x-0',
+          isMobileNavOpen ? 'translate-x-0' : '-translate-x-full'
+        )}
+      >
+        <div className="flex h-16 shrink-0 items-center justify-between border-b border-border px-6">
           <h1 className="text-xl font-bold text-foreground">{t('common.appName')}</h1>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden"
+            onClick={() => setIsMobileNavOpen(false)}
+            aria-label={t('shell.closeNav')}
+          >
+            <X className="h-5 w-5" />
+          </Button>
         </div>
 
         <nav className="flex-1 space-y-4 overflow-y-auto p-4">
@@ -172,7 +202,16 @@ export function AppShell({ children }: { children: React.ReactNode }): React.JSX
 
       <main className="flex-1 overflow-auto">
         <div className="h-16 border-b border-border bg-card px-6">
-          <div className="flex h-full items-center">
+          <div className="flex h-full items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="-ml-2 md:hidden"
+              onClick={() => setIsMobileNavOpen(true)}
+              aria-label={t('shell.openNav')}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
             <h2 className="text-lg font-semibold text-foreground">
               {currentLabel}
             </h2>

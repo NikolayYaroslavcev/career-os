@@ -47,8 +47,19 @@ export interface CreateSearchProfileInput {
 
 export type UpdateSearchProfileInput = Partial<CreateSearchProfileInput>;
 
+// Dashboard home renders several independent widgets that each want the
+// search profile list on mount (see onboarding-checklist.tsx, search-profile-widget.tsx)
+// — without this, they'd fire one identical request apiece instead of sharing
+// the single one in flight.
+let listSearchProfilesInFlight: Promise<{ searchProfiles: SearchProfile[] }> | null = null;
+
 export async function listSearchProfiles(): Promise<{ searchProfiles: SearchProfile[] }> {
-  return apiClient('/api/v1/search-profiles');
+  if (listSearchProfilesInFlight) return listSearchProfilesInFlight;
+
+  listSearchProfilesInFlight = apiClient<{ searchProfiles: SearchProfile[] }>('/api/v1/search-profiles').finally(() => {
+    listSearchProfilesInFlight = null;
+  });
+  return listSearchProfilesInFlight;
 }
 
 export async function getSearchProfile(id: string): Promise<SearchProfile> {

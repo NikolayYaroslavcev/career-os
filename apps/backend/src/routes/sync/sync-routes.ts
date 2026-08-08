@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { createUserId } from '@careeros/career';
 import { UnauthorizedError, NotFoundError, TooManyRequestsError } from '../../middleware/error-handler.js';
+import { requireAdmin } from '../../middleware/require-role.js';
 
 function requireUserId(request: { user?: { id: string } }): string {
   if (!request.user) throw new UnauthorizedError('User not authenticated');
@@ -23,6 +24,11 @@ async function checkSyncRateLimit(fastify: FastifyInstance, userId: string): Pro
 }
 
 export async function syncRoutes(fastify: FastifyInstance): Promise<void> {
+  // Job-source syncing is an admin-only feature (mirrors the dashboard's
+  // AdminGuard on /app/sync) — without this hook any authenticated user
+  // could trigger provider syncs directly against the API.
+  fastify.addHook('onRequest', requireAdmin);
+
   // Get sync status for all providers, scoped to the caller's workspace
   fastify.get('/status', async (request, reply) => {
     const userId = requireUserId(request);

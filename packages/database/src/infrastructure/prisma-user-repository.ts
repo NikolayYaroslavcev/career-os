@@ -32,13 +32,18 @@ export class PrismaUserRepository implements UserRepository {
     return UserMapper.toDomain(record);
   }
 
+  // Updates an existing user's mutable profile fields. Never creates a user —
+  // registration writes the initial row (with its real passwordHash) directly
+  // via its own transaction (see AuthService.register), and toPersistence()
+  // has no passwordHash to offer, so an upsert's create-branch would either
+  // violate the column's constraints or (as it used to) silently persist a
+  // blank password hash for whoever ends up here first.
   async save(user: User): Promise<void> {
     const data = UserMapper.toPersistence(user);
 
-    await prisma.user.upsert({
+    await prisma.user.update({
       where: { id: user.id },
-      create: data,
-      update: data,
+      data,
     });
   }
 

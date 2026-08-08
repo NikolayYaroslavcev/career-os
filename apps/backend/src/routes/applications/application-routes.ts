@@ -253,10 +253,7 @@ function mapCrmError(error: unknown): never {
 
 export async function applicationRoutes(fastify: FastifyInstance): Promise<void> {
   async function pendingFollowUpApplicationIds(userId: string): Promise<Set<string>> {
-    const followUps = await fastify.container.services.followUp.findByUserId(userId);
-    return new Set(
-      followUps.filter((f) => f.status === 'pending' || f.status === 'snoozed').map((f) => f.applicationId)
-    );
+    return fastify.container.services.followUp.findPendingApplicationIds(userId);
   }
 
   fastify.get('/', async (request, reply) => {

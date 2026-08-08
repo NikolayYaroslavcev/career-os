@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import Fastify from 'fastify';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { UserRole } from '@careeros/career';
 import { syncRoutes } from '../sync/sync-routes.js';
 import { errorHandler } from '../../middleware/error-handler.js';
 
@@ -54,9 +55,12 @@ describe('Sync Routes', () => {
     app = Fastify();
     app.setErrorHandler(errorHandler);
     app.decorate('container', container);
-    // Simulate auth middleware by adding user to request
+    // Simulate auth middleware by adding user to request. Sync is admin-only
+    // (see sync-routes.ts's requireAdmin hook), so these tests - which exercise
+    // workspace resolution, rate limiting, etc. rather than the role gate itself -
+    // run as an admin; the gate itself is covered separately below.
     app.addHook('onRequest', async (request: FastifyRequest) => {
-      request.user = { id: 'user-1', email: 'user-1@example.com' };
+      request.user = { id: 'user-1', email: 'user-1@example.com', role: UserRole.ADMIN };
     });
     await app.register(syncRoutes, { prefix: '/api/v1/sync' });
     await app.ready();
@@ -179,5 +183,21 @@ describe('Sync Routes', () => {
 
     const response = await unauthApp.inject({ method: 'POST', url: '/api/v1/sync/hh' });
     expect(response.statusCode).toBe(401);
+  });
+
+  it('a non-admin authenticated user is rejected with 403, not allowed to trigger a sync', async () => {
+    const nonAdminContainer = createMockContainer();
+    const nonAdminApp = Fastify();
+    nonAdminApp.setErrorHandler(errorHandler);
+    nonAdminApp.decorate('container', nonAdminContainer as unknown as FastifyInstance['container']);
+    nonAdminApp.addHook('onRequest', async (request: FastifyRequest) => {
+      request.user = { id: 'user-1', email: 'user-1@example.com', role: UserRole.JOB_SEEKER };
+    });
+    await nonAdminApp.register(syncRoutes, { prefix: '/api/v1/sync' });
+    await nonAdminApp.ready();
+
+    const response = await nonAdminApp.inject({ method: 'POST', url: '/api/v1/sync/hh' });
+    expect(response.statusCode).toBe(403);
+    expect(nonAdminContainer.services.syncScheduler.syncProvider).not.toHaveBeenCalled();
   });
 });

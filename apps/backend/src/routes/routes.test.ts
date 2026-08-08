@@ -146,6 +146,7 @@ vi.mock('../container.js', () => ({
       },
       followUp: {
         findByUserId: vi.fn().mockResolvedValue([]),
+        findPendingApplicationIds: vi.fn().mockResolvedValue(new Set()),
         listEnrichedForUser: vi.fn().mockResolvedValue([]),
         schedule: vi.fn(),
         snooze: vi.fn(),

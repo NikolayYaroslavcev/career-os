@@ -9,6 +9,8 @@ import { getVacancyStats } from '@/api/sync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { CheckCircle2, Circle } from 'lucide-react';
+import { useAuthStore } from '@/stores/auth-store';
+import { isAdmin } from '@/lib/access/nav-visibility';
 
 interface OnboardingState {
   hasResume: boolean;
@@ -29,6 +31,8 @@ interface OnboardingStep {
 
 export function OnboardingChecklist(): React.JSX.Element | null {
   const { t } = useTranslation();
+  const { user } = useAuthStore();
+  const canSyncProviders = isAdmin(user);
   const [state, setState] = useState<OnboardingState>({
     hasResume: false,
     hasProfile: false,
@@ -76,7 +80,11 @@ export function OnboardingChecklist(): React.JSX.Element | null {
 
   if (state.isLoading) return null;
 
-  const allDone = state.hasResume && state.hasProfile && state.hasSyncedProviders;
+  // Job-source syncing is an admin-only page (see app-shell's nav visibility)
+  // — a regular user can't act on that step, so it's excluded from both the
+  // checklist and the completion check below instead of linking them to a
+  // page that immediately denies access.
+  const allDone = state.hasResume && state.hasProfile && (!canSyncProviders || state.hasSyncedProviders);
   if (allDone) return null;
 
   const steps: OnboardingStep[] = [
@@ -94,13 +102,17 @@ export function OnboardingChecklist(): React.JSX.Element | null {
       description: t('dashboardHome.onboarding.createProfileDesc'),
       href: '/app/search-profiles',
     },
-    {
-      key: 'sync',
-      done: state.hasSyncedProviders,
-      label: t('dashboardHome.onboarding.syncProviders'),
-      description: t('dashboardHome.onboarding.syncProvidersDesc'),
-      href: '/app/sync',
-    },
+    ...(canSyncProviders
+      ? [
+          {
+            key: 'sync',
+            done: state.hasSyncedProviders,
+            label: t('dashboardHome.onboarding.syncProviders'),
+            description: t('dashboardHome.onboarding.syncProvidersDesc'),
+            href: '/app/sync',
+          },
+        ]
+      : []),
     {
       key: 'telegram',
       done: state.hasTelegram,

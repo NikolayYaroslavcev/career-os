@@ -90,6 +90,20 @@ export async function errorHandler(
     });
   }
 
+  // Errors thrown by Fastify plugins (e.g. @fastify/rate-limit's 429) carry a
+  // `statusCode` per Fastify's own error convention but aren't `AppError`
+  // instances — without this branch they fell through to the generic 500
+  // below, masking the plugin's actual response (e.g. a rate-limited request
+  // reporting "unexpected error" instead of 429).
+  if (typeof error.statusCode === 'number' && error.statusCode >= 400 && error.statusCode < 500) {
+    return reply.status(error.statusCode).send({
+      error: {
+        code: error.code ?? 'REQUEST_ERROR',
+        message: error.message,
+      },
+    });
+  }
+
   console.error('Unhandled error:', error);
 
   return reply.status(500).send({

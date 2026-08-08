@@ -105,21 +105,25 @@ export class ApplicationCrmService {
   ) {}
 
   async list(userId: string, options: ListApplicationsOptions = {}): Promise<ListApplicationsResult> {
-    const all = options.status
-      ? await this.applicationRepository.findByUserIdAndStatus(
-          createUserId(userId),
-          options.status
-        )
-      : await this.applicationRepository.findByUserId(createUserId(userId));
-
-    const sorted = [...all].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const offset = options.offset ?? 0;
-    const limit = options.limit ?? sorted.length;
 
-    return {
-      applications: sorted.slice(offset, offset + limit),
-      total: sorted.length,
-    };
+    if (options.limit === undefined) {
+      // No page size requested — a caller that wants "everything" (e.g. the pipeline
+      // view) still gets it in one shot rather than being forced through a default page.
+      const all = options.status
+        ? await this.applicationRepository.findByUserIdAndStatus(createUserId(userId), options.status)
+        : await this.applicationRepository.findByUserId(createUserId(userId));
+      const sorted = [...all].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      return { applications: sorted.slice(offset), total: sorted.length };
+    }
+
+    const { applications, total } = await this.applicationRepository.findByUserIdPage(createUserId(userId), {
+      status: options.status,
+      limit: options.limit,
+      offset,
+    });
+
+    return { applications, total };
   }
 
   async getOwned(id: string, userId: string): Promise<Application> {

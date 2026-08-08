@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
 import { getAIJobs, type AIJob } from '@/api/ai';
 import { formatDateTime } from '@/lib/format';
+import { useAuthStore } from '@/stores/auth-store';
+import { isAdmin } from '@/lib/access/nav-visibility';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,14 +26,22 @@ function getStatusColor(status: string): string {
 
 export function RecentAIActivityWidget(): React.JSX.Element {
   const { t, locale } = useTranslation();
+  const { user } = useAuthStore();
+  // /app/ai is the admin AI cost/budget dashboard, not a per-user job history
+  // page — regular users have nowhere to "view all", so the link is admin-only.
+  const canViewAll = isAdmin(user);
   const [jobs, setJobs] = useState<AIJob[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     getAIJobs({ limit: 5 })
-      .then(data => setJobs(data.jobs))
+      .then(data => { if (!cancelled) setJobs(data.jobs); })
       .catch(() => {})
-      .finally(() => setIsLoading(false));
+      .finally(() => { if (!cancelled) setIsLoading(false); });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (isLoading) {
@@ -80,11 +90,13 @@ export function RecentAIActivityWidget(): React.JSX.Element {
                 </span>
               </div>
             ))}
-            <Link href="/app/ai">
-              <Button variant="ghost" size="sm" className="w-full mt-1">
-                {t('dashboardHome.resume.viewAll')}
-              </Button>
-            </Link>
+            {canViewAll && (
+              <Link href="/app/ai">
+                <Button variant="ghost" size="sm" className="w-full mt-1">
+                  {t('dashboardHome.resume.viewAll')}
+                </Button>
+              </Link>
+            )}
           </div>
         )}
       </CardContent>

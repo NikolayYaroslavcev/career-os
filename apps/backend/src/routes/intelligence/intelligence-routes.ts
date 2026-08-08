@@ -19,26 +19,26 @@ const EMPTY_SOURCE_INFO: PrimarySourceInfo = { source: null, sourceUrl: null, ap
 
 /**
  * Sources aren't part of the Vacancy aggregate, so provider/sourceUrl/applyUrl
- * (ADR-030) have to be batch-fetched per search response. Bounded by page size
- * (~10-20 vacancies), mirroring the accepted per-id Promise.all fallback pattern
- * already used in vacancy-routes.ts's batchFindCompanies.
+ * (ADR-030) have to be batch-fetched per search response. Uses
+ * findByVacancyIds (one query for the whole page) rather than one
+ * findByVacancyId call per vacancy.
  */
 async function batchFetchPrimarySourceInfo(
   repo: VacancySourceRepository,
   vacancies: readonly Vacancy[]
 ): Promise<Map<string, PrimarySourceInfo>> {
-  const entries = await Promise.all(
-    vacancies.map(async (vacancy) => {
-      const sources = await repo.findByVacancyId(vacancy.id);
-      const primarySource = sources.find((s) => s.isPrimary) ?? sources[0];
-      const info: PrimarySourceInfo = {
-        source: primarySource?.providerId ?? null,
-        sourceUrl: primarySource?.sourceUrl ?? null,
-        applyUrl: sourceLifecycleService.computePrimaryApplyUrl(sources) ?? null,
-      };
-      return [vacancy.id, info] as const;
-    })
-  );
+  const sourcesByVacancyId = await repo.findByVacancyIds(vacancies.map((v) => v.id));
+
+  const entries = vacancies.map((vacancy) => {
+    const sources = sourcesByVacancyId.get(vacancy.id) ?? [];
+    const primarySource = sources.find((s) => s.isPrimary) ?? sources[0];
+    const info: PrimarySourceInfo = {
+      source: primarySource?.providerId ?? null,
+      sourceUrl: primarySource?.sourceUrl ?? null,
+      applyUrl: sourceLifecycleService.computePrimaryApplyUrl(sources) ?? null,
+    };
+    return [vacancy.id, info] as const;
+  });
   return new Map(entries);
 }
 

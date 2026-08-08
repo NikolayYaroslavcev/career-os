@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -82,6 +82,15 @@ export function CareerIntelligenceDashboard(): React.JSX.Element | null {
     }
   };
 
+  // Recharts treats `data` identity as a change signal, so a fresh array on
+  // every render (e.g. while isRefreshing toggles, unrelated to funnel data)
+  // forced BarChart to redo its SVG layout even when the funnel itself hadn't
+  // changed.
+  const funnelChartData = useMemo(
+    () => (data ? data.funnel.stages.map((s) => ({ name: s.name, count: s.count })) : []),
+    [data]
+  );
+
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -101,8 +110,6 @@ export function CareerIntelligenceDashboard(): React.JSX.Element | null {
   }
 
   if (!data) return null;
-
-  const funnelChartData = data.funnel.stages.map((s) => ({ name: s.name, count: s.count }));
 
   return (
     <div className="space-y-6 p-6">

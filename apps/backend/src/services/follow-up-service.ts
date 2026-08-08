@@ -118,21 +118,28 @@ export class FollowUpService {
     return this.followUpRepository.findByUserId(createUserId(userId));
   }
 
+  /** Just the pending/snoozed ones, filtered at the DB level — for callers that only need to know which applications have one outstanding, not every follow-up's full row. */
+  async findPendingApplicationIds(userId: string): Promise<Set<string>> {
+    const pending = await this.followUpRepository.findByUserIdAndStatuses(createUserId(userId), ['pending', 'snoozed']);
+    return new Set(pending.map((f) => f.applicationId));
+  }
+
   /** All of a user's follow-ups, enriched with vacancy/company names and days-since-applied for the dashboard and digest. */
   async listEnrichedForUser(userId: string): Promise<EnrichedFollowUp[]> {
     const followUps = await this.followUpRepository.findByUserId(createUserId(userId));
-    const enriched: EnrichedFollowUp[] = [];
 
-    for (const followUp of followUps) {
-      const application = await this.applicationRepository.findById(followUp.applicationId);
-      if (!application) {
-        continue;
-      }
+    // Each enrich() does its own application/vacancy/company lookups; fanning
+    // them out concurrently instead of one-followUp-at-a-time turns what was
+    // up to 3N sequential round trips into N concurrent ones.
+    const results = await Promise.all(
+      followUps.map(async (followUp) => {
+        const application = await this.applicationRepository.findById(followUp.applicationId);
+        if (!application) return null;
+        return this.enrich(followUp, application);
+      })
+    );
 
-      enriched.push(await this.enrich(followUp, application));
-    }
-
-    return enriched;
+    return results.filter((r): r is EnrichedFollowUp => r !== null);
   }
 
   /**

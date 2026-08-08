@@ -7,7 +7,7 @@ export type { LogLevel } from './logger.js';
 export { runHealthChecks } from './health.js';
 export type { HealthCheckResult, HealthCheck } from './health.js';
 
-export { getRedis, disconnectRedis, checkRedisHealth } from './redis.js';
+export { getRedis, disconnectRedis, checkRedisHealth, RedisRateLimiter } from './redis.js';
 
 export { VACANCY_ANALYSIS_QUEUE_NAME, VACANCY_ANALYSIS_JOB_NAME, buildVacancyAnalysisJobId } from './queues/vacancy-analysis.js';
 export type { VacancyAnalysisJob } from './queues/vacancy-analysis.js';

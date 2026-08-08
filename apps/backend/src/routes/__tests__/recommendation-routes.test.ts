@@ -7,6 +7,7 @@ import {
   ExperienceLevel,
   Location,
   Technology,
+  UserRole,
   createVacancyId,
   createCompanyId,
   createSearchProfileId,
@@ -81,7 +82,7 @@ describe('Recommendation Routes', () => {
     app = Fastify();
     app.setErrorHandler(errorHandler);
     app.addHook('onRequest', async (request: FastifyRequest) => {
-      request.user = { id: 'user-1', email: 'user-1@example.com' };
+      request.user = { id: 'user-1', email: 'user-1@example.com', role: UserRole.JOB_SEEKER };
     });
   });
 

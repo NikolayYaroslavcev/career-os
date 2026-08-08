@@ -1,4 +1,5 @@
 import { TokenBucketRateLimiter } from '@careeros/providers';
+import { assertSafeUrl } from '@careeros/company-watch';
 import { retryFetch } from './retry-fetch.js';
 
 /**
@@ -25,6 +26,10 @@ async function waitForToken(hostname: string): Promise<void> {
 /** Rate-limited fetch of a matched-page's content, keyed by hostname so one slow/high-volume host can't starve the rest of a batch. Returns null on any failure — a single bad page must never abort the batch (ADR §13). */
 export async function fetchPageContent(url: string, userAgent: string): Promise<string | null> {
   try {
+    // Matched pages come from Common Crawl's index, not a URL the caller
+    // constructed — treat them as untrusted the same way CompanyWatch's own
+    // fetch paths do, so a crawled page can't be used to probe internal hosts.
+    await assertSafeUrl(url);
     const hostname = new URL(url).hostname;
     await waitForToken(hostname);
     const response = await retryFetch(url, { headers: { 'User-Agent': userAgent } }, { maxAttempts: 1, baseDelayMs: 0, maxDelayMs: 0, backoffMultiplier: 1, jitter: false });

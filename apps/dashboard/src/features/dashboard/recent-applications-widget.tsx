@@ -20,9 +20,11 @@ export function RecentApplicationsWidget(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     listApplications()
       .then(async (data) => {
         const recent = data.applications.slice(0, 5);
+        if (cancelled) return;
         setApplications(recent);
 
         const uniqueVacancyIds = [...new Set(recent.map((app) => app.vacancyId))];
@@ -35,6 +37,7 @@ export function RecentApplicationsWidget(): React.JSX.Element {
             }
           })
         );
+        if (cancelled) return;
 
         const next: Record<string, VacancyDetail> = {};
         fetched.forEach((vacancy, index) => {
@@ -45,7 +48,10 @@ export function RecentApplicationsWidget(): React.JSX.Element {
         setVacanciesById(next);
       })
       .catch(() => {})
-      .finally(() => setIsLoading(false));
+      .finally(() => { if (!cancelled) setIsLoading(false); });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (isLoading) {

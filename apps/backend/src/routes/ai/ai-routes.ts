@@ -125,6 +125,7 @@ export async function aiRoutes(fastify: FastifyInstance): Promise<void> {
 
     if (!vacancy) throw new NotFoundError('Vacancy');
     if (!profile) throw new NotFoundError('Search Profile');
+    if (profile.userId !== userId) throw new UnauthorizedError('Not your search profile');
 
     const [resume, company] = await Promise.all([
       resumeRepo.findDefaultByUserId(createUserId(userId)),

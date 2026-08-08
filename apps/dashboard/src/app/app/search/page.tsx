@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { listVacancies, type VacancySummary, type VacancyListParams } from '@/api/sync';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,6 +15,10 @@ import { pluralize } from '@/lib/i18n/pluralize';
 import { formatDate, formatNumber } from '@/lib/format';
 
 const ALL_FILTER_VALUE = '__all__';
+// Every filter (the free-text query box included) writes straight into
+// `params`, and `params` drives the fetch — without this delay, each
+// keystroke fired its own request.
+const SEARCH_DEBOUNCE_MS = 300;
 
 const SOURCE_LABELS: Record<string, string> = {
   remotive: 'Remotive',
@@ -47,22 +51,34 @@ export default function SearchPage(): React.JSX.Element {
     sortOrder: 'desc',
   });
 
-  const fetchVacancies = useCallback(async (): Promise<void> => {
-    setIsLoading(true);
-    try {
-      const data = await listVacancies(params);
-      setVacancies(data.vacancies);
-      setTotal(data.total);
-    } catch (error) {
-      console.error('Failed to fetch vacancies:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [params]);
-
   useEffect(() => {
-    fetchVacancies();
-  }, [fetchVacancies]);
+    setIsLoading(true);
+    const controller = new AbortController();
+
+    // Debounced so rapid param changes (typing in the search box or any filter
+    // field) collapse into one request instead of firing one per keystroke.
+    // The AbortController also means a fast-typing user's earlier, slower
+    // request can't resolve after a later one and overwrite fresher results.
+    const timeoutId = setTimeout(() => {
+      listVacancies(params, controller.signal)
+        .then((data) => {
+          setVacancies(data.vacancies);
+          setTotal(data.total);
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          console.error('Failed to fetch vacancies:', error);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setIsLoading(false);
+        });
+    }, SEARCH_DEBOUNCE_MS);
+
+    return (): void => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [params]);
 
   const handleSearch = (query: string): void => {
     setParams((prev) => ({ ...prev, query, offset: 0 }));
@@ -247,7 +263,7 @@ export default function SearchPage(): React.JSX.Element {
       ) : (
         <div className="space-y-3">
           {vacancies.map((vacancy) => (
-            <Link key={vacancy.id} href={`/app/search/${vacancy.id}`}>
+            <Link key={vacancy.id} href={`/app/search/${vacancy.id}`} className="block">
               <Card className="cursor-pointer transition-colors hover:bg-muted/50">
                 <CardContent className="py-4">
                   <div className="flex items-start justify-between">

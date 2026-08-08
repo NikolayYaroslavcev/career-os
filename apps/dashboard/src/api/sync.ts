@@ -90,11 +90,21 @@ export interface VacancyDetail extends Omit<VacancySummary, 'company' | 'sources
   sources: (VacancySourceInfo & { lastSeenAt: string })[];
 }
 
+// Dashboard home renders several independent widgets that each want these
+// stats on mount (see onboarding-checklist.tsx) — without this, they'd fire
+// one identical request apiece instead of sharing the single one in flight.
+let vacancyStatsInFlight: Promise<VacancyStats> | null = null;
+
 export async function getVacancyStats(): Promise<VacancyStats> {
-  return apiClient('/api/v1/vacancies/stats');
+  if (vacancyStatsInFlight) return vacancyStatsInFlight;
+
+  vacancyStatsInFlight = apiClient<VacancyStats>('/api/v1/vacancies/stats').finally(() => {
+    vacancyStatsInFlight = null;
+  });
+  return vacancyStatsInFlight;
 }
 
-export async function listVacancies(params: VacancyListParams = {}): Promise<VacancyListResponse> {
+export async function listVacancies(params: VacancyListParams = {}, signal?: AbortSignal): Promise<VacancyListResponse> {
   const searchParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
@@ -102,7 +112,7 @@ export async function listVacancies(params: VacancyListParams = {}): Promise<Vac
     }
   });
   const qs = searchParams.toString();
-  return apiClient(`/api/v1/vacancies${qs ? `?${qs}` : ''}`);
+  return apiClient(`/api/v1/vacancies${qs ? `?${qs}` : ''}`, { signal });
 }
 
 export async function searchVacancies(params: VacancyListParams): Promise<VacancyListResponse> {

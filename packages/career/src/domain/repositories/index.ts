@@ -15,7 +15,7 @@ export type {
   VacancySourceRepository,
   SaveVacancySourceOptions,
 } from './vacancy-source-repository.js';
-export type { ApplicationRepository, SaveApplicationOptions } from './application-repository.js';
+export type { ApplicationRepository, SaveApplicationOptions, FindApplicationsPageOptions, ApplicationsPage } from './application-repository.js';
 export type { RecruiterRepository } from './recruiter-repository.js';
 export type { CommunicationRepository } from './communication-repository.js';
 export type { InterviewRepository } from './interview-repository.js';

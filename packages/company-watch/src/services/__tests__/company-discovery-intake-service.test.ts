@@ -238,6 +238,31 @@ describe('CompanyDiscoveryIntakeService', () => {
     expect(outcome.candidate.status).toBe('REJECTED');
   });
 
+  it.each(['t.me', 'telegram.me', 'telegram.org', 'teletype.in', 'telegra.ph'])(
+    'blocks a denylisted URL (%s) before creating a CompanyCandidate row',
+    async (host) => {
+      const service = buildService({ discovery: discoveryResult() });
+      const outcome = await service.discover({ companyName: 'Acme Inc', url: `https://${host}/acmecorp` });
+
+      expect(outcome.outcome).toBe('BLOCKED');
+      expect(await candidateRepo.findByCareerUrl(`https://${host}/acmecorp`)).toBeNull();
+    }
+  );
+
+  it('does not block a lookalike domain (evil-telegram.me)', async () => {
+    const service = buildService({ discovery: discoveryResult() });
+    const outcome = await service.discover({ companyName: 'Acme Inc', url: 'https://evil-telegram.me/careers' });
+
+    expect(outcome.outcome).not.toBe('BLOCKED');
+  });
+
+  it('does not block an ordinary company homepage/root URL', async () => {
+    const service = buildService({ discovery: discoveryResult() });
+    const outcome = await service.discover({ companyName: 'Acme Inc', url: 'https://acme.example/' });
+
+    expect(outcome.outcome).not.toBe('BLOCKED');
+  });
+
   it('is idempotent for repeated discovery of the same URL — returns the existing candidate without re-fingerprinting', async () => {
     let discoverCalls = 0;
     const discoveryProbe: DiscoveryProbe = {

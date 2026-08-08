@@ -15,13 +15,18 @@ export function SearchProfileWidget(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     listSearchProfiles()
       .then(data => {
+        if (cancelled) return;
         const active = data.searchProfiles.find(p => p.isActive) ?? data.searchProfiles[0];
         if (active) setProfile(active);
       })
       .catch(() => {})
-      .finally(() => setIsLoading(false));
+      .finally(() => { if (!cancelled) setIsLoading(false); });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (isLoading) {

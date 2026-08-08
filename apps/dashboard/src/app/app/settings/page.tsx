@@ -5,6 +5,7 @@ import { useTranslation } from '@/lib/i18n/i18n-provider';
 import { useAuthStore } from '@/stores/auth-store';
 import { apiClient } from '@/api/client';
 import type { UserRole } from '@/api/auth';
+import { useTimedFlag } from '@/hooks/use-timed-flag';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,17 +30,22 @@ export default function SettingsPage(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [saved, markSaved] = useTimedFlag(3000);
 
   useEffect(() => {
+    let cancelled = false;
     apiClient<UserProfile>('/api/v1/users/me')
       .then(data => {
+        if (cancelled) return;
         setProfile(data);
         setFirstName(data.firstName ?? '');
         setLastName(data.lastName ?? '');
       })
-      .catch(() => setError(t('settingsPage.loadFailed')))
-      .finally(() => setIsLoading(false));
+      .catch(() => { if (!cancelled) setError(t('settingsPage.loadFailed')); })
+      .finally(() => { if (!cancelled) setIsLoading(false); });
+    return () => {
+      cancelled = true;
+    };
   }, [t]);
 
   async function handleSave(e: React.FormEvent): Promise<void> {
@@ -48,15 +54,13 @@ export default function SettingsPage(): React.JSX.Element {
 
     setIsSaving(true);
     setError(null);
-    setSaved(false);
 
     try {
       await apiClient('/api/v1/users/me', {
         method: 'PUT',
         body: { firstName: firstName.trim(), lastName: lastName.trim() },
       });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      markSaved();
     } catch {
       setError(t('settingsPage.saveFailed'));
     } finally {

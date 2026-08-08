@@ -39,19 +39,25 @@ export function CommunicationLog({ applicationId }: CommunicationLogProps): Reac
   const [newContent, setNewContent] = useState('');
   const [newSubject, setNewSubject] = useState('');
 
-  const fetchCommunications = useCallback(async (): Promise<void> => {
+  const fetchCommunications = useCallback(async (isCancelled?: () => boolean): Promise<void> => {
     try {
       const data = await listCommunications(applicationId);
+      if (isCancelled?.()) return;
       setCommunications(data.communications);
     } catch (error) {
+      if (isCancelled?.()) return;
       console.error('Failed to load communications:', error);
     } finally {
-      setIsLoading(false);
+      if (!isCancelled?.()) setIsLoading(false);
     }
   }, [applicationId]);
 
   useEffect(() => {
-    fetchCommunications();
+    let cancelled = false;
+    fetchCommunications(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
   }, [fetchCommunications]);
 
   const handleAdd = async (): Promise<void> => {

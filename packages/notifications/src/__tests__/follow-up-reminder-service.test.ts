@@ -14,7 +14,7 @@ import {
 } from '@careeros/career';
 import { InMemoryTelegramClient } from '@careeros/telegram';
 import { NoopLogger, InMemoryMetricsCollector } from '@careeros/providers';
-import { FollowUpReminderService, type TelegramDestinationResolver } from '../follow-up-reminder-service.js';
+import { FollowUpReminderService, type TelegramDestinationResolver, type FollowUpClaimLock } from '../follow-up-reminder-service.js';
 
 class FakeApplicationRepository implements Pick<ApplicationRepository, 'findById'> {
   private readonly records = new Map<string, Application>();
@@ -56,6 +56,18 @@ class FakeTelegramConnectionRepository implements TelegramDestinationResolver {
   }
 }
 
+/** Grants every claim by default — tests that care about the race the real lock closes opt into denial explicitly. */
+class FakeClaimLock implements FollowUpClaimLock {
+  private readonly claimed = new Set<string>();
+  alwaysDeny = false;
+
+  async checkAndRecord(id: string): Promise<boolean> {
+    if (this.alwaysDeny || this.claimed.has(id)) return false;
+    this.claimed.add(id);
+    return true;
+  }
+}
+
 const USER_ID = createUserId('11111111-1111-4111-8111-111111111111');
 const VACANCY_ID = createVacancyId('22222222-2222-4222-8222-222222222222');
 
@@ -83,6 +95,7 @@ describe('FollowUpReminderService', () => {
   let followUpRepository: FakeFollowUpRepository;
   let telegramConnectionRepository: FakeTelegramConnectionRepository;
   let telegramClient: InMemoryTelegramClient;
+  let claimLock: FakeClaimLock;
   let service: FollowUpReminderService;
 
   beforeEach(() => {
@@ -90,13 +103,15 @@ describe('FollowUpReminderService', () => {
     followUpRepository = new FakeFollowUpRepository();
     telegramConnectionRepository = new FakeTelegramConnectionRepository();
     telegramClient = new InMemoryTelegramClient();
+    claimLock = new FakeClaimLock();
     service = new FollowUpReminderService(
       followUpRepository as unknown as FollowUpRepository,
       applicationRepository as unknown as ApplicationRepository,
       telegramConnectionRepository,
       telegramClient,
       new InMemoryMetricsCollector(),
-      new NoopLogger()
+      new NoopLogger(),
+      claimLock
     );
   });
 
@@ -158,6 +173,25 @@ describe('FollowUpReminderService', () => {
     const stats = await service.processDue();
 
     expect(stats).toEqual({ due: 0, sent: 0, skipped: 0, failed: 0 });
+  });
+
+  it('skips (rather than delivers) a due follow-up whose claim another concurrent sweep already holds', async () => {
+    const application = buildApplication();
+    applicationRepository.add(application);
+    telegramConnectionRepository.add(
+      TelegramConnection.create({
+        id: createTelegramConnectionId(crypto.randomUUID()),
+        userId: USER_ID,
+        telegramChatId: 'chat-1',
+      })
+    );
+    await followUpRepository.save(buildDueFollowUp(application.id));
+    claimLock.alwaysDeny = true;
+
+    const stats = await service.processDue();
+
+    expect(stats).toEqual({ due: 1, sent: 0, skipped: 1, failed: 0 });
+    expect(telegramClient.getSentMessages()).toHaveLength(0);
   });
 
   it('falls back to the default template when no message was scheduled', async () => {

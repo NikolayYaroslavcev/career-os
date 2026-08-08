@@ -15,10 +15,14 @@ export function CompanyWatchWidget(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     getWatchedCompanies()
-      .then(data => setCompanies(data))
+      .then(data => { if (!cancelled) setCompanies(data); })
       .catch(() => {})
-      .finally(() => setIsLoading(false));
+      .finally(() => { if (!cancelled) setIsLoading(false); });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (isLoading) {

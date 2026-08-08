@@ -1,5 +1,5 @@
 import type { FollowUpRepository } from '@careeros/career';
-import type { FollowUpId, ApplicationId, UserId } from '@careeros/career';
+import type { FollowUpId, ApplicationId, UserId, FollowUpStatus } from '@careeros/career';
 import type { FollowUp } from '@careeros/career';
 import { prisma } from '../client.js';
 import { FollowUpMapper } from '../mappers/follow-up-mapper.js';
@@ -29,6 +29,18 @@ export class PrismaFollowUpRepository implements FollowUpRepository {
   async findByUserId(userId: UserId): Promise<FollowUp[]> {
     const records = await prisma.followUp.findMany({
       where: { application: { userId } },
+      orderBy: { scheduledAt: 'asc' },
+    });
+
+    return records.map(FollowUpMapper.toDomain);
+  }
+
+  async findByUserIdAndStatuses(userId: UserId, statuses: readonly FollowUpStatus[]): Promise<FollowUp[]> {
+    const records = await prisma.followUp.findMany({
+      where: {
+        application: { userId },
+        status: { in: statuses.map((s) => s.toUpperCase()) as ('PENDING' | 'SENT' | 'COMPLETED' | 'SNOOZED' | 'CANCELLED')[] },
+      },
       orderBy: { scheduledAt: 'asc' },
     });
 

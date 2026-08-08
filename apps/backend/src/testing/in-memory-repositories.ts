@@ -387,6 +387,20 @@ export class InMemoryApplicationRepository implements ApplicationRepository {
     return (await this.findByUserId(userId)).filter((a) => a.status === status);
   }
 
+  async findByUserIdPage(
+    userId: UserId,
+    options: { status?: ApplicationStatus; limit: number; offset: number }
+  ): Promise<{ applications: Application[]; total: number }> {
+    const all = options.status
+      ? await this.findByUserIdAndStatus(userId, options.status)
+      : await this.findByUserId(userId);
+    const sorted = [...all].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return {
+      applications: sorted.slice(options.offset, options.offset + options.limit),
+      total: sorted.length,
+    };
+  }
+
   async findByVacancyId(vacancyId: VacancyId): Promise<Application[]> {
     return [...this.records.values()].filter((a) => a.vacancyId === vacancyId);
   }
@@ -534,6 +548,10 @@ export class InMemoryFollowUpRepository implements FollowUpRepository {
     }
 
     return matches;
+  }
+
+  async findByUserIdAndStatuses(userId: UserId, statuses: readonly string[]): Promise<FollowUp[]> {
+    return (await this.findByUserId(userId)).filter((f) => statuses.includes(f.status));
   }
 
   async findDue(before: Date): Promise<FollowUp[]> {

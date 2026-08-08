@@ -39,8 +39,14 @@ export class CustomHtmlAdapter implements AtsAdapter {
 
     // Look for job links with common patterns
     const linkPatterns = [
-      // Generic job listing links
-      /<a[^>]*href=["']([^"']*(?:job|position|role|opening|career)[^"']*)["'][^>]*>([^<]+)<\/a>/gi,
+      // Generic job listing links. Keyword list includes "vacan" (vacancy/
+      // vacancies — common outside US English, seen on real CIS career
+      // pages) and "hiring" (already used by CompanyDiscoveryService's own
+      // findCareersPage() heuristic, previously missing here). The title
+      // capture is `[\s\S]*?` rather than `[^<]+` because real ATS widgets
+      // (e.g. Comeet) wrap the visible job title in a nested element
+      // instead of putting it directly inside the <a> as plain text.
+      /<a[^>]*href=["']([^"']*(?:job|position|role|opening|career|vacan|hiring)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi,
       // Greenhouse-style
       /<a[^>]*href=["'](https?:\/\/[^"']*greenhouse\.io[^"']*)["'][^>]*>([^<]+)<\/a>/gi,
       // Lever-style
@@ -55,8 +61,9 @@ export class CustomHtmlAdapter implements AtsAdapter {
         const [, url, title] = match;
         if (!url || !title || seen.has(url)) continue;
 
-        // Clean up the title
-        const cleanTitle = title.replace(/\s+/g, ' ').trim();
+        // Strip any nested markup captured by the generic pattern above,
+        // then clean up whitespace.
+        const cleanTitle = title.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
         if (cleanTitle.length < 3 || cleanTitle.length > 200) continue;
 
         seen.add(url);
@@ -148,7 +155,10 @@ export class CustomHtmlAdapter implements AtsAdapter {
 
   private resolveUrl(url: string, baseUrl: string): string {
     if (url.startsWith('http')) return url;
-    const base = new URL(baseUrl);
-    return new URL(url, base.origin).toString();
+    // Resolve against the full career page URL (not just its origin) so a
+    // path-relative href (e.g. "123-senior-eng", no leading slash) on a
+    // career page that itself lives under a path (e.g. /jobs/openings/)
+    // resolves relative to that path instead of the site root.
+    return new URL(url, baseUrl).toString();
   }
 }

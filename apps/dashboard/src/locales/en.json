@@ -36,6 +36,8 @@
   },
   "shell": {
     "logout": "Log out",
+    "openNav": "Open navigation menu",
+    "closeNav": "Close navigation menu",
     "navSections": {
       "overview": "Overview",
       "search": "Search",
@@ -744,6 +746,7 @@
     "saveToPipeline": "Save to Pipeline",
     "savedToPipeline": "Saved to Pipeline",
     "openApplicationPage": "Open Application Page",
+    "whyThisMatch": "Why this match",
     "matchScore": "{{percent}}% match",
     "aiErrorTitle": "AI Provider Error",
     "recommendations": {
@@ -842,8 +845,9 @@
     "complete": "Complete",
     "createManual": "New follow-up",
     "createManualTitle": "Create a manual follow-up",
-    "applicationIdLabel": "Application ID",
-    "applicationIdPlaceholder": "Paste the application ID",
+    "applicationLabel": "Application",
+    "applicationPlaceholder": "Select an application",
+    "noApplications": "No applications yet — save a vacancy to your pipeline first.",
     "dateLabel": "Date",
     "typeLabel": "Type",
     "messageLabel": "Message (optional)",

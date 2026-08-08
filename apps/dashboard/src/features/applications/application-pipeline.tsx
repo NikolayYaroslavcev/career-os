@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   getPipeline,
@@ -40,41 +40,66 @@ export function ApplicationPipeline(): React.JSX.Element {
   // Deep-linked from /app/follow-ups ("Open Application" -> /app/applications?open=<id>).
   const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(() => searchParams.get('open'));
 
-  const fetchPipeline = useCallback(async (): Promise<void> => {
+  // Mirrors vacanciesById without being a fetchPipeline dependency — reading
+  // vacanciesById directly there would change fetchPipeline's identity every
+  // time it fetches new vacancies, and the mount effect below depends on
+  // fetchPipeline, so that would loop.
+  const vacanciesByIdRef = useRef<Record<string, VacancyDetail>>({});
+  useEffect(() => {
+    vacanciesByIdRef.current = vacanciesById;
+  }, [vacanciesById]);
+
+  const fetchPipeline = useCallback(async (isCancelled?: () => boolean): Promise<void> => {
     try {
       const data = await getPipeline();
+      if (isCancelled?.()) return;
       setPipeline(data.pipeline);
 
+      // A status change reshuffles applications between columns but never
+      // changes which vacancies they point at — re-fetching every vacancy's
+      // detail on every status change was pure waste. Only ids not already
+      // cached (first load, or a genuinely new application) get fetched.
       const allApplications = data.pipeline.flatMap((group) => group.applications);
       const uniqueVacancyIds = [...new Set(allApplications.map((a) => a.vacancyId))];
+      const missingIds = uniqueVacancyIds.filter((id) => !(id in vacanciesByIdRef.current));
 
-      const fetched = await Promise.all(
-        uniqueVacancyIds.map(async (id) => {
-          try {
-            return await getVacancyDetail(id);
-          } catch {
-            return null;
+      if (missingIds.length > 0) {
+        const fetched = await Promise.all(
+          missingIds.map(async (id) => {
+            try {
+              return await getVacancyDetail(id);
+            } catch {
+              return null;
+            }
+          })
+        );
+        if (isCancelled?.()) return;
+
+        const additions: Record<string, VacancyDetail> = {};
+        fetched.forEach((vacancy, index) => {
+          if (vacancy) {
+            additions[missingIds[index] as string] = vacancy;
           }
-        })
-      );
-
-      const next: Record<string, VacancyDetail> = {};
-      fetched.forEach((vacancy, index) => {
-        if (vacancy) {
-          next[uniqueVacancyIds[index] as string] = vacancy;
+        });
+        if (Object.keys(additions).length > 0) {
+          setVacanciesById((prev) => ({ ...prev, ...additions }));
         }
-      });
-      setVacanciesById(next);
+      }
     } catch (err) {
+      if (isCancelled?.()) return;
       console.error('Failed to fetch pipeline:', err);
       setError(t('applications.loadFailed'));
     } finally {
-      setIsLoading(false);
+      if (!isCancelled?.()) setIsLoading(false);
     }
   }, [t]);
 
   useEffect(() => {
-    fetchPipeline();
+    let cancelled = false;
+    fetchPipeline(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
   }, [fetchPipeline]);
 
   const totalApplications = useMemo(

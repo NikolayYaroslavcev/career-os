@@ -11,6 +11,8 @@ import {
 } from '@careeros/ai';
 import type { AIProvider, AIRequest, AIResponse, ResumeContextProvider, UsageRecorder } from '@careeros/ai';
 import type { BudgetEnforcer } from '@careeros/ai-orchestrator';
+import type { Logger } from '@careeros/providers';
+import { ConsoleLogger } from '@careeros/providers';
 import { buildCompactResumeContext, estimateTokens } from './resume-context-builder.js';
 
 export type RemotePreference = 'remote' | 'hybrid' | 'onsite' | null;
@@ -104,7 +106,8 @@ export class SearchProfileSuggestionService {
     private readonly budgetEnforcer?: BudgetEnforcer,
     // Optional — when unset, this call site's usage never reaches the AI dashboard
     // (see UsageRecorder doc comment for why that matters).
-    private readonly usageRecorder?: UsageRecorder
+    private readonly usageRecorder?: UsageRecorder,
+    private readonly logger: Logger = new ConsoleLogger()
   ) {
     this.contextProvider = new ResumeContextProviderImpl({
       resumeRepository,
@@ -163,7 +166,7 @@ export class SearchProfileSuggestionService {
       content = response.content;
       this.recordUsage(response, params.userId);
     } catch (error) {
-      console.error('Search profile suggestion: AI provider call failed', error);
+      this.logger.error('Search profile suggestion: AI provider call failed', error instanceof Error ? error : undefined);
       const retryable = error instanceof AIError ? error.retryable : false;
       throw new SearchProfileSuggestionUnavailableError(
         'The AI suggestion service is temporarily unavailable',
@@ -179,7 +182,7 @@ export class SearchProfileSuggestionService {
       if (this.budgetEnforcer) {
         const budgetCheck = await this.budgetEnforcer.checkBudget(userId, 'resume_extraction');
         if (!budgetCheck.allowed) {
-          console.warn('Search profile suggestion: resume extraction skipped, budget limit reached', { userId, reason: budgetCheck.reason });
+          this.logger.warn('Search profile suggestion: resume extraction skipped, budget limit reached', { userId, reason: budgetCheck.reason });
           return;
         }
       }
@@ -207,7 +210,7 @@ export class SearchProfileSuggestionService {
 
       await this.structuredResumeRepository.upsert(structuredResume);
     } catch (error) {
-      console.error('Search profile suggestion: extraction failed, continuing with fallback', error);
+      this.logger.error('Search profile suggestion: extraction failed, continuing with fallback', error instanceof Error ? error : undefined);
     }
   }
 
@@ -226,11 +229,11 @@ export class SearchProfileSuggestionService {
       });
       if (pending) {
         void Promise.resolve(pending).catch((error) => {
-          console.error('Search profile suggestion: failed to record usage', error);
+          this.logger.error('Search profile suggestion: failed to record usage', error instanceof Error ? error : undefined);
         });
       }
     } catch (error) {
-      console.error('Search profile suggestion: failed to record usage', error);
+      this.logger.error('Search profile suggestion: failed to record usage', error instanceof Error ? error : undefined);
     }
   }
 

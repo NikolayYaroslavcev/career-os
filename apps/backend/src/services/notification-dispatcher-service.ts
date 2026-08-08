@@ -2,6 +2,8 @@ import type { MatchResultRepository } from '@careeros/ai';
 import type { VacancyRepository, ApplicationRepository } from '@careeros/career';
 import { createUserId, createVacancyId } from '@careeros/career';
 import type { TelegramClient } from '@careeros/telegram';
+import type { Logger } from '@careeros/providers';
+import { ConsoleLogger } from '@careeros/providers';
 
 export interface NotificationEvent {
   readonly type: 'high_score_job' | 'interview_approaching' | 'application_deadline';
@@ -18,6 +20,7 @@ export class NotificationDispatcherService {
     private readonly vacancyRepository: VacancyRepository,
     private readonly applicationRepository: ApplicationRepository,
     private readonly telegramClient: TelegramClient,
+    private readonly logger: Logger = new ConsoleLogger(),
   ) {}
 
   async checkHighScoreJobs(userId: string, chatId: string, threshold = 80): Promise<NotificationEvent[]> {
@@ -81,7 +84,7 @@ export class NotificationDispatcherService {
     try {
       await this.telegramClient.send(event.chatId, `${event.title}\n\n${event.body}`);
     } catch (error) {
-      console.error(`Failed to dispatch notification: ${error}`);
+      this.logger.error('Failed to dispatch notification', error instanceof Error ? error : undefined);
     }
   }
 

@@ -13,6 +13,7 @@ import type { CompanyWatchService } from './company-watch-service.js';
 import type { DiscoveryProbe } from './company-discovery-intake-service.js';
 import type { AtsRegistryProbe } from './company-discovery-intake-service.js';
 import { CompanyCandidate } from '../domain/entities/company-candidate.js';
+import { assertSafeUrl } from '../utils/url-safety.js';
 
 /**
  * Minimal shape of a normalized vacancy this bridge needs — decoupled from
@@ -367,6 +368,17 @@ export class VacancyDiscoveryBridge {
   ): Promise<{ reachable: boolean; jobSignalFound: boolean }> {
     if (!atsType || !this.adapterRegistry.has(atsType)) {
       return { reachable: fingerprintFetchSucceeded, jobSignalFound: false };
+    }
+
+    // Same SSRF gap as CompanyDiscoveryIntakeService.probeAts: careerUrl may
+    // be a link scraped verbatim from the discovered page's own HTML rather
+    // than a URL a caller submitted directly, so it needs its own safety
+    // check before being handed to the adapter's fetch.
+    try {
+      await assertSafeUrl(careerUrl);
+      if (atsEndpoint) await assertSafeUrl(atsEndpoint);
+    } catch {
+      return { reachable: false, jobSignalFound: false };
     }
 
     const adapter = this.adapterRegistry.get(atsType);

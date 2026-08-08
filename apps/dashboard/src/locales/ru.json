@@ -36,6 +36,8 @@
   },
   "shell": {
     "logout": "Выйти",
+    "openNav": "Открыть меню навигации",
+    "closeNav": "Закрыть меню навигации",
     "navSections": {
       "overview": "Обзор",
       "search": "Поиск",
@@ -744,6 +746,7 @@
     "saveToPipeline": "Сохранить в воронку",
     "savedToPipeline": "Сохранено в воронку",
     "openApplicationPage": "Открыть страницу отклика",
+    "whyThisMatch": "Почему это совпадение",
     "matchScore": "Подходит вам на {{percent}}%",
     "aiErrorTitle": "Ошибка AI-провайдера",
     "recommendations": {
@@ -842,8 +845,9 @@
     "complete": "Завершить",
     "createManual": "Новое напоминание",
     "createManualTitle": "Создать напоминание вручную",
-    "applicationIdLabel": "ID отклика",
-    "applicationIdPlaceholder": "Вставьте ID отклика",
+    "applicationLabel": "Отклик",
+    "applicationPlaceholder": "Выберите отклик",
+    "noApplications": "Пока нет откликов — сначала сохраните вакансию в воронку.",
     "dateLabel": "Дата",
     "typeLabel": "Тип",
     "messageLabel": "Сообщение (необязательно)",

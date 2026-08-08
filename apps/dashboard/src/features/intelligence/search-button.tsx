@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   runSearch,
@@ -682,6 +683,11 @@ function RecommendationCard({
                 </Button>
               </>
             )}
+            <Link href={`/app/match-explanation/${recommendation.matchResultId}`}>
+              <Button size="sm" variant="ghost" className="w-full">
+                {t('intelligence.whyThisMatch')}
+              </Button>
+            </Link>
           </div>
         </div>
       </CardContent>

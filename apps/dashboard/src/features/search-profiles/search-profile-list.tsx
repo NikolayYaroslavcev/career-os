@@ -30,20 +30,26 @@ export function SearchProfileList(): React.JSX.Element {
   const [editingProfile, setEditingProfile] = useState<SearchProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchProfiles = async (): Promise<void> => {
+  const fetchProfiles = async (isCancelled?: () => boolean): Promise<void> => {
     try {
       const data = await listSearchProfiles();
+      if (isCancelled?.()) return;
       setProfiles(data.searchProfiles);
     } catch (err) {
+      if (isCancelled?.()) return;
       console.error('Failed to fetch profiles:', err);
       setError(t('searchProfiles.loadFailed'));
     } finally {
-      setIsLoading(false);
+      if (!isCancelled?.()) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchProfiles();
+    let cancelled = false;
+    fetchProfiles(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleSubmit = async (data: CreateSearchProfileInput): Promise<void> => {

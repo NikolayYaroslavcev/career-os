@@ -36,24 +36,42 @@ function clearTokens(): void {
   localStorage.removeItem('user');
 }
 
+// Refresh tokens are single-use on the backend (rotated on every /auth/refresh
+// call, old one deleted). Without this dedup, two requests that 401 around the
+// same time would both read the same stale refresh token, race to redeem it,
+// and the loser would see "invalid refresh token" and log out a user whose
+// session the winner had just renewed. Sharing one in-flight promise ensures
+// only one redemption happens per expiry, and every concurrent caller awaits it.
+let refreshPromise: Promise<boolean> | null = null;
+
 async function tryRefreshToken(): Promise<boolean> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async (): Promise<boolean> => {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) return false;
+
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!response.ok) return false;
+
+      const data = await response.json() as { accessToken: string; refreshToken: string };
+      setTokens(data.accessToken, data.refreshToken);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
 
   try {
-    const response = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    });
-
-    if (!response.ok) return false;
-
-    const data = await response.json() as { accessToken: string; refreshToken: string };
-    setTokens(data.accessToken, data.refreshToken);
-    return true;
-  } catch {
-    return false;
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
   }
 }
 
@@ -62,9 +80,14 @@ export async function apiClient<T>(
   options: RequestOptions = {}
 ): Promise<T> {
   const { method = 'GET', body, headers: customHeaders, ...rest } = options;
+  const isFormData = body instanceof FormData;
+  const requestBody = body === undefined ? undefined : isFormData ? body : JSON.stringify(body);
 
   const headers: Record<string, string> = {
-    ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    // FormData sets its own multipart Content-Type (with boundary) — letting
+    // fetch generate it is required, an explicit application/json here would
+    // break the upload.
+    ...(body !== undefined && !isFormData ? { 'Content-Type': 'application/json' } : {}),
     ...(customHeaders as Record<string, string>),
   };
 
@@ -76,7 +99,7 @@ export async function apiClient<T>(
   let response = await fetch(`${API_BASE}${endpoint}`, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: requestBody,
     ...rest,
   });
 
@@ -89,7 +112,7 @@ export async function apiClient<T>(
         response = await fetch(`${API_BASE}${endpoint}`, {
           method,
           headers,
-          body: body ? JSON.stringify(body) : undefined,
+          body: requestBody,
           ...rest,
         });
       }

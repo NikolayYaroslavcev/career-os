@@ -1,5 +1,5 @@
 import type { Config } from '@careeros/shared';
-import { RedisAiBatchBacklog, getRedis, parseTelegramChannelList } from '@careeros/shared';
+import { RedisAiBatchBacklog, RedisRateLimiter, getRedis, parseTelegramChannelList } from '@careeros/shared';
 import {
   PrismaUserRepository,
   PrismaResumeRepository,
@@ -125,6 +125,7 @@ import {
   CandidateDeduplicationService,
   CompanyDiscoveryIntakeService,
   VacancyDiscoveryBridge,
+  isDeniedDiscoveryHostname,
 } from '@careeros/company-watch';
 import type { VacancyForDiscovery } from '@careeros/company-watch';
 import { SearchProfileService } from './services/search-profile-service.js';
@@ -150,7 +151,6 @@ import { SyncSchedulerService } from './services/sync-scheduler-service.js';
 import { SocialMessageIngestionService } from './services/social-message-ingestion-service.js';
 import { SocialMessagePipeline } from './services/social-message-pipeline.js';
 import { TelegramChannelStatsService } from './services/telegram-channel-stats-service.js';
-import { RedisRateLimiter } from './services/redis-rate-limiter.js';
 import { DashboardStatsService } from './services/dashboard-stats-service.js';
 import { NotificationDispatcherService } from './services/notification-dispatcher-service.js';
 import { BullMqVacancyAnalysisQueue, type VacancyAnalysisQueue } from './queues/vacancy-analysis-queue.js';
@@ -800,8 +800,11 @@ function createTelegramExtractionLookup(
  * one createTelegramExtractionLookup already applies to reach Vacancy
  * creation at all — MESSAGE_EXTRACTION_DISCOVERY_MIN_CONFIDENCE (70) vs.
  * SUCCESS's implicit >=40 — plus a requirement for a real extracted company
- * name and an external (non-t.me, non-mailto) link to use as companyUrl,
- * since NormalizedVacancy.companyUrl is never set by TelegramFetcher itself.
+ * name and an external (non-denylisted, non-mailto) link to use as
+ * companyUrl, since NormalizedVacancy.companyUrl is never set by
+ * TelegramFetcher itself. isDeniedDiscoveryHostname (@careeros/company-watch)
+ * is the same hostname-based denylist CompanyDiscoveryIntakeService.discover()
+ * guards candidateRepo.create() with.
  * Returns undefined for anything that doesn't qualify — those vacancies
  * still exist (created via the unconditional Vacancy-sync path), they just
  * never reach the discovery bridge, same "not eligible" convention used
@@ -826,7 +829,7 @@ export function createTelegramDiscoveryFilter(
     if (!fields.company || !fields.company.trim()) return undefined;
 
     const companyUrl = fields.links.find(
-      (link) => /^https?:\/\//i.test(link) && !/^https?:\/\/t\.me\//i.test(link) && !link.startsWith('mailto:')
+      (link) => /^https?:\/\//i.test(link) && !link.startsWith('mailto:') && !isDeniedDiscoveryHostname(link)
     );
     if (!companyUrl) return undefined;
 
@@ -1188,13 +1191,18 @@ export function buildContainer(config: Config): Container {
     new ProviderConsoleLogger(config.LOG_LEVEL)
   );
   const digestScheduler = new ManualDigestScheduler(digestDeliveryService);
+  // processDue() runs from both this app (manual/API trigger) and apps/worker
+  // (the recurring BullMQ sweep) — this claim lock keeps the two from ever
+  // delivering the same reminder twice if their runs overlap.
+  const followUpReminderClaimLock = new RedisRateLimiter(getRedis(config.REDIS_URL), 'follow-up-reminder-claim', 5 * 60_000);
   const followUpReminderService = new FollowUpReminderService(
     followUpRepository,
     applicationRepository,
     telegramConnectionRepository,
     telegramClient,
     digestMetrics,
-    new ProviderConsoleLogger(config.LOG_LEVEL)
+    new ProviderConsoleLogger(config.LOG_LEVEL),
+    followUpReminderClaimLock
   );
   const telegramLinkingService = new TelegramLinkingService(
     userRepository,
@@ -1234,7 +1242,8 @@ export function buildContainer(config: Config): Container {
     '1.0.0',
     new SearchProfileSuggestionPromptBuilder(),
     bulkAiBudgetEnforcer,
-    bulkUsageRecorder
+    bulkUsageRecorder,
+    new ProviderConsoleLogger(config.LOG_LEVEL)
   );
 
   // Distributed across replicas via Redis (SET NX), unlike a per-process Map —
@@ -1264,6 +1273,7 @@ export function buildContainer(config: Config): Container {
     vacancyRepository,
     applicationRepository,
     telegramClient,
+    new ProviderConsoleLogger(config.LOG_LEVEL),
   );
 
   const atsAdapterRegistry = new AtsAdapterRegistry();

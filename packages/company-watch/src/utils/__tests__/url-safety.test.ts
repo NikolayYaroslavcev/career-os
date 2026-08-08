@@ -9,7 +9,7 @@ vi.mock('node:dns/promises', () => ({
   }),
 }));
 
-const { assertSafeUrl, UnsafeUrlError } = await import('../url-safety.js');
+const { assertSafeUrl, UnsafeUrlError, isDeniedDiscoveryHostname } = await import('../url-safety.js');
 
 describe('assertSafeUrl', () => {
   it('allows a normal https URL to a public host', async () => {
@@ -48,5 +48,50 @@ describe('assertSafeUrl', () => {
 
   it('rejects a malformed URL', async () => {
     await expect(assertSafeUrl('not a url')).rejects.toThrow(UnsafeUrlError);
+  });
+});
+
+describe('isDeniedDiscoveryHostname', () => {
+  it.each(['t.me', 'telegram.me', 'telegram.org', 'teletype.in', 'telegra.ph'])(
+    'denies %s',
+    (host) => {
+      expect(isDeniedDiscoveryHostname(`https://${host}/some-channel`)).toBe(true);
+    }
+  );
+
+  it('denies a www. variant of a denylisted domain', () => {
+    expect(isDeniedDiscoveryHostname('https://www.t.me/some-channel')).toBe(true);
+  });
+
+  it('denies a subdomain of a denylisted domain', () => {
+    expect(isDeniedDiscoveryHostname('https://sub.telegram.org/some-channel')).toBe(true);
+  });
+
+  it('is case-insensitive', () => {
+    expect(isDeniedDiscoveryHostname('https://T.ME/some-channel')).toBe(true);
+  });
+
+  it('does not deny an ordinary company domain', () => {
+    expect(isDeniedDiscoveryHostname('https://company.com')).toBe(false);
+  });
+
+  it('does not deny an ordinary company domain with a careers path', () => {
+    expect(isDeniedDiscoveryHostname('https://company.com/careers')).toBe(false);
+  });
+
+  it('does not deny a homepage/root URL', () => {
+    expect(isDeniedDiscoveryHostname('https://company.com/')).toBe(false);
+  });
+
+  it('does not allow bypass via a lookalike domain (evil-telegram.me)', () => {
+    expect(isDeniedDiscoveryHostname('https://evil-telegram.me/careers')).toBe(false);
+  });
+
+  it('does not deny a domain that merely contains a denylisted string as a substring (t-me.com)', () => {
+    expect(isDeniedDiscoveryHostname('https://t-me.com/careers')).toBe(false);
+  });
+
+  it('does not deny a malformed URL (fails closed by returning false, not throwing)', () => {
+    expect(isDeniedDiscoveryHostname('not a url')).toBe(false);
   });
 });

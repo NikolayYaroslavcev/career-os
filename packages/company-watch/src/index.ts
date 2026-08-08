@@ -11,3 +11,6 @@ export * from './adapters/index.js';
 
 // Services
 export * from './services/index.js';
+
+// Utils
+export { assertSafeUrl, UnsafeUrlError, isDeniedDiscoveryHostname } from './utils/url-safety.js';

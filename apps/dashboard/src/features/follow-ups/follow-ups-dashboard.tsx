@@ -9,7 +9,8 @@ import {
   type EnrichedFollowUp,
   type FollowUpBuckets,
 } from '@/api/follow-ups';
-import type { FollowUpType } from '@/api/applications';
+import { listApplications, type Application, type FollowUpType } from '@/api/applications';
+import { getVacancyDetail, type VacancyDetail } from '@/api/sync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,18 @@ function formatDate(iso: string, locale: string): string {
   return new Date(iso).toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+function applicationLabel(
+  application: Application | undefined,
+  vacanciesById: Record<string, VacancyDetail>,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (!application) return '';
+  const vacancy = vacanciesById[application.vacancyId];
+  const title = vacancy?.title ?? t('applications.unknownVacancy');
+  const status = t(`applications.statuses.${application.status}`);
+  return vacancy?.company?.name ? `${title} — ${vacancy.company.name} (${status})` : `${title} (${status})`;
+}
+
 export function FollowUpsDashboard(): React.JSX.Element {
   const { t, locale } = useTranslation();
   const [buckets, setBuckets] = useState<FollowUpBuckets>(EMPTY_BUCKETS);
@@ -47,6 +60,10 @@ export function FollowUpsDashboard(): React.JSX.Element {
   const [type, setType] = useState<FollowUpType>('custom');
   const [message, setMessage] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [vacanciesById, setVacanciesById] = useState<Record<string, VacancyDetail>>({});
+  const [hasLoadedApplications, setHasLoadedApplications] = useState(false);
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -63,6 +80,38 @@ export function FollowUpsDashboard(): React.JSX.Element {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // This data only feeds the "create manual follow-up" form below, which is
+  // hidden by default — deferred until it's actually opened (once per mount)
+  // instead of fetching every application's vacancy detail on every dashboard
+  // visit whether or not the form is ever used.
+  useEffect(() => {
+    if (!showCreateForm || hasLoadedApplications) return;
+    setHasLoadedApplications(true);
+
+    let cancelled = false;
+    listApplications()
+      .then(async ({ applications: apps }) => {
+        if (cancelled) return;
+        setApplications(apps);
+        const uniqueVacancyIds = [...new Set(apps.map((application) => application.vacancyId))];
+        const fetched = await Promise.all(
+          uniqueVacancyIds.map((vacancyId) => getVacancyDetail(vacancyId).catch(() => null)),
+        );
+        if (cancelled) return;
+        const next: Record<string, VacancyDetail> = {};
+        fetched.forEach((vacancy, index) => {
+          if (vacancy) next[uniqueVacancyIds[index] as string] = vacancy;
+        });
+        setVacanciesById(next);
+      })
+      .catch(() => {
+        if (!cancelled) setApplications([]);
+      });
+    return (): void => {
+      cancelled = true;
+    };
+  }, [showCreateForm, hasLoadedApplications]);
 
   const handleComplete = async (id: string): Promise<void> => {
     setCompletingId(id);
@@ -152,12 +201,24 @@ export function FollowUpsDashboard(): React.JSX.Element {
           </CardHeader>
           <CardContent className="space-y-2">
             <div>
-              <p className="mb-1 text-xs text-muted-foreground">{t('followUpsPage.applicationIdLabel')}</p>
-              <Input
-                placeholder={t('followUpsPage.applicationIdPlaceholder')}
-                value={applicationId}
-                onChange={(e) => setApplicationId(e.target.value)}
-              />
+              <p className="mb-1 text-xs text-muted-foreground">{t('followUpsPage.applicationLabel')}</p>
+              <Select value={applicationId || undefined} onValueChange={(value) => setApplicationId(value ?? '')}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={t('followUpsPage.applicationPlaceholder')}>
+                    {(value: string) => applicationLabel(applications.find((a) => a.id === value), vacanciesById, t)}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  {applications.map((application) => (
+                    <SelectItem key={application.id} value={application.id}>
+                      {applicationLabel(application, vacanciesById, t)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {applications.length === 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">{t('followUpsPage.noApplications')}</p>
+              )}
             </div>
             <div>
               <p className="mb-1 text-xs text-muted-foreground">{t('followUpsPage.dateLabel')}</p>

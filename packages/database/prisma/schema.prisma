@@ -512,6 +512,9 @@ model FollowUp {
   application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
   @@index([applicationId])
+  // Backs findDue's `status IN (...) AND scheduledAt <= before` — the reminder
+  // sweep's sole query, run on every tick across every user's follow-ups.
+  @@index([status, scheduledAt])
 }
 
 enum FollowUpStatus {

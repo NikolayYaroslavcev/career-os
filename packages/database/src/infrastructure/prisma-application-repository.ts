@@ -1,4 +1,4 @@
-import type { ApplicationRepository, SaveApplicationOptions } from '@careeros/career';
+import type { ApplicationRepository, SaveApplicationOptions, FindApplicationsPageOptions, ApplicationsPage } from '@careeros/career';
 import type { ApplicationId, UserId, VacancyId } from '@careeros/career';
 import type { Application } from '@careeros/career';
 import type { ApplicationStatus } from '@careeros/career';
@@ -38,6 +38,27 @@ export class PrismaApplicationRepository implements ApplicationRepository {
     });
 
     return records.map(ApplicationMapper.toDomain);
+  }
+
+  async findByUserIdPage(userId: UserId, options: FindApplicationsPageOptions): Promise<ApplicationsPage> {
+    const where = {
+      userId,
+      ...(options.status
+        ? { status: options.status.toUpperCase() as 'SAVED' | 'STARTED' | 'SUBMITTED' | 'WAITING' | 'HR_INTERVIEW' | 'TECHNICAL_INTERVIEW' | 'FINAL_INTERVIEW' | 'OFFER' | 'REJECTED' | 'ARCHIVED' }
+        : {}),
+    };
+
+    const [records, total] = await Promise.all([
+      prisma.application.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: options.limit,
+        skip: options.offset,
+      }),
+      prisma.application.count({ where }),
+    ]);
+
+    return { applications: records.map(ApplicationMapper.toDomain), total };
   }
 
   async findByVacancyId(vacancyId: VacancyId): Promise<Application[]> {

@@ -178,6 +178,26 @@ export function calculateInteractionBoost(interactions: Array<{ action: string; 
   return Math.max(-20, Math.min(20, boost));
 }
 
+/**
+ * Same result as calling calculateInteractionBoost(interactions, id) once per
+ * vacancy id, but groups interactions by vacancyId first — O(vacancies +
+ * interactions) instead of O(vacancies * interactions). rankVacancies below
+ * ranks every candidate vacancy against the same interaction history, so
+ * calling the per-id version there rescans the whole list once per vacancy.
+ */
+function buildInteractionBoostMap(interactions: Array<{ action: string; vacancyId: string }>): Map<string, number> {
+  const raw = new Map<string, number>();
+  for (const interaction of interactions) {
+    raw.set(interaction.vacancyId, (raw.get(interaction.vacancyId) ?? 0) + (INTERACTION_WEIGHTS[interaction.action] ?? 0));
+  }
+
+  const clamped = new Map<string, number>();
+  for (const [vacancyId, boost] of raw) {
+    clamped.set(vacancyId, Math.max(-20, Math.min(20, boost)));
+  }
+  return clamped;
+}
+
 function buildExplanation(
   score: number,
   tier: VacancyTier,
@@ -789,6 +809,7 @@ export class VacancyRankingService {
     interactions?: Array<{ action: string; vacancyId: string }>,
   ): Array<{ vacancy: Vacancy; result: RankingResult }> {
     const computedProviderScores = new Map<string, number>();
+    const interactionBoostByVacancyId = interactions ? buildInteractionBoostMap(interactions) : undefined;
 
     const results = vacancies.map((vacancy) => {
       let providerType: string | undefined;
@@ -813,9 +834,7 @@ export class VacancyRankingService {
 
       const vacancyQuality = calculateVacancyQualityScore(vacancy, undefined, qualityScore);
 
-      const interactionBoost = interactions
-        ? calculateInteractionBoost(interactions, vacancy.id as string)
-        : undefined;
+      const interactionBoost = interactionBoostByVacancyId?.get(vacancy.id as string);
 
       const result = calculateRankingScore({
         vacancy,

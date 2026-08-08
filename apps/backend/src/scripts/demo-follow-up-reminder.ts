@@ -20,7 +20,7 @@ import {
   InMemoryTelegramConnectionRepository,
 } from '../testing/in-memory-repositories.js';
 import { buildFixtureTelegramConnection, FIXTURE_USER_ID } from '../testing/fixtures.js';
-import { FollowUpReminderService } from '@careeros/notifications';
+import { FollowUpReminderService, type FollowUpClaimLock } from '@careeros/notifications';
 import { ApplicationCreationService } from '../services/application-creation-service.js';
 import { FollowUpService } from '../services/follow-up-service.js';
 
@@ -38,6 +38,8 @@ async function main(): Promise<void> {
   const telegramConnectionRepository = new InMemoryTelegramConnectionRepository();
   const telegramClient = new InMemoryTelegramClient();
   const metrics = new InMemoryMetricsCollector();
+  // Single-process demo — no concurrent sweep to race against, so every claim succeeds.
+  const claimLock: FollowUpClaimLock = { checkAndRecord: async () => true };
 
   const applicationService = new ApplicationServiceImpl(applicationRepository);
   const followUpService = new FollowUpService(followUpRepository, applicationRepository, vacancyRepository, companyRepository);
@@ -47,7 +49,8 @@ async function main(): Promise<void> {
     telegramConnectionRepository,
     telegramClient,
     metrics,
-    new NoopLogger()
+    new NoopLogger(),
+    claimLock
   );
 
   const companyId = createCompanyId(crypto.randomUUID());

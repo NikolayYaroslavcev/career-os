@@ -11,6 +11,7 @@ import type { AtsAdapter, AtsConfig } from '../adapters/base-adapter.js';
 import type { DiscoveryResult } from './company-discovery-service.js';
 import type { CandidateDeduplicationService } from './candidate-deduplication-service.js';
 import type { CompanyWatchService } from './company-watch-service.js';
+import { assertSafeUrl, isDeniedDiscoveryHostname } from '../utils/url-safety.js';
 
 /** Structural — CompanyDiscoveryService satisfies this as-is; tests can supply a fake with no network I/O. */
 export interface DiscoveryProbe {
@@ -48,6 +49,7 @@ export interface DiscoverCandidateInput {
 
 export type DiscoverCandidateOutcome =
   | { readonly outcome: 'DUPLICATE'; readonly nearestMatchName: string; readonly similarity: number }
+  | { readonly outcome: 'BLOCKED'; readonly reason: string }
   | { readonly outcome: 'SCORED'; readonly candidate: CompanyCandidateData };
 
 /**
@@ -82,6 +84,10 @@ export class CompanyDiscoveryIntakeService {
     const nearestMatch = this.dedupService.findNearestMatch(input.companyName, knownNames);
     if (nearestMatch && this.dedupService.isDuplicate(input.companyName, knownNames)) {
       return { outcome: 'DUPLICATE', nearestMatchName: nearestMatch.name, similarity: nearestMatch.similarity };
+    }
+
+    if (isDeniedDiscoveryHostname(input.url)) {
+      return { outcome: 'BLOCKED', reason: `'${input.url}' is on the discovery denylist` };
     }
 
     const candidate = CompanyCandidate.create({
@@ -187,6 +193,19 @@ export class CompanyDiscoveryIntakeService {
   ): Promise<{ reachable: boolean; jobSignalFound: boolean }> {
     if (!atsType || !this.adapterRegistry.has(atsType)) {
       return { reachable: fingerprintFetchSucceeded, jobSignalFound: false };
+    }
+
+    // careerUrl at this point may be a link scraped verbatim from the
+    // discovered page's own HTML (CompanyDiscoveryService.findCareersPage),
+    // not the URL the caller originally submitted — that first hop was
+    // validated, this second one wasn't. Same SSRF surface assertSafeUrl
+    // already closes for CompanyWatchService; fail closed like the other
+    // error paths in this method rather than let the adapter fetch it.
+    try {
+      await assertSafeUrl(careerUrl);
+      if (atsEndpoint) await assertSafeUrl(atsEndpoint);
+    } catch {
+      return { reachable: false, jobSignalFound: false };
     }
 
     const adapter = this.adapterRegistry.get(atsType);

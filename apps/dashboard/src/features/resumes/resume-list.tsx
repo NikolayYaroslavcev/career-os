@@ -22,18 +22,24 @@ export function ResumeList({ refreshKey }: ResumeListProps): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     async function fetchResumes(): Promise<void> {
       try {
         const data = await listResumes();
+        if (cancelled) return;
         setResumes(data.resumes);
       } catch (err) {
+        if (cancelled) return;
         console.error('Failed to fetch resumes:', err);
         setError(t('resumes.loadFailed'));
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     }
     fetchResumes();
+    return () => {
+      cancelled = true;
+    };
   }, [refreshKey]);
 
   const handleDelete = async (id: string): Promise<void> => {

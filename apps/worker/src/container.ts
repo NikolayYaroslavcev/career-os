@@ -1,4 +1,5 @@
 import type { Config } from '@careeros/shared';
+import { RedisRateLimiter, getRedis } from '@careeros/shared';
 import {
   PrismaVacancyRepository,
   PrismaSearchProfileRepository,
@@ -206,13 +207,18 @@ export async function buildWorkerContainer(config: Config): Promise<WorkerContai
     usageRecorder,
   });
 
+  // processDue() also runs from apps/backend (manual/API trigger) — this
+  // claim lock (shared Redis key prefix/TTL with that container) keeps the
+  // two from ever delivering the same reminder twice if their runs overlap.
+  const followUpReminderClaimLock = new RedisRateLimiter(getRedis(config.REDIS_URL), 'follow-up-reminder-claim', 5 * 60_000);
   const followUpReminderService = new FollowUpReminderService(
     followUpRepository,
     applicationRepository,
     telegramConnectionRepository,
     createTelegramClient(config),
     new InMemoryMetricsCollector(),
-    new ConsoleLogger(config.LOG_LEVEL)
+    new ConsoleLogger(config.LOG_LEVEL),
+    followUpReminderClaimLock
   );
 
   // ADR-031: the resume-tailoring pipeline reuses ResumeContextProvider

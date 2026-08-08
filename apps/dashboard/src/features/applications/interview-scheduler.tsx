@@ -32,19 +32,25 @@ export function InterviewScheduler({ applicationId }: InterviewSchedulerProps): 
   const [newInterviewerEmail, setNewInterviewerEmail] = useState('');
   const [newNotes, setNewNotes] = useState('');
 
-  const fetchInterviews = useCallback(async (): Promise<void> => {
+  const fetchInterviews = useCallback(async (isCancelled?: () => boolean): Promise<void> => {
     try {
       const data = await listInterviews(applicationId);
+      if (isCancelled?.()) return;
       setInterviews(data.interviews);
     } catch (error) {
+      if (isCancelled?.()) return;
       console.error('Failed to load interviews:', error);
     } finally {
-      setIsLoading(false);
+      if (!isCancelled?.()) setIsLoading(false);
     }
   }, [applicationId]);
 
   useEffect(() => {
-    fetchInterviews();
+    let cancelled = false;
+    fetchInterviews(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
   }, [fetchInterviews]);
 
   const handleSchedule = async (): Promise<void> => {

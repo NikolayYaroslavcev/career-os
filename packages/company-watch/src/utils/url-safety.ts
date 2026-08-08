@@ -1,6 +1,33 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
+/**
+ * Known non-company platforms whose URLs sometimes end up in extracted/scraped
+ * fields (Telegram channel links, Telegraph/Teletype blog posts) but are never
+ * themselves a company's career page — must never become a CompanyCandidate.
+ */
+const DENIED_DISCOVERY_HOSTNAMES = ['t.me', 'telegram.me', 'telegram.org', 'teletype.in', 'telegra.ph'];
+
+/**
+ * Hostname-exact-or-subdomain match against DENIED_DISCOVERY_HOSTNAMES — never
+ * a substring/startsWith check, so a lookalike domain like evil-telegram.me or
+ * t-me.com is never caught. www. is stripped before comparison so both the
+ * bare and www-prefixed form of a denied domain match; a malformed URL fails
+ * closed to `false` (not denied) since callers use this purely as a targeted
+ * denylist, not general URL validation — assertSafeUrl already owns that.
+ */
+export function isDeniedDiscoveryHostname(url: string): boolean {
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+
+  const normalized = hostname.startsWith('www.') ? hostname.slice(4) : hostname;
+  return DENIED_DISCOVERY_HOSTNAMES.some((denied) => normalized === denied || normalized.endsWith(`.${denied}`));
+}
+
 export class UnsafeUrlError extends Error {
   constructor(url: string, reason: string) {
     super(`Refusing to fetch '${url}': ${reason}`);

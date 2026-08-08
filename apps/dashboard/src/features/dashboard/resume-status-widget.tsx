@@ -15,10 +15,14 @@ export function ResumeStatusWidget(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     listResumes()
-      .then(data => { if (data.resumes.length > 0) setResume(data.resumes[0] ?? null); })
+      .then(data => { if (!cancelled && data.resumes.length > 0) setResume(data.resumes[0] ?? null); })
       .catch(() => {})
-      .finally(() => setIsLoading(false));
+      .finally(() => { if (!cancelled) setIsLoading(false); });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (isLoading) {

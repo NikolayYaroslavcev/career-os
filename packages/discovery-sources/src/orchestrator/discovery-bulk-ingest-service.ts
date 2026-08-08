@@ -14,6 +14,7 @@ export interface DiscoveryIntakeProbe {
     sourceAuthorityScore: number;
   }): Promise<
     | { readonly outcome: 'DUPLICATE' }
+    | { readonly outcome: 'BLOCKED' }
     | { readonly outcome: 'SCORED'; readonly candidate: { readonly status: string } }
   >;
 }
@@ -78,6 +79,10 @@ export class DiscoveryBulkIngestService {
 
         if (outcome.outcome === 'DUPLICATE') {
           deduplicated++;
+          return;
+        }
+        if (outcome.outcome === 'BLOCKED') {
+          rejected++;
           return;
         }
         if (outcome.candidate.status === 'AUTO_APPROVED' || outcome.candidate.status === 'CONVERTED') enrolled++;
