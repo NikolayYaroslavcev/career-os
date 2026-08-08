@@ -116,13 +116,7 @@ runIf('VacancyDiscoveryBridge (real Postgres)', () => {
     const result = await bridge.processVacancies([v], 'hh');
     expect(result.newCandidates).toBe(1);
 
-    // Queried directly via Prisma, not candidateRepo.findByCompanyName() — a
-    // brand-new company's very first sighting has no fingerprint/reachability/
-    // job signal yet and scores well under the REJECTED threshold (see the
-    // dedicated "re-discovery after rejection" finding below), and
-    // findByCompanyName() deliberately excludes REJECTED rows. This test is
-    // about field persistence, not scoring, so it reads the row as-is.
-    const persisted = await prisma.companyCandidate.findFirst({ where: { companyName: v.companyName } });
+    const persisted = await candidateRepo.findByCompanyName(v.companyName);
     if (!persisted) throw new Error('candidate not persisted');
     createdCandidateIds.push(persisted.id);
 
@@ -138,11 +132,10 @@ runIf('VacancyDiscoveryBridge (real Postgres)', () => {
 
   it('accumulates seenCount/vacancyCount/providerCount across multiple provider syncs for the same company, keeping firstSeenAt stable while lastSeenAt advances', async () => {
     // Seeded directly at REVIEW_REQUIRED (rather than created via a first
-    // processVacancies() call) — a brand-new candidate's very first sighting
-    // scores well below the REJECTED threshold (no fingerprint/reachability/job
-    // signal yet), and findByCompanyName() deliberately excludes REJECTED rows
-    // (see the dedicated "re-discovery after rejection" test below). Seeding
-    // past that point isolates the accumulation behaviour this test targets.
+    // processVacancies() call) so this test isolates pure accumulation
+    // behaviour without depending on the first-sighting scoring path, which
+    // a brand-new candidate would start well below (see the "re-discovery
+    // after rejection" test below for that path).
     const name = `Multi Sync Co ${crypto.randomUUID()}`;
     const firstSeenAt = new Date(Date.now() - 60_000);
     const seed = await candidateRepo.create({
@@ -178,29 +171,34 @@ runIf('VacancyDiscoveryBridge (real Postgres)', () => {
     expect(afterSecond?.lastSeenAt?.getTime() ?? 0).toBeGreaterThan(firstSeenAt.getTime());
   });
 
-  it('finding: a company whose first sighting scores below the REJECTED threshold gets re-discovered as a second row on the next sync, since findByCompanyName excludes REJECTED candidates', async () => {
-    // Documents real (Postgres-only) behaviour that in-memory-mocked unit
-    // tests cannot observe, since they stub findByCompanyName's return value
-    // directly rather than exercising PrismaCompanyCandidateRepository's real
-    // `status: { notIn: ['REJECTED', 'CONVERTED'] }` filter. A brand-new
-    // company with no ATS fingerprint, no reachability, and no job signal
-    // scores well under 50 on its very first vacancy sighting, so it starts
-    // life REJECTED — which then makes it invisible to future accumulation.
+  it('accumulates sightings on the same row across syncs even after the first sighting scored REJECTED, instead of inserting a duplicate row', async () => {
+    // A brand-new company with no ATS fingerprint, no reachability, and no
+    // job signal scores well under 50 on its very first vacancy sighting, so
+    // it starts life REJECTED. findByCompanyName() must still find that row
+    // on the next sync (it only excludes CONVERTED) — otherwise every
+    // provider sync that resurfaces the company's vacancy re-runs discovery
+    // and inserts another REJECTED row for the same company/URL, which is
+    // exactly what was observed in production for repeat vacancy_sync
+    // submissions of the same homepage URL.
     const bridge = buildBridge();
     const name = `Cold Start Co ${crypto.randomUUID()}`;
 
     await bridge.processVacancies([vacancy({ companyName: name })], 'hh');
-    const first = await candidateRepo.findByCompanyName(name); // excludes REJECTED -> null
-    expect(first).toBeNull();
     const rejectedRow = await prisma.companyCandidate.findFirst({ where: { companyName: name } });
     expect(rejectedRow?.status).toBe('REJECTED');
     if (rejectedRow) createdCandidateIds.push(rejectedRow.id);
+
+    const foundByName = await candidateRepo.findByCompanyName(name);
+    expect(foundByName?.id).toBe(rejectedRow?.id);
 
     await bridge.processVacancies([vacancy({ companyName: name })], 'remotive');
     const allRows = await prisma.companyCandidate.findMany({ where: { companyName: name } });
     createdCandidateIds.push(...allRows.map((r) => r.id));
 
-    expect(allRows.length).toBe(2);
+    expect(allRows.length).toBe(1);
+    expect(allRows[0]?.seenCount).toBe(2);
+    expect(allRows[0]?.providers).toEqual(['hh', 'remotive']);
+    expect(allRows[0]?.status).toBe('REJECTED');
   });
 
   it('auto-converts to a real CompanyWatch row once seenCount/vacancyCount thresholds are crossed with an auto-enroll workspace configured', async () => {

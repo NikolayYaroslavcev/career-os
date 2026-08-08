@@ -44,10 +44,17 @@ export class PrismaCompanyCandidateRepository implements CompanyCandidateReposit
   }
 
   async findByCompanyName(companyName: string): Promise<CompanyCandidateData | null> {
+    // CONVERTED is excluded because that candidate already became a live
+    // CompanyWatch row — recreating it would duplicate the company. REJECTED
+    // is deliberately included: excluding it let VacancyDiscoveryBridge
+    // re-run full discovery and insert a brand-new row every time a
+    // previously-rejected company's vacancy resurfaced in a provider sync,
+    // producing dozens to hundreds of duplicate REJECTED rows for the same
+    // company/URL over time instead of accumulating sightings on one row.
     const record = await prisma.companyCandidate.findFirst({
       where: {
         companyName: { equals: companyName, mode: 'insensitive' },
-        status: { notIn: ['REJECTED', 'CONVERTED'] },
+        status: { notIn: ['CONVERTED'] },
       },
       orderBy: { updatedAt: 'desc' },
     });
