@@ -122,23 +122,27 @@ export class CompanyDiscoveryService {
   }
 
   private findCareersPage(html: string, url: string): string | null {
-    const patterns = [
-      /href=["']([^"']*\/careers?[^"']*)["']/gi,
-      /href=["']([^"']*\/jobs?[^"']*)["']/gi,
-      /href=["']([^"']*\/positions?[^"']*)["']/gi,
-      /href=["']([^"']*\/openings?[^"']*)["']/gi,
-      /href=["']([^"']*\/hiring[^"']*)["']/gi,
-    ];
+    // Keyword list is kept in sync with CustomHtmlAdapter's job-link pattern
+    // (job|position|opening|career|vacan|hiring) plus CIS-specific segments
+    // (vakansi, карьер, вакан), since the dominant discovery source
+    // (vacancy_sync:telegram) is Kazakhstani companies. No leading slash is
+    // required before the keyword, matching the adapter's looser match —
+    // requiring one previously caused this method to miss links the adapter
+    // caught anyway (e.g. openstack.org -> gitjobs.dev), making the result
+    // depend on which of the two regexes happened to run.
+    // Bare "role" is intentionally excluded here (unlike CustomHtmlAdapter,
+    // which scans an already-scoped jobs page): on a homepage it produces
+    // false positives like /blog/gender-roles-in-tech or ?role=subscriber
+    // login links.
+    const pattern = /href=["']([^"']*(?:job|position|opening|career|vacan|hiring|vakansi|карьер|вакан)[^"']*)["']/gi;
 
     const baseUrl = new URL(url).origin;
 
-    for (const pattern of patterns) {
-      const match = pattern.exec(html);
-      if (match && match[1]) {
-        const href = match[1];
-        if (href.startsWith('http')) return href;
-        if (href.startsWith('/')) return `${baseUrl}${href}`;
-      }
+    const match = pattern.exec(html);
+    if (match && match[1]) {
+      const href = match[1];
+      if (href.startsWith('http')) return href;
+      if (href.startsWith('/')) return `${baseUrl}${href}`;
     }
 
     return null;

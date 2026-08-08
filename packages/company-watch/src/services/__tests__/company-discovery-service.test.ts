@@ -75,6 +75,87 @@ describe('CompanyDiscoveryService.discover — ATS fingerprint detection', () =>
     expect(result.careerUrl).toBe('https://93.184.216.34/careers/openings');
   });
 
+  it('matches a job-related keyword without a leading slash', async () => {
+    mockFetchOnce(`<html><a href="https://gitjobs.dev/?foundation=openinfra">Open positions</a></html>`);
+
+    const result = await new CompanyDiscoveryService().discover(URL_);
+
+    expect(result.careerUrl).toBe('https://gitjobs.dev/?foundation=openinfra');
+  });
+
+  it('matches the "vacan" (vacancy/vacancies) keyword', async () => {
+    mockFetchOnce(`<html><a href="/vacancies">Vacancies</a></html>`);
+
+    const result = await new CompanyDiscoveryService().discover(URL_);
+
+    expect(result.careerUrl).toBe('https://93.184.216.34/vacancies');
+  });
+
+  it('matches CIS-specific keywords (Cyrillic "вакансии" and "карьера")', async () => {
+    mockFetchOnce(`<html><a href="/вакансии">Вакансии</a></html>`);
+
+    const result = await new CompanyDiscoveryService().discover(URL_);
+
+    expect(result.careerUrl).toBe('https://93.184.216.34/вакансии');
+  });
+
+  it('matches "jobs/openings" (job + opening keywords)', async () => {
+    mockFetchOnce(`<html><a href="/jobs/openings">Open roles</a></html>`);
+
+    const result = await new CompanyDiscoveryService().discover(URL_);
+
+    expect(result.careerUrl).toBe('https://93.184.216.34/jobs/openings');
+  });
+
+  it('matches "company/career" (career keyword)', async () => {
+    mockFetchOnce(`<html><a href="/company/career">About our team</a></html>`);
+
+    const result = await new CompanyDiscoveryService().discover(URL_);
+
+    expect(result.careerUrl).toBe('https://93.184.216.34/company/career');
+  });
+
+  it('matches "hiring" as a standalone keyword', async () => {
+    mockFetchOnce(`<html><a href="/hiring">We're hiring</a></html>`);
+
+    const result = await new CompanyDiscoveryService().discover(URL_);
+
+    expect(result.careerUrl).toBe('https://93.184.216.34/hiring');
+  });
+
+  it('does NOT treat a blog link about "roles" as a careers page (bare "role" false positive)', async () => {
+    mockFetchOnce(
+      `<html><a href="/blog/gender-roles-in-tech">Blog post</a><a href="/about">About</a></html>`
+    );
+
+    const result = await new CompanyDiscoveryService().discover(URL_);
+
+    expect(result.careerUrl).not.toBe('https://93.184.216.34/blog/gender-roles-in-tech');
+    expect(result.careerUrl).toBe(URL_);
+  });
+
+  it('does NOT treat a WordPress login "?role=" query param as a careers page', async () => {
+    mockFetchOnce(
+      `<html><a href="/wp-login.php?role=subscriber">Login</a><a href="/about">About</a></html>`
+    );
+
+    const result = await new CompanyDiscoveryService().discover(URL_);
+
+    expect(result.careerUrl).not.toBe('https://93.184.216.34/wp-login.php?role=subscriber');
+    expect(result.careerUrl).toBe(URL_);
+  });
+
+  it('does NOT match "vacation-packages" (vacat ≠ vacan substring)', async () => {
+    mockFetchOnce(
+      `<html><a href="/products/vacation-packages">Vacation packages</a><a href="/about">About</a></html>`
+    );
+
+    const result = await new CompanyDiscoveryService().discover(URL_);
+
+    expect(result.careerUrl).not.toBe('https://93.184.216.34/products/vacation-packages');
+    expect(result.careerUrl).toBe(URL_);
+  });
+
   it('returns a null-shaped result when the fetch fails (non-2xx)', async () => {
     mockFetchOnce('', false, 500);
 
