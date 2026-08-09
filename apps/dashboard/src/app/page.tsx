@@ -1,22 +1,22 @@
-'use client';
+import type { Metadata } from 'next';
+import { LandingContent } from '@/features/landing/landing-content';
+import { RootAuthRedirect } from '@/features/landing/root-auth-redirect';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@/stores/auth-store';
-import { isAuthenticated } from '@/api/auth';
+export const metadata: Metadata = {
+  title: 'CareerOS - Your career workspace',
+  description: 'Find opportunities. Track progress. Grow.',
+  openGraph: {
+    title: 'CareerOS - Your career workspace',
+    description: 'Find opportunities. Track progress. Grow.',
+    type: 'website',
+  },
+};
 
-export default function RootPage(): React.JSX.Element | null {
-  const router = useRouter();
-  const { loadUser } = useAuthStore();
-
-  useEffect(() => {
-    loadUser();
-    if (isAuthenticated()) {
-      router.replace('/app');
-    } else {
-      router.replace('/login');
-    }
-  }, [loadUser, router]);
-
-  return null;
+export default function RootPage(): React.JSX.Element {
+  return (
+    <>
+      <RootAuthRedirect />
+      <LandingContent />
+    </>
+  );
 }

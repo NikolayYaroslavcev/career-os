@@ -7,7 +7,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loading } from '@/components/ui/loading';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { EmptyState } from '@/components/empty-state';
 import { FileText, Trash2, Calendar } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
 
@@ -76,14 +75,7 @@ export function ResumeList({ refreshKey }: ResumeListProps): React.JSX.Element {
         </Alert>
       )}
 
-      {resumes.length === 0 ? (
-        <EmptyState
-          icon={FileText}
-          title={t('resumes.emptyTitle')}
-          description={t('resumes.emptyDesc')}
-          action={{ label: t('resumes.emptyCta'), href: '#' }}
-        />
-      ) : (
+      {resumes.length > 0 && (
         <div className="space-y-3">
           {resumes.map((resume) => (
             <Card key={resume.id}>

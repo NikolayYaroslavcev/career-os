@@ -37,7 +37,12 @@ runIf('User persistence (real Postgres)', () => {
     });
     userIds.push(user.id);
 
-    await repository.save(user);
+    // repository.save() is update-only by design (see its doc comment) —
+    // the real row-creating write is registration's own transaction, which
+    // this mirrors directly rather than going through the repository.
+    await prisma.user.create({
+      data: { id: user.id, email, passwordHash: 'x', firstName: 'Ada', lastName: 'Lovelace' },
+    });
 
     const foundById = await repository.findById(user.id);
     expect(foundById).not.toBeNull();
@@ -74,17 +79,23 @@ runIf('User persistence (real Postgres)', () => {
       lastName: 'User',
     });
     userIds.push(first.id);
-    await repository.save(first);
-
-    const second = UserEntity.create({
-      id: createUserId(crypto.randomUUID()),
-      email: Email.create(email),
-      firstName: 'Second',
-      lastName: 'User',
+    await prisma.user.create({
+      data: { id: first.id, email, passwordHash: 'x', firstName: 'First', lastName: 'User' },
     });
 
-    await expect(repository.save(second)).rejects.toThrow();
-    expect(await repository.exists(second.id)).toBe(false);
+    const secondId = createUserId(crypto.randomUUID());
+
+    // The unique constraint this exercises lives on the `email` column
+    // itself, so it's enforced regardless of which write path creates the
+    // row — asserting it here against the same prisma.user.create() that
+    // registration actually uses (repository.save() is update-only, see
+    // above).
+    await expect(
+      prisma.user.create({
+        data: { id: secondId, email, passwordHash: 'x', firstName: 'Second', lastName: 'User' },
+      })
+    ).rejects.toThrow();
+    expect(await repository.exists(secondId)).toBe(false);
   });
 
   it('creates, looks up, and cascades away RefreshToken rows when the user is deleted', async () => {
@@ -98,7 +109,9 @@ runIf('User persistence (real Postgres)', () => {
       lastName: 'Owner',
     });
     userIds.push(user.id);
-    await userRepository.save(user);
+    await prisma.user.create({
+      data: { id: user.id, email: user.email.value, passwordHash: 'x', firstName: 'Refresh', lastName: 'Owner' },
+    });
 
     const token = `token-${crypto.randomUUID()}`;
     await refreshTokenRepository.create({
@@ -128,7 +141,9 @@ runIf('User persistence (real Postgres)', () => {
       lastName: 'User',
     });
     userIds.push(user.id);
-    await userRepository.save(user);
+    await prisma.user.create({
+      data: { id: user.id, email: user.email.value, passwordHash: 'x', firstName: 'Member', lastName: 'User' },
+    });
 
     const workspace = await prisma.workspace.create({
       data: { name: `integration-test-${crypto.randomUUID()}` },

@@ -2,16 +2,24 @@ import { test, expect } from '../fixtures/auth';
 import { ROUTES } from '../helpers/navigation';
 
 /**
- * Scenario: Provider Settings
+ * Scenario: Provider Settings (admin-only — see AdminGuard /
+ * apps/dashboard/src/app/app/settings/providers/layout.tsx)
  */
 test.describe('Provider Settings', () => {
-  test('navigate to provider settings page', async ({ authenticatedPage: page }) => {
+  test('JOB_SEEKER is forbidden from provider settings', async ({ authenticatedPage: page }) => {
     await page.goto(ROUTES.PROVIDERS);
     await expect(page).toHaveURL(ROUTES.PROVIDERS);
-    await expect(page.getByRole('heading', { name: /Provider Settings|Настройки источников/i }).first()).toBeVisible();
+    await expect(page.getByText(/Access restricted|Доступ ограничен/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Provider Settings|Настройки провайдеров/i })).toHaveCount(0);
   });
 
-  test('display provider tabs', async ({ authenticatedPage: page }) => {
+  test('ADMIN can navigate to provider settings page', async ({ authenticatedAdminPage: page }) => {
+    await page.goto(ROUTES.PROVIDERS);
+    await expect(page).toHaveURL(ROUTES.PROVIDERS);
+    await expect(page.getByRole('heading', { name: /Provider Settings|Настройки провайдеров/i }).first()).toBeVisible();
+  });
+
+  test('ADMIN sees provider tabs', async ({ authenticatedAdminPage: page }) => {
     await page.goto(ROUTES.PROVIDERS);
 
     // Wait for page to load
@@ -21,11 +29,11 @@ test.describe('Provider Settings', () => {
       .catch(() => undefined);
 
     // Should show Providers and Telegram Channels tabs
-    await expect(page.getByRole('button', { name: /Providers \(|Источники \(/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Telegram Channels|Каналы Telegram/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Providers \(|Провайдеры \(/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Telegram Channels|Telegram-каналы/i })).toBeVisible();
   });
 
-  test('display provider cards with status', async ({ authenticatedPage: page }) => {
+  test('ADMIN sees provider cards with status', async ({ authenticatedAdminPage: page }) => {
     await page.goto(ROUTES.PROVIDERS);
 
     await page
@@ -41,7 +49,7 @@ test.describe('Provider Settings', () => {
     expect(hasCards || hasEmptyState).toBe(true);
   });
 
-  test('toggle provider enabled/disabled', async ({ authenticatedPage: page }) => {
+  test('ADMIN can toggle provider enabled/disabled', async ({ authenticatedAdminPage: page }) => {
     await page.goto(ROUTES.PROVIDERS);
 
     await page
@@ -59,7 +67,7 @@ test.describe('Provider Settings', () => {
     await page.waitForTimeout(1000);
   });
 
-  test('sync a provider', async ({ authenticatedPage: page }) => {
+  test('ADMIN can sync a provider', async ({ authenticatedAdminPage: page }) => {
     await page.goto(ROUTES.PROVIDERS);
 
     await page
@@ -89,7 +97,7 @@ test.describe('Provider Settings', () => {
     await page.waitForTimeout(2000);
   });
 
-  test('switch between Providers and Telegram tabs', async ({ authenticatedPage: page }) => {
+  test('ADMIN can switch between Providers and Telegram tabs', async ({ authenticatedAdminPage: page }) => {
     await page.goto(ROUTES.PROVIDERS);
 
     await page
@@ -98,14 +106,14 @@ test.describe('Provider Settings', () => {
       .catch(() => undefined);
 
     // Click Telegram tab
-    const telegramTab = page.getByRole('button', { name: /Telegram Channels|Каналы Telegram/i });
+    const telegramTab = page.getByRole('button', { name: /Telegram Channels|Telegram-каналы/i });
     await telegramTab.click();
 
     // Verify tab is clickable and page doesn't crash
     await page.waitForTimeout(500);
 
     // Switch back to Providers tab
-    await page.getByRole('button', { name: /Providers \(|Источники \(/i }).click();
+    await page.getByRole('button', { name: /Providers \(|Провайдеры \(/i }).click();
     await page.waitForTimeout(500);
   });
 });

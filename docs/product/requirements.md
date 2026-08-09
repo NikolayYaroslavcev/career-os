@@ -2,7 +2,7 @@
 
 ## Product Vision
 
-CareerOS is a personal AI career assistant that operates continuously on behalf of the user. It handles repetitive career management tasks so the user can focus on strategic decisions.
+CareerOS is a career workspace that operates continuously on behalf of the user. It handles repetitive career management tasks so the user can focus on strategic decisions.
 
 ## Target Users
 

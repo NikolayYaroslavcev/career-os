@@ -1,6 +1,6 @@
 import type { Mapper, MappedJob } from '../../interfaces/mapper.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
-import { decodeHtmlEntities } from '../../shared/html-entities.js';
+import { decodeHtmlEntities, decodeTechnologies } from '../../shared/html-entities.js';
 
 export class GreenhouseMapper implements Mapper {
   readonly providerId = 'greenhouse';
@@ -16,7 +16,7 @@ export class GreenhouseMapper implements Mapper {
       salary: raw.salary
         ? { min: raw.salary.from, max: raw.salary.to, currency: raw.salary.currency, period: raw.salary.period }
         : undefined,
-      technologies: raw.technologies,
+      technologies: decodeTechnologies(raw.technologies),
       url: raw.url,
       publishedAt: raw.publishedAt,
       fetchedAt: raw.fetchedAt,

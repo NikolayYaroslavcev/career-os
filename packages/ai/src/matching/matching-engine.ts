@@ -107,7 +107,15 @@ export class MatchingEngine {
         promptId: builtPrompt.version.id,
         promptVersion: builtPrompt.version.version,
         promptChecksum: builtPrompt.version.checksum,
-        model: this.deps.provider.defaultModel,
+        // Left unset rather than pinned to this.deps.provider.defaultModel
+        // (always the primary provider's model, per FallbackAIProvider) —
+        // FallbackAIProvider forwards this same request object to every
+        // provider in the chain unchanged, so a model ID pinned to the
+        // primary would get sent to fallback vendors too, who don't
+        // recognize it (e.g. Groq's "llama-3.3-70b-versatile" rejected by
+        // OpenRouter as "not a valid model ID"). Leaving it unset lets each
+        // provider's own doComplete() resolve request.model ?? this.defaultModel
+        // to its own correct default.
         systemPrompt: builtPrompt.system,
       };
 

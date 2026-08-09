@@ -8,6 +8,8 @@ build/
 .next/
 .turbo/
 *.tsbuildinfo
+*.crx
+*.pem
 
 # Environment
 .env
@@ -56,3 +58,9 @@ graphify-out/
 # Local file storage (resume uploads written to disk at runtime)
 apps/backend/uploads/
 apps/e2e/test-results/
+
+# Playwright storageState (cookies/JWTs) for the fixed E2E test users — was
+# previously committed, so a fresh checkout carried a session for a user that
+# doesn't exist in a freshly migrated CI database. The auth fixtures
+# (apps/e2e/fixtures/auth.ts) regenerate these on demand when absent.
+apps/e2e/test-data/.auth/

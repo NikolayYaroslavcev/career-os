@@ -1,6 +1,6 @@
 import type { Mapper, MappedJob } from '../../interfaces/mapper.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
-import { decodeHtmlEntities } from '../../shared/html-entities.js';
+import { decodeHtmlEntities, decodeTechnologies } from '../../shared/html-entities.js';
 
 export class HabrCareerMapper implements Mapper {
   readonly providerId = 'habr_career';
@@ -17,7 +17,7 @@ export class HabrCareerMapper implements Mapper {
       location: this.normalizeLocation(raw.location),
       salary: this.normalizeSalary(raw.salary),
       experienceLevel: raw.experienceLevel ?? this.inferExperienceLevel(title, description),
-      technologies: [...new Set(raw.technologies.map((t) => t.toLowerCase().trim()).filter(Boolean))],
+      technologies: decodeTechnologies(raw.technologies),
       url: raw.url,
       publishedAt: raw.publishedAt,
       fetchedAt: raw.fetchedAt,

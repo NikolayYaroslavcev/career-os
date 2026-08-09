@@ -74,6 +74,7 @@ export function SearchButton(): React.JSX.Element {
   const [stats, setStats] = useState<SearchResponse['stats'] | null>(cached?.stats ?? null);
   const [aiEnabled, setAiEnabled] = useState(cached?.aiEnabled ?? true);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
   const [activeProfile, setActiveProfile] = useState<SearchProfile | null>(null);
   const [profileCheckDone, setProfileCheckDone] = useState(false);
@@ -176,6 +177,7 @@ export function SearchButton(): React.JSX.Element {
   const handleSearch = async (): Promise<void> => {
     setIsLoading(true);
     setError(null);
+    setErrorCode(null);
     try {
       const response = await runSearch();
       setSearchProfileId(response.searchProfileId);
@@ -189,6 +191,7 @@ export function SearchButton(): React.JSX.Element {
         try {
           const errorBody = await err.json() as SearchError;
           if (errorBody.error?.code && errorBody.error?.message) {
+            setErrorCode(errorBody.error.code);
             setError(errorBody.error.message);
             return;
           }
@@ -201,6 +204,7 @@ export function SearchButton(): React.JSX.Element {
       if (err && typeof err === 'object' && 'error' in err) {
         const aiError = err as SearchError;
         if (aiError.error?.message) {
+          setErrorCode(aiError.error.code ?? null);
           setError(aiError.error.message);
           return;
         }
@@ -280,7 +284,22 @@ export function SearchButton(): React.JSX.Element {
         </Button>
       </div>
 
-      {error && (
+      {error && errorCode === 'NO_RESUME_FOUND' && (
+        <Alert>
+          <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <AlertDescription>
+            <p className="font-medium">{t('intelligence.noResumeErrorTitle')}</p>
+            <p className="mt-1">{t('intelligence.noResumeErrorMessage')}</p>
+            <Link href="/app/resumes">
+              <Button size="sm" className="mt-2">
+                {t('intelligence.uploadResumeCta')}
+              </Button>
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {error && errorCode !== 'NO_RESUME_FOUND' && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
           <AlertDescription>

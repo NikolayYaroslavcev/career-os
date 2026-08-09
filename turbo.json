@@ -23,7 +23,16 @@
     },
     "test:integration": {
       "dependsOn": ["^build"],
-      "cache": false
+      "cache": false,
+      // Turbo's default "strict" env mode hides any env var not listed here
+      // from the task's child process — DATABASE_URL/RUN_DB_INTEGRATION_TESTS
+      // being unlisted meant db-guard.ts's integrationTestsEnabled() always
+      // read them as unset when run via `pnpm test:integration`/turbo (works
+      // fine calling vitest directly, which doesn't go through this filter),
+      // so every test in packages/database/src/__integration__ silently
+      // self-skipped instead of running — including in CI's
+      // `integration-tests` job, which sets both as job-level env vars.
+      "env": ["DATABASE_URL", "RUN_DB_INTEGRATION_TESTS"]
     },
     "test:e2e": {
       "dependsOn": ["^build"],

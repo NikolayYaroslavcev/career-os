@@ -211,6 +211,77 @@ Once the dashboard is running on `http://localhost:3001`, open it in a browser �
 - `POST /api/v1/intelligence/search` - Run intelligence workflow
 - `POST /api/v1/telegram/link` - Generate Telegram linking code
 
+## Test Accounts & RBAC Verification
+
+CareerOS has three `UserRole` values (`packages/database/prisma/schema.prisma`): `JOB_SEEKER` (default on registration), `RECRUITER`, and `ADMIN`. There is no self-service way to change a role — `apps/backend/src/scripts/promote-user-to-admin.ts` is the only path, and it writes directly to the database.
+
+### Create a JOB_SEEKER
+
+Just register normally — this is the default role for every new account:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"jobseeker@test.local","password":"TestPass!2024","firstName":"Job","lastName":"Seeker"}'
+```
+
+or via the UI at `http://localhost:3001/register`.
+
+### Create an ADMIN
+
+Register a second account the same way, then promote it:
+
+```bash
+pnpm --filter @careeros/backend exec tsx src/scripts/promote-user-to-admin.ts admin@test.local
+```
+
+**Log in again (or call `/api/v1/auth/refresh`) after promoting.** The role is baked into the JWT at issuance and trusted as-is by the backend on every request — it is not re-checked against the database per request, so an already-issued token keeps the old role until it's refreshed.
+
+### E2E: the `authenticatedAdminPage` fixture
+
+`apps/e2e/fixtures/auth.ts` exposes an `authenticatedAdminPage` fixture (alongside the regular `authenticatedPage`) for tests against admin-only pages (e.g. `apps/e2e/tests/providers.spec.ts`). It registers a dedicated fixed account and promotes it via the same `promote-user-to-admin.ts` script above, run against Postgres's host-published port (`5432` in `docker-compose.full.yml`) — so `@careeros/database` must be built on the host first:
+
+```bash
+pnpm --filter @careeros/database exec prisma generate
+pnpm turbo build --filter=@careeros/database
+```
+
+### Areas gated to ADMIN only
+
+`AdminGuard` (`apps/dashboard/src/lib/access/admin-guard.tsx`) wraps these routes, and the matching backend routes enforce `requireAdmin` (`apps/backend/src/middleware/require-role.ts`) independently:
+
+| Area | Frontend route | Backend route(s) |
+| --- | --- | --- |
+| Diagnostics | `/app/diagnostics` | `GET /api/v1/diagnostics/*` (also requires `DIAGNOSTICS_ENABLED=true`, see below) |
+| Providers | `/app/settings/providers` | `/api/v1/providers/*` |
+| AI dashboard | `/app/ai` | `GET/PUT /api/v1/ai/mode`, `GET /api/v1/ai/cache/stats`, `DELETE /api/v1/ai/cache` (other `/api/v1/ai/*` endpoints, e.g. `/usage/dashboard`, are auth-only, not admin-only) |
+| Sync | `/app/sync` | `/api/v1/sync/*` |
+
+**Diagnostics needs one extra env var:** `DIAGNOSTICS_ENABLED=true` in the backend `.env` (default `false`). With the flag off, `/api/v1/diagnostics/*` 404s for every role, including ADMIN — the flag is checked before the role check.
+
+**Not admin-gated, by design:** `/app/career-intelligence` has no `AdminGuard` and its backend routes have no `requireAdmin` — it's a JOB_SEEKER-facing feature, not a gap.
+
+### Verification checklist
+
+UI (log in as each account):
+- JOB_SEEKER: the Diagnostics/Providers/AI/Sync nav items are absent, and navigating directly to any of the four routes above renders an "access forbidden" panel instead of page content.
+- ADMIN: all four nav items are visible and the pages render normally.
+
+API (bypasses the frontend guard — this is the authoritative check, since the frontend guard alone isn't a security boundary):
+
+```bash
+# no token -> 401
+curl -i http://localhost:3000/api/v1/providers
+
+# JOB_SEEKER token -> 403
+curl -i http://localhost:3000/api/v1/providers -H "Authorization: Bearer <job_seeker_token>"
+curl -i http://localhost:3000/api/v1/sync/status -H "Authorization: Bearer <job_seeker_token>"
+curl -i http://localhost:3000/api/v1/ai/mode -H "Authorization: Bearer <job_seeker_token>"
+
+# ADMIN token -> 200
+curl -i http://localhost:3000/api/v1/providers -H "Authorization: Bearer <admin_token>"
+```
+
 ## Database Management
 
 ### Reset Database

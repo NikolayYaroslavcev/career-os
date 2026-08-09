@@ -38,6 +38,13 @@ const configSchema = z.object({
   CORS_ORIGIN: z.string().default('http://localhost:3001'),
   // apps/worker's own HTTP health server (it has no other HTTP interface).
   WORKER_HEALTH_PORT: numberField(3002),
+  // Global per-IP budget for @fastify/rate-limit (see app.ts), shared across
+  // every route. 100/min is the production default; a full-stack E2E run
+  // (many sequential page loads, each firing several API calls, against a
+  // single-worker Playwright run sharing one client IP) can burn through
+  // that budget on its own well within a minute — see docker-compose.full.yml,
+  // which raises this for the E2E stack only, not production.
+  RATE_LIMIT_MAX: numberField(100),
 
   // Database
   DATABASE_URL: z.string(),
@@ -78,7 +85,7 @@ const configSchema = z.object({
   // Overrides the selected provider's hardcoded default model when set. Only
   // applied to the primary AI_PROVIDER — fallback providers (AI_FALLBACK_PROVIDERS)
   // use their own defaults, since model IDs aren't portable across vendors.
-  AI_MODEL: z.string().optional(),
+  AI_MODEL: z.preprocess(blankToUndefined, z.string().optional()),
   // Overrides the 60s default every provider falls back to when unset.
   AI_TIMEOUT_MS: optionalNumberField(),
   // Comma-separated, ordered list of provider names to fall back to when the

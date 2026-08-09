@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decodeHtmlEntities } from '../html-entities.js';
+import { decodeHtmlEntities, decodeTechnologies } from '../html-entities.js';
 
 describe('decodeHtmlEntities', () => {
   it('decodes named entities', () => {
@@ -32,5 +32,15 @@ describe('decodeHtmlEntities', () => {
 
   it('does not double-decode &amp;lt; into <', () => {
     expect(decodeHtmlEntities('&amp;lt;')).toBe('&lt;');
+  });
+});
+
+describe('decodeTechnologies', () => {
+  it('decodes entities in tag/technology arrays', () => {
+    expect(decodeTechnologies(['C# &amp; .NET', 'Node.js'])).toEqual(['c# & .net', 'node.js']);
+  });
+
+  it('lowercases, trims, and dedupes', () => {
+    expect(decodeTechnologies(['React', ' react ', 'TypeScript', ''])).toEqual(['react', 'typescript']);
   });
 });

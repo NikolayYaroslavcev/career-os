@@ -7,7 +7,7 @@ import type { LucideIcon } from 'lucide-react';
 
 interface EmptyStateProps {
   icon?: LucideIcon;
-  title: string;
+  title?: string;
   description: string;
   action?: {
     label: string;
@@ -25,7 +25,7 @@ export function EmptyState({ icon: Icon, title, description, action, className }
           <Icon className="h-6 w-6 text-muted-foreground" />
         </div>
       )}
-      <h3 className="mb-1 text-sm font-medium text-foreground">{title}</h3>
+      {title && <h3 className="mb-1 text-sm font-medium text-foreground">{title}</h3>}
       <p className="mb-4 max-w-sm text-sm text-muted-foreground">{description}</p>
       {action && (
         action.href ? (

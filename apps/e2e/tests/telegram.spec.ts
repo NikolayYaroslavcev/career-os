@@ -60,13 +60,13 @@ test.describe('Telegram', () => {
     await expect(page).toHaveURL(ROUTES.SYNC);
   });
 
-  test('navigate to Telegram Channels in provider settings', async ({ authenticatedPage: page }) => {
+  test('ADMIN can navigate to Telegram Channels in provider settings', async ({ authenticatedAdminPage: page }) => {
     await page.goto(ROUTES.PROVIDERS);
 
-    await expect(page.getByText(/Total Providers|Всего источников/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Total Providers|Всего провайдеров/i)).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole('button', { name: /Telegram Channels|Каналы Telegram/i }).click();
+    await page.getByRole('button', { name: /Telegram Channels|Telegram-каналы/i }).click();
 
-    await expect(page.getByText(/No Telegram channels|Add Channel|Нет каналов|Добавить канал/i).first()).toBeVisible();
+    await expect(page.getByText(/No Telegram channels|Add Channel|Telegram-каналы не настроены|Добавить канал/i).first()).toBeVisible();
   });
 });

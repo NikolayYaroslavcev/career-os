@@ -211,6 +211,16 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
+      - name: Build @careeros/database
+        # The authenticatedAdminPage e2e fixture promotes a test user to
+        # ADMIN by running apps/backend/src/scripts/promote-user-to-admin.ts
+        # on the CI host (against Postgres's host-published port), the same
+        # out-of-band path a human operator uses — so @careeros/database's
+        # dist and generated Prisma client must exist on the host, not just
+        # inside the backend's own Docker image.
+        run: |
+          pnpm --filter @careeros/database exec prisma generate
+          pnpm turbo build --filter=@careeros/database
       - name: Prepare .env for the full stack
         run: |
           cp .env.example .env

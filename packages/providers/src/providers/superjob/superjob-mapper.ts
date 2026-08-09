@@ -1,6 +1,6 @@
 import type { Mapper, MappedJob } from '../../interfaces/mapper.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
-import { decodeHtmlEntities } from '../../shared/html-entities.js';
+import { decodeHtmlEntities, decodeTechnologies } from '../../shared/html-entities.js';
 
 export class SJMapper implements Mapper {
   readonly providerId = 'superjob';
@@ -72,9 +72,7 @@ export class SJMapper implements Mapper {
   }
 
   private normalizeTechnologies(technologies: readonly string[]): string[] {
-    return [...new Set(
-      technologies.map((t) => t.toLowerCase().trim()).filter((t) => t.length > 0),
-    )];
+    return decodeTechnologies(technologies);
   }
 
   private inferExperienceLevel(title: string, description: string): string | undefined {

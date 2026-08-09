@@ -17,6 +17,10 @@ export function formatDate(value: Date | string, locale: Locale): string {
   return toDate(value).toLocaleDateString(INTL_LOCALE[locale]);
 }
 
+export function formatShortDate(value: Date | string, locale: Locale): string {
+  return toDate(value).toLocaleDateString(INTL_LOCALE[locale], { month: 'short', day: 'numeric' });
+}
+
 export function formatTime(value: Date | string, locale: Locale): string {
   return toDate(value).toLocaleTimeString(INTL_LOCALE[locale]);
 }

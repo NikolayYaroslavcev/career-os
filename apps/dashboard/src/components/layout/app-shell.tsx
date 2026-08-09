@@ -112,7 +112,7 @@ export function AppShell({ children }: { children: React.ReactNode }): React.JSX
     router.push('/login');
   };
 
-  const currentLabel = navSections
+  const currentLabel = visibleNavSections
     .flatMap(s => s.items)
     .find(item => item.href === pathname)?.label ?? t('common.appName');
 

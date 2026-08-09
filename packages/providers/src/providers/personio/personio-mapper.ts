@@ -1,6 +1,6 @@
 import type { Mapper, MappedJob } from '../../interfaces/mapper.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
-import { decodeHtmlEntities } from '../../shared/html-entities.js';
+import { decodeHtmlEntities, decodeTechnologies } from '../../shared/html-entities.js';
 
 export class PersonioMapper implements Mapper {
   readonly providerId = 'personio';
@@ -20,7 +20,7 @@ export class PersonioMapper implements Mapper {
       // personio-fetcher.ts's SENIORITY_MAP/mapEmploymentType.
       experienceLevel: raw.experienceLevel,
       employmentType: raw.employmentType,
-      technologies: raw.technologies,
+      technologies: decodeTechnologies(raw.technologies),
       url: raw.url,
       publishedAt: raw.publishedAt,
       fetchedAt: raw.fetchedAt,

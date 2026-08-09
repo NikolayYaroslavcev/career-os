@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Loading } from '@/components/ui/loading';
 import { RefreshCw, CheckCircle2, XCircle, Clock, Zap, Globe } from 'lucide-react';
+import { EmptyState } from '@/components/empty-state';
 import { cn } from '@/lib/utils';
 
 const PROVIDER_NAMES: Record<string, string> = {
@@ -182,11 +183,7 @@ export default function SyncPage(): React.JSX.Element {
       {isLoading ? (
         <Loading />
       ) : statuses.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            {t('syncPage.empty')}
-          </CardContent>
-        </Card>
+        <EmptyState icon={Globe} description={t('syncPage.empty')} />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {statuses.map((status) => {

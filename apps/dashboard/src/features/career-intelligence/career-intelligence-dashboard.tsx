@@ -134,14 +134,18 @@ export function CareerIntelligenceDashboard(): React.JSX.Element | null {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-baseline gap-2">
-              <span className="text-4xl font-bold">{data.health.overall}</span>
-              <span className="text-sm text-muted-foreground">/ 100</span>
-              <Badge variant="secondary" className="ml-auto">
-                {t(`careerIntelligencePage.confidence${data.health.confidence.charAt(0).toUpperCase()}${data.health.confidence.slice(1)}`)}
-              </Badge>
-            </div>
-            {data.health.components.map((component) => (
+            {data.overview.applicationsSent === 0 ? (
+              <p className="text-sm text-muted-foreground">{t('careerIntelligencePage.notEnoughData')}</p>
+            ) : (
+              <div className="flex items-baseline gap-2">
+                <span className="text-4xl font-bold">{data.health.overall}</span>
+                <span className="text-sm text-muted-foreground">/ 100</span>
+                <Badge variant="secondary" className="ml-auto">
+                  {t(`careerIntelligencePage.confidence${data.health.confidence.charAt(0).toUpperCase()}${data.health.confidence.slice(1)}`)}
+                </Badge>
+              </div>
+            )}
+            {data.overview.applicationsSent > 0 && data.health.components.map((component) => (
               <Progress key={component.name} value={component.score} className="gap-1">
                 <div className="flex w-full justify-between">
                   <ProgressLabel>{component.name}</ProgressLabel>

@@ -5,10 +5,10 @@
 // out-of-band operation, not something reachable over HTTP.
 //
 // Updates only the `role` column directly via Prisma rather than going
-// through UserRepository.save(user), which currently overwrites
-// passwordHash with '' on every write (UserMapper.toPersistence hardcodes
-// it) — an unrelated pre-existing bug, out of scope here, but one this
-// script must not trip.
+// through UserRepository.save(user): that path re-derives its update
+// payload from the domain User entity, which never carries a
+// passwordHash, so it has nothing useful to write for this one field
+// anyway (see UserMapper.toPersistence / PrismaUserRepository.save).
 //
 // Usage: pnpm --filter @careeros/backend exec tsx src/scripts/promote-user-to-admin.ts <email>
 import dotenv from 'dotenv';

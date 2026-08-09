@@ -1,6 +1,6 @@
 import type { Mapper, MappedJob } from '../../interfaces/mapper.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
-import { decodeHtmlEntities } from '../../shared/html-entities.js';
+import { decodeHtmlEntities, decodeTechnologies } from '../../shared/html-entities.js';
 
 const TECH_KEYWORDS = [
   'javascript', 'typescript', 'python', 'java', 'c++', 'c#', 'go', 'rust',
@@ -89,7 +89,7 @@ export class LinkedInMapper implements Mapper {
     existingTech: readonly string[],
   ): string[] {
     const combined = `${title} ${description}`.toLowerCase();
-    const skills = [...existingTech];
+    const skills = decodeTechnologies(existingTech);
 
     for (const tech of TECH_KEYWORDS) {
       if (combined.includes(tech)) {
@@ -97,11 +97,7 @@ export class LinkedInMapper implements Mapper {
       }
     }
 
-    return [...new Set(
-      skills
-        .map((t) => t.toLowerCase().trim())
-        .filter((t) => t.length > 0),
-    )];
+    return [...new Set(skills)];
   }
 
   private inferExperienceLevel(title: string, description: string): string | undefined {

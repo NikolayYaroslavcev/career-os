@@ -27,7 +27,9 @@ import {
   Plus,
   Trash2,
   BarChart3,
+  MessageCircle,
 } from 'lucide-react';
+import { EmptyState } from '@/components/empty-state';
 import { cn } from '@/lib/utils';
 import {
   getProviders,
@@ -425,11 +427,7 @@ export default function ProviderSettingsPage(): React.JSX.Element {
           </div>
 
           {channels.length === 0 ? (
-            <Card>
-              <CardContent className="py-8 text-center text-muted-foreground">
-                {t('providerSettingsPage.noChannels')}
-              </CardContent>
-            </Card>
+            <EmptyState icon={MessageCircle} description={t('providerSettingsPage.noChannels')} />
           ) : (
             <div className="space-y-2">
               {channels.map((channel) => (

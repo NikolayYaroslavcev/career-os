@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Loading } from '@/components/ui/loading';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Search, ExternalLink, MapPin, DollarSign, Building2, Clock, Filter } from 'lucide-react';
+import { EmptyState } from '@/components/empty-state';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
 import { pluralize } from '@/lib/i18n/pluralize';
 import { formatDate, formatNumber } from '@/lib/format';
@@ -255,11 +256,7 @@ export default function SearchPage(): React.JSX.Element {
       {isLoading ? (
         <Loading />
       ) : vacancies.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            {t('searchPage.empty')}
-          </CardContent>
-        </Card>
+        <EmptyState icon={Search} description={t('searchPage.empty')} />
       ) : (
         <div className="space-y-3">
           {vacancies.map((vacancy) => (

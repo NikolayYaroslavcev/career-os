@@ -117,6 +117,35 @@
       "emailTaken": "A user with this email already exists"
     }
   },
+  "landing": {
+    "hero": {
+      "title": "CareerOS",
+      "subtitle": "Your career workspace",
+      "description": "Find opportunities. Track progress. Grow."
+    },
+    "features": {
+      "search": {
+        "title": "Job matching",
+        "description": "Find opportunities that fit your resume and search profile."
+      },
+      "applications": {
+        "title": "Application tracking",
+        "description": "Keep every application organized in one pipeline."
+      },
+      "followUps": {
+        "title": "Follow-up reminders",
+        "description": "Never miss a follow-up after you apply."
+      },
+      "progress": {
+        "title": "Career progress",
+        "description": "See your momentum across searches and applications."
+      }
+    },
+    "cta": {
+      "getStarted": "Get started",
+      "login": "Login"
+    }
+  },
   "dashboard": {
     "welcome": "Welcome back, {{email}}",
     "subtitle": "Your career operating system dashboard",
@@ -389,6 +418,7 @@
     "confidenceHigh": "High confidence",
     "confidenceMedium": "Medium confidence",
     "confidenceLow": "Low confidence",
+    "notEnoughData": "Not enough data yet — apply to a few roles to see your Career Health Score.",
     "applicationsSent": "Applications sent",
     "interviews": "Interviews",
     "offers": "Offers",
@@ -749,6 +779,9 @@
     "whyThisMatch": "Why this match",
     "matchScore": "{{percent}}% match",
     "aiErrorTitle": "AI Provider Error",
+    "noResumeErrorTitle": "Resume required",
+    "noResumeErrorMessage": "Upload your resume to get started so we can match you to relevant vacancies.",
+    "uploadResumeCta": "Upload resume",
     "recommendations": {
       "strong_match": "Strong Match",
       "good_match": "Good Match",

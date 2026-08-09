@@ -18,7 +18,8 @@ import { Input } from '@/components/ui/input';
 import { Loading } from '@/components/ui/loading';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CheckCircle, ExternalLink } from 'lucide-react';
+import { CheckCircle, ExternalLink, Bell } from 'lucide-react';
+import { EmptyState } from '@/components/empty-state';
 import { useTranslation } from '@/lib/i18n/i18n-provider';
 import { pluralize } from '@/lib/i18n/pluralize';
 
@@ -253,9 +254,7 @@ export function FollowUpsDashboard(): React.JSX.Element {
       )}
 
       {total === 0 && filter === 'all' ? (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">{t('followUpsPage.emptyAll')}</CardContent>
-        </Card>
+        <EmptyState icon={Bell} description={t('followUpsPage.emptyAll')} />
       ) : (
         <div className="space-y-6">
           {visibleSections.map((section) => (

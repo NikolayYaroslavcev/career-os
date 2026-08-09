@@ -178,6 +178,7 @@ const mockConfig = {
   LOG_LEVEL: 'info' as const,
   CORS_ORIGIN: 'http://localhost:3000',
   WORKER_HEALTH_PORT: 3002,
+  RATE_LIMIT_MAX: 100,
   DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
   REDIS_URL: 'redis://localhost:6379',
   MINIO_ENDPOINT: 'localhost',

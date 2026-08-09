@@ -1,6 +1,6 @@
 import type { Mapper, MappedJob } from '../../interfaces/mapper.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
-import { decodeHtmlEntities } from '../../shared/html-entities.js';
+import { decodeHtmlEntities, decodeTechnologies } from '../../shared/html-entities.js';
 
 export class RemotiveMapper implements Mapper {
   readonly providerId = 'remotive';
@@ -14,7 +14,7 @@ export class RemotiveMapper implements Mapper {
       location: this.parseLocation(raw.location),
       salary: raw.salary ? { min: raw.salary.from, max: raw.salary.to, currency: raw.salary.currency, period: raw.salary.period } : undefined,
       experienceLevel: this.inferExperienceLevel(raw.title, raw.description),
-      technologies: [...new Set(raw.technologies.map((t) => t.toLowerCase().trim()).filter(Boolean))],
+      technologies: decodeTechnologies(raw.technologies),
       url: raw.url,
       publishedAt: raw.publishedAt,
       fetchedAt: raw.fetchedAt,

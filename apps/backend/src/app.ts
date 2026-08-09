@@ -74,7 +74,7 @@ export async function buildApp(): Promise<ReturnType<typeof Fastify>> {
   await app.register(helmet);
 
   await app.register(rateLimit, {
-    max: 100,
+    max: config.RATE_LIMIT_MAX,
     timeWindow: '1 minute',
     // Backed by Redis (not the plugin's in-process default) so the limit is
     // shared across backend replicas instead of being multiplied by replica

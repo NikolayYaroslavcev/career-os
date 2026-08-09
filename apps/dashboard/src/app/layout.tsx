@@ -9,8 +9,12 @@ import { cn } from "@/lib/utils";
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
-  title: 'CareerOS - AI Career Operating System',
-  description: 'Your personal AI career assistant',
+  title: 'CareerOS - Your career workspace',
+  description: 'Find opportunities. Track progress. Grow.',
+  icons: {
+    icon: '/icon.png',
+    shortcut: '/favicon.ico',
+  },
 };
 
 export default async function RootLayout({

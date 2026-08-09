@@ -16,12 +16,12 @@ function createMockAuthService(): {
     register: vi.fn().mockResolvedValue({
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
-      user: { id: 'user-1', email: 'jane@example.com' },
+      user: { id: 'user-1', email: 'jane@example.com', role: 'job_seeker' },
     }),
     login: vi.fn().mockResolvedValue({
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
-      user: { id: 'user-1', email: 'jane@example.com' },
+      user: { id: 'user-1', email: 'jane@example.com', role: 'job_seeker' },
     }),
     refresh: vi.fn().mockResolvedValue({ accessToken: 'new-access-token', refreshToken: 'new-refresh-token' }),
     logout: vi.fn().mockResolvedValue(undefined),
@@ -66,6 +66,7 @@ describe('Auth Routes (HTTP layer)', () => {
       const body = JSON.parse(response.payload);
       expect(body.accessToken).toBe('access-token');
       expect(body.refreshToken).toBe('refresh-token');
+      expect(body.user.role).toBe('job_seeker');
     });
 
     it('returns 400 for an invalid email', async () => {
@@ -132,6 +133,8 @@ describe('Auth Routes (HTTP layer)', () => {
       });
 
       expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.user.role).toBe('job_seeker');
     });
 
     it('returns 400 for an invalid email', async () => {

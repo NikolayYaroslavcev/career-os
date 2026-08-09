@@ -1,6 +1,6 @@
 # CareerOS
 
-CareerOS is an AI-powered career operating system: it searches job boards on your
+CareerOS is a career workspace: it searches job boards on your
 behalf, deduplicates and persists vacancies, runs AI matching against your resume,
 and surfaces ranked recommendations through a dashboard (and optionally Telegram).
 

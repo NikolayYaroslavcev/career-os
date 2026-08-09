@@ -59,6 +59,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               properties: {
                 id: { type: 'string' },
                 email: { type: 'string' },
+                role: { type: 'string' },
               },
             },
           },
@@ -67,7 +68,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     },
     handler: async (request, reply) => {
       const body = registerSchema.parse(request.body);
-      const container = (request.server as unknown as { container: { services: { auth: { register: (input: { email: string; password: string; firstName: string; lastName: string }) => Promise<{ accessToken: string; refreshToken: string; user: { id: string; email: string } }> } } } }).container;
+      const container = (request.server as unknown as { container: { services: { auth: { register: (input: { email: string; password: string; firstName: string; lastName: string }) => Promise<{ accessToken: string; refreshToken: string; user: { id: string; email: string; role: string } }> } } } }).container;
 
       const result = await container.services.auth.register(body);
 
@@ -99,6 +100,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               properties: {
                 id: { type: 'string' },
                 email: { type: 'string' },
+                role: { type: 'string' },
               },
             },
           },
@@ -107,7 +109,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     },
     handler: async (request, reply) => {
       const body = loginSchema.parse(request.body);
-      const container = (request.server as unknown as { container: { services: { auth: { login: (input: { email: string; password: string }) => Promise<{ accessToken: string; refreshToken: string; user: { id: string; email: string } }> } } } }).container;
+      const container = (request.server as unknown as { container: { services: { auth: { login: (input: { email: string; password: string }) => Promise<{ accessToken: string; refreshToken: string; user: { id: string; email: string; role: string } }> } } } }).container;
 
       const result = await container.services.auth.login(body);
 

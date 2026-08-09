@@ -175,7 +175,7 @@ await emailProvider.send({
 ```typescript
 const welcomeTemplate = (userName: string) => `
   <h1>Welcome to CareerOS, ${userName}!</h1>
-  <p>Your AI career assistant is ready.</p>
+  <p>Your career workspace is ready.</p>
   <p>Get started by:</p>
   <ol>
     <li>Uploading your resume</li>

@@ -33,3 +33,18 @@ export function decodeHtmlEntities(text: string): string {
     return NAMED_ENTITIES[entity.toLowerCase()] ?? match;
   });
 }
+
+/**
+ * Normalizes a provider's raw technologies/tags array: entity-decode (e.g.
+ * "c# &amp; .net"), lowercase, trim, and dedupe. Provider tag lists go
+ * straight from the source API into the UI without passing through
+ * normalizeTitle/normalizeDescription, so they need the same decoding those
+ * get, applied here once instead of per-mapper.
+ */
+export function decodeTechnologies(technologies: readonly string[]): string[] {
+  return [...new Set(
+    technologies
+      .map((t) => decodeHtmlEntities(t).toLowerCase().trim())
+      .filter((t) => t.length > 0),
+  )];
+}

@@ -11,6 +11,8 @@ import {
   type PipelineGroup,
 } from '@/api/applications';
 import { getVacancyDetail, type VacancyDetail } from '@/api/sync';
+import { formatShortDate } from '@/lib/format';
+import type { Locale } from '@/lib/i18n/config';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,10 +26,9 @@ import { APPLICATION_STATUS_VARIANT } from '@/lib/application-status';
 import { ApplicationDetail } from './application-detail';
 import { KanbanSquare } from 'lucide-react';
 
-function formatDate(dateString: string | null): string {
+function formatDate(dateString: string | null, locale: Locale): string {
   if (!dateString) return '';
-  const date = new Date(dateString);
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return formatShortDate(dateString, locale);
 }
 
 export function ApplicationPipeline(): React.JSX.Element {
@@ -171,7 +172,7 @@ export function ApplicationPipeline(): React.JSX.Element {
           {APPLICATION_STATUSES.map((status) => {
             const group = pipeline.find((g) => g.status === status) ?? { status, count: 0, applications: [] };
             return (
-              <div key={status} className="w-72 flex-shrink-0">
+              <div key={status} className="w-72 min-w-0 flex-shrink-0">
                 <div className="mb-2 flex items-center gap-2">
                   <h3 className="text-sm font-semibold text-foreground">
                     {t(`applications.statuses.${status}`)}
@@ -206,14 +207,14 @@ interface ApplicationCardProps {
 }
 
 function ApplicationCard({ application, vacancy, onSelect, onStatusChange }: ApplicationCardProps): React.JSX.Element {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [nextStatus, setNextStatus] = useState<ApplicationStatus | undefined>(undefined);
 
   const timestamp = application.submittedAt
-    ? t('applications.submittedOn', { date: formatDate(application.submittedAt) })
+    ? t('applications.submittedOn', { date: formatDate(application.submittedAt, locale) })
     : application.startedAt
-      ? t('applications.startedOn', { date: formatDate(application.startedAt) })
-      : t('applications.savedOn', { date: formatDate(application.createdAt) });
+      ? t('applications.startedOn', { date: formatDate(application.startedAt, locale) })
+      : t('applications.savedOn', { date: formatDate(application.createdAt, locale) });
 
   return (
     <Card>
@@ -222,12 +223,12 @@ function ApplicationCard({ application, vacancy, onSelect, onStatusChange }: App
           type="button"
           onClick={onSelect}
           variant="link"
-          className="h-auto w-full justify-start px-0 text-left text-sm font-medium text-foreground no-underline hover:text-primary hover:no-underline"
+          className="h-auto w-full justify-start truncate px-0 text-left text-sm font-medium text-foreground no-underline hover:text-primary hover:no-underline"
         >
           {vacancy?.title ?? t('applications.unknownVacancy')}
         </Button>
-        {vacancy?.company && <p className="text-xs text-muted-foreground">{vacancy.company.name}</p>}
-        <p className="text-xs text-muted-foreground">{timestamp}</p>
+        {vacancy?.company && <p className="truncate text-xs text-muted-foreground">{vacancy.company.name}</p>}
+        <p className="truncate text-xs text-muted-foreground">{timestamp}</p>
         {application.coolingDown && (
           <Badge variant="warning" className="text-xs">
             {t('applications.coolingDown')}

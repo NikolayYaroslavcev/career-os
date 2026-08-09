@@ -161,6 +161,13 @@ services:
       CORS_ORIGIN: http://localhost:3001
       PORT: 3000
       HOST: 0.0.0.0
+      # This compose file is the E2E/local full-stack sandbox, not production
+      # (see the `e2e` CI job and playwright.config.ts) — production keeps the
+      # packages/shared default of 100/min. A full Playwright run drives many
+      # sequential page loads from a single client IP, each firing several API
+      # calls, which exhausts a 100/min budget well before the suite finishes
+      # (traced here from company-watch.spec.ts's "Rate limit exceeded" failure).
+      RATE_LIMIT_MAX: '1000'
     volumes:
       - backend_uploads:/app/uploads
     tmpfs:

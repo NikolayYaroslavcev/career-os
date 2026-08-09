@@ -1,6 +1,6 @@
 import type { Mapper, MappedJob } from '../../interfaces/mapper.js';
 import type { RawJob } from '../../interfaces/raw-job.js';
-import { decodeHtmlEntities } from '../../shared/html-entities.js';
+import { decodeHtmlEntities, decodeTechnologies } from '../../shared/html-entities.js';
 
 export class TeamtailorMapper implements Mapper {
   readonly providerId = 'teamtailor';
@@ -17,7 +17,7 @@ export class TeamtailorMapper implements Mapper {
         ? { min: raw.salary.from, max: raw.salary.to, currency: raw.salary.currency, period: raw.salary.period }
         : undefined,
       experienceLevel: raw.experienceLevel,
-      technologies: raw.technologies,
+      technologies: decodeTechnologies(raw.technologies),
       url: raw.url,
       publishedAt: raw.publishedAt,
       fetchedAt: raw.fetchedAt,
