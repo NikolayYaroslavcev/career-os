@@ -5,6 +5,7 @@ import { createUserId, createVacancyId, SourceLifecycleServiceImpl } from '@care
 import type { VacancyId } from '@careeros/career';
 import { computePreferenceBoosts } from '../../services/ranking/preference-boost.js';
 import { calculateVacancyQualityScore } from '../../services/ranking/vacancy-quality-score.js';
+import { isExcludedCompanyName } from '../../services/excluded-companies.js';
 
 const sourceLifecycleService = new SourceLifecycleServiceImpl();
 
@@ -47,13 +48,33 @@ export async function recommendationRoutes(fastify: FastifyInstance): Promise<vo
       });
     }
 
-    const { vacancies } = await fastify.container.repositories.vacancy.findMany({
+    // Candidate pool size: 500 rather than 200. A high-volume broad source
+    // (e.g. jobicy) publishes densely enough that a 200-newest window can be
+    // ~90% one provider, starving lower-volume-but-relevant sources (habr_career,
+    // justjoin_it, telegram) out of ranking entirely. Diagnostics against the
+    // real seeker@careeros.test workspace showed 500 stays within ~1 day of
+    // the 200-cutoff's freshness (no stale backfill) while roughly tripling
+    // both distinct providers represented and post-relevance-floor WARM/HOT
+    // results. A provider-balanced (equal-N-per-provider) retrieval was also
+    // measured and rejected: it pulled in long-stale listings from
+    // rarely-syncing providers and surfaced Proxify-branded postings whose
+    // `company` field is "Unknown" (title-only branding), bypassing the
+    // company-name exclusion list without any offsetting quality gain over
+    // simply widening this window.
+    const { vacancies: fetchedVacancies } = await fastify.container.repositories.vacancy.findMany({
       workspaceId,
-      limit: 200,
+      limit: 500,
       offset: 0,
       sortBy: 'newest',
       sortOrder: 'desc',
     });
+
+    const vacancies: typeof fetchedVacancies = [];
+    for (const vacancy of fetchedVacancies) {
+      const company = await fastify.container.repositories.company.findById(vacancy.companyId);
+      if (company && isExcludedCompanyName(company.name)) continue;
+      vacancies.push(vacancy);
+    }
 
     const providerConfigs = await fastify.container.repositories.providerConfig.findAll();
     const qualityScores = new Map<string, number>();
@@ -64,6 +85,11 @@ export async function recommendationRoutes(fastify: FastifyInstance): Promise<vo
     }
 
     const vacancyIds = vacancies.map((v) => v.id.toString());
+    // Keyed by providerId (e.g. 'telegram', 'hh'), matching qualityScores above
+    // (ProviderConfig.qualityScore is also keyed by providerId) — rankVacancies'
+    // 4th param looks up providerQualityScores by this map's values, so it must
+    // carry providerId, not providerType, or every configured qualityScore is
+    // silently missed and a computed fallback is used instead.
     const vacancyProviderTypes = new Map<string, string>();
     for (const vacancyId of vacancyIds) {
       const sources = await fastify.container.repositories.vacancySource.findByVacancyId(
@@ -71,7 +97,7 @@ export async function recommendationRoutes(fastify: FastifyInstance): Promise<vo
       );
       const [firstSource] = sources;
       if (firstSource) {
-        vacancyProviderTypes.set(vacancyId, firstSource.providerType);
+        vacancyProviderTypes.set(vacancyId, firstSource.providerId);
       }
     }
 
@@ -113,27 +139,46 @@ export async function recommendationRoutes(fastify: FastifyInstance): Promise<vo
     );
     const visible = ranked.filter(({ vacancy }) => !excludedVacancyIds.has(vacancy.id.toString()));
 
-    const total = visible.length;
-    const paginated = visible.slice(query.offset, query.offset + query.limit);
+    // Relevance floor: the candidate pool (up to 200 newest workspace-wide
+    // vacancies) is often dominated by one noisy provider, so without this
+    // filter the endpoint backfills whatever's left just to fill `limit`,
+    // surfacing vacancies with no connection to the profile at all. A
+    // vacancy stays eligible if it has *either* signal — a positive role
+    // match, or at least one matched technology — so an unrecognized title
+    // (e.g. "Product Engineer", "Founding Engineer") with real tech overlap
+    // is never dropped just because role classification didn't recognize it.
+    const relevant = visible.filter(({ result }) =>
+      result.matchedSkills.length > 0 ||
+      result.positiveFactors.some((factor) => factor.name === 'Role match'),
+    );
 
-    let sorted = paginated;
+    // Sort the full relevant pool before pagination, not after — sorting a
+    // page that was already sliced off the score-ordered list would only
+    // ever reorder whichever items happened to score highest, silently
+    // dropping a freshly-ingested vacancy that scores below the pagination
+    // cutoff (e.g. a role mismatched against the active profile) out of a
+    // "newest" or "salary" sort no matter how recent it is.
+    let orderedVisible = relevant;
     if (query.sortBy === 'newest') {
-      sorted = [...paginated].sort((a, b) =>
+      orderedVisible = [...relevant].sort((a, b) =>
         (b.vacancy.publishedAt?.getTime() ?? 0) - (a.vacancy.publishedAt?.getTime() ?? 0),
       );
     } else if (query.sortBy === 'salary') {
-      sorted = [...paginated].sort((a, b) =>
+      orderedVisible = [...relevant].sort((a, b) =>
         (b.vacancy.salary?.max ?? 0) - (a.vacancy.salary?.max ?? 0),
       );
     }
+
+    const total = orderedVisible.length;
+    const sorted = orderedVisible.slice(query.offset, query.offset + query.limit);
 
     const recommendations = await Promise.all(
       sorted.map(async ({ vacancy, result }) => {
         const companies = await fastify.container.repositories.company.findById(vacancy.companyId);
         const sources = await fastify.container.repositories.vacancySource.findByVacancyId(vacancy.id);
         const primarySource = sources.find((s) => s.isPrimary) ?? sources[0];
-        const providerType = primarySource?.providerType;
-        const providerQuality = providerType ? qualityScores.get(providerType) : undefined;
+        const providerId = primarySource?.providerId;
+        const providerQuality = providerId ? qualityScores.get(providerId) : undefined;
 
         const qualityScore = calculateVacancyQualityScore(vacancy, primarySource?.applyUrl ?? undefined, providerQuality);
 

@@ -70,14 +70,43 @@ describe('FallbackAIProvider', () => {
     expect(secondary.complete).not.toHaveBeenCalled();
   });
 
-  it('does not advance to the next provider on a non-retryable error', async () => {
+  it('advances to the next provider on an authentication error instead of stopping the chain', async () => {
     const primary = makeProvider('primary');
     const secondary = makeProvider('secondary');
     const authError = new AIError({ type: AIErrorType.AUTHENTICATION_ERROR, message: 'bad key', provider: 'primary', retryable: false });
     primary.complete.mockRejectedValue(authError);
+    secondary.complete.mockResolvedValue(makeResponse({ provider: 'secondary' }));
     const fallback = new FallbackAIProvider([primary, secondary], { retryPolicy: noDelayRetryPolicy() });
 
-    await expect(fallback.complete(baseRequest)).rejects.toBe(authError);
+    const response = await fallback.complete(baseRequest);
+
+    expect(response.provider).toBe('secondary');
+    expect(primary.complete).toHaveBeenCalledTimes(1);
+    expect(secondary.complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates an authentication error once every provider in the chain rejects it', async () => {
+    const primary = makeProvider('primary');
+    const secondary = makeProvider('secondary');
+    const authError = new AIError({ type: AIErrorType.AUTHENTICATION_ERROR, message: 'bad key', provider: 'primary', retryable: false });
+    const secondaryAuthError = new AIError({ type: AIErrorType.AUTHENTICATION_ERROR, message: 'bad key', provider: 'secondary', retryable: false });
+    primary.complete.mockRejectedValue(authError);
+    secondary.complete.mockRejectedValue(secondaryAuthError);
+    const fallback = new FallbackAIProvider([primary, secondary], { retryPolicy: noDelayRetryPolicy() });
+
+    await expect(fallback.complete(baseRequest)).rejects.toBe(secondaryAuthError);
+    expect(primary.complete).toHaveBeenCalledTimes(1);
+    expect(secondary.complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not advance to the next provider on a schema/parse error, since a malformed response will not be fixed by a different vendor', async () => {
+    const primary = makeProvider('primary');
+    const secondary = makeProvider('secondary');
+    const parseError = new AIError({ type: AIErrorType.PARSE_ERROR, message: 'response failed schema validation', provider: 'primary', retryable: false });
+    primary.complete.mockRejectedValue(parseError);
+    const fallback = new FallbackAIProvider([primary, secondary], { retryPolicy: noDelayRetryPolicy() });
+
+    await expect(fallback.complete(baseRequest)).rejects.toBe(parseError);
     expect(secondary.complete).not.toHaveBeenCalled();
   });
 

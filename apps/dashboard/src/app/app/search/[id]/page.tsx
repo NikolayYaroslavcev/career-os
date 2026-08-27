@@ -53,7 +53,7 @@ export default function JobDetailPage(): React.JSX.Element {
       router.push('/app/applications');
     } catch (err) {
       console.error('Failed to create application:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create application');
+      setError(err instanceof Error ? err.message : t('jobDetailPage.applyFailed'));
     } finally {
       setIsCreatingApplication(false);
     }

@@ -17,6 +17,21 @@ export interface FallbackAIProviderOptions {
   readonly concurrencyLimiter?: AIConcurrencyLimiter;
 }
 
+// Errors that describe the *request itself* being unusable (malformed prompt,
+// response that can't be made to fit the expected schema) rather than the
+// provider being unavailable — trying another vendor reproduces the same
+// failure, so these stop the chain instead of burning a call on every
+// remaining provider.
+const NON_ADVANCING_ERROR_TYPES: ReadonlySet<AIErrorType> = new Set([
+  AIErrorType.PARSE_ERROR,
+]);
+
+/** True when a failure from one provider means "try the next provider" rather than "give up entirely". */
+function shouldAdvanceToNextProvider(error: unknown): boolean {
+  if (!(error instanceof AIError)) return false;
+  return !NON_ADVANCING_ERROR_TYPES.has(error.type);
+}
+
 /**
  * Wraps an ordered chain of AIProviders as a single AIProvider. The first
  * entry is the "primary" — its name/defaultModel/capabilities are what this
@@ -24,10 +39,11 @@ export interface FallbackAIProviderOptions {
  * (a one-element chain behaves identically to the wrapped provider, plus
  * retry + metrics + health tracking).
  *
- * On a retryable failure (after that provider's own retry budget is spent),
- * advances to the next provider in the chain. Non-retryable failures (bad
- * prompt, auth error) propagate immediately — trying another vendor won't
- * fix a bad request.
+ * Once a provider's own retry budget is spent, advances to the next provider
+ * for any failure except ones that indicate the request itself is broken
+ * (see NON_ADVANCING_ERROR_TYPES) — including auth/quota errors, since those
+ * mean *that provider* is unusable, not that the request is bad. A
+ * non-advancing failure propagates immediately.
  */
 export class FallbackAIProvider implements AIProvider {
   readonly name: string;
@@ -86,11 +102,11 @@ export class FallbackAIProvider implements AIProvider {
         return await this.retryPolicy.execute(() => this.completeWithObservability(provider, request));
       } catch (error) {
         lastError = error;
-        const retryable = error instanceof AIError && error.retryable;
-        if (!retryable) {
+        if (!shouldAdvanceToNextProvider(error)) {
           throw error;
         }
-        // else: retry budget for this provider is spent, fall through to the next one.
+        // else: this provider is unusable (retry budget spent, or an error like
+        // AUTHENTICATION_ERROR that isn't even retried) — fall through to the next one.
       }
     }
 

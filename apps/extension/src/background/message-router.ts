@@ -1,4 +1,4 @@
-import type { BackgroundMessage, BackgroundResponse, ContentVacancy } from '@careeros/extension-shared';
+import type { BackgroundMessage, BackgroundResponse, ContentVacancy, LinkedInFeedPostCandidate } from '@careeros/extension-shared';
 import type { AuthManager } from './auth-manager.js';
 import type { OfflineQueue } from './offline-queue.js';
 import type { SyncManager } from './sync-manager.js';
@@ -78,6 +78,9 @@ export class MessageRouter {
 
       case 'APPLY_DETECTED':
         return this.handleApplyDetected(message.payload as { provider: string; url: string; timestamp: string; method: string });
+
+      case 'LINKEDIN_FEED_POST_DETECTED':
+        return this.handleLinkedInFeedPost(message.payload as LinkedInFeedPostCandidate);
 
       case 'GET_RECENT_VACANCIES':
         return this.handleGetRecentVacancies((message.payload as { limit: number }).limit);
@@ -266,33 +269,83 @@ export class MessageRouter {
     }
   }
 
+  private async handleLinkedInFeedPost(candidate: LinkedInFeedPostCandidate): Promise<BackgroundResponse> {
+    try {
+      const result = await this.auth.authenticatedRequest<{ ok: boolean; messageId: string; created: boolean }>(
+        '/api/v1/social-messages/ingest',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            platform: 'LINKEDIN',
+            externalMessageId: candidate.postId,
+            authorUsername: candidate.authorName,
+            publishedAt: candidate.publishedAt,
+            rawText: candidate.rawText,
+            links: candidate.links,
+          }),
+        }
+      );
+      if (result.created) {
+        await this.bumpLinkedInFeedBadge();
+      }
+      return { ok: true, data: result };
+    } catch (error) {
+      // Deliberately not routed through OfflineQueue (unlike SAVE_VACANCY/APPLY_DETECTED
+      // above): this is Phase 1 transport-proof territory — backend-side dedup on
+      // (platform, sourceId, externalMessageId) means a post missed here is simply not
+      // retried this session, rather than adding a second uncontrolled retry path.
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: message, code: 'LINKEDIN_FEED_INGEST_FAILED' };
+    }
+  }
+
+  /**
+   * Live signal while scrolling the feed itself (not just the popup): the
+   * toolbar badge counts new (non-duplicate) LinkedIn posts ingested today,
+   * so there's visible feedback without opening the popup mid-scroll. Keyed
+   * by date in storage rather than an in-memory counter, since MV3 service
+   * workers restart far more often than once a day and would otherwise reset
+   * to 0 on every wake.
+   */
+  private async bumpLinkedInFeedBadge(): Promise<void> {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const stored = await storage.get<{ date: string; count: number }>('linkedInFeedBadgeCount');
+    const count = (stored?.date === todayKey ? stored.count : 0) + 1;
+    await storage.set('linkedInFeedBadgeCount', { date: todayKey, count });
+
+    if (typeof chrome !== 'undefined' && chrome.action?.setBadgeText) {
+      chrome.action.setBadgeText({ text: String(count) });
+      chrome.action.setBadgeBackgroundColor?.({ color: '#0a66c2' });
+    }
+  }
+
   private async handleGetRecentVacancies(limit: number): Promise<BackgroundResponse> {
-    const data = await this.auth.authenticatedRequest<unknown[]>(
+    const response = await this.auth.authenticatedRequest<{ vacancies: unknown[] }>(
       `/api/v1/vacancies?limit=${limit}&sortBy=publishedAt&sortOrder=desc`
     );
-    return { ok: true, data };
+    return { ok: true, data: response.vacancies };
   }
 
   private async handleGetSavedToday(): Promise<BackgroundResponse> {
     const today = new Date().toISOString().split('T')[0];
-    const data = await this.auth.authenticatedRequest<unknown[]>(
+    const response = await this.auth.authenticatedRequest<{ vacancies: unknown[] }>(
       `/api/v1/vacancies?savedAfter=${today}`
     );
-    return { ok: true, data };
+    return { ok: true, data: response.vacancies };
   }
 
   private async handleGetPendingApplications(): Promise<BackgroundResponse> {
-    const data = await this.auth.authenticatedRequest<unknown[]>(
+    const response = await this.auth.authenticatedRequest<{ applications: unknown[] }>(
       '/api/v1/applications?status=applied,status=waiting'
     );
-    return { ok: true, data };
+    return { ok: true, data: response.applications };
   }
 
   private async handleGetUpcomingInterviews(): Promise<BackgroundResponse> {
-    const data = await this.auth.authenticatedRequest<unknown[]>(
+    const response = await this.auth.authenticatedRequest<{ applications: unknown[] }>(
       '/api/v1/applications?hasInterview=true'
     );
-    return { ok: true, data };
+    return { ok: true, data: response.applications };
   }
 
   private async handleGetNotifications(limit: number): Promise<BackgroundResponse> {
@@ -301,10 +354,10 @@ export class MessageRouter {
   }
 
   private async handleQuickSearch(query: string): Promise<BackgroundResponse> {
-    const data = await this.auth.authenticatedRequest<unknown[]>(
+    const response = await this.auth.authenticatedRequest<{ vacancies: unknown[] }>(
       `/api/v1/vacancies?query=${encodeURIComponent(query)}&limit=10`
     );
-    return { ok: true, data };
+    return { ok: true, data: response.vacancies };
   }
 
   private async handleGetSettings(): Promise<BackgroundResponse> {

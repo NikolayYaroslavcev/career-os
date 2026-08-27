@@ -201,4 +201,55 @@ describe('SocialMessagePipeline', () => {
     expect(result).toEqual({ processed: 0, skippedPrecheck: 0, extracted: 0, lowConfidence: 0, spam: 0, failed: 0 });
     expect(engine.extract).not.toHaveBeenCalled();
   });
+
+  describe('onExtracted hook (LinkedIn Feed discovery seam)', () => {
+    it('does not require a hook to be set at all — existing Telegram behavior is unchanged', async () => {
+      pendingMessage(repository);
+      const engine = fakeExtractionEngine(MessageExtractionStatus.SUCCESS);
+      const pipeline = new SocialMessagePipeline(repository, engine, logger, metrics);
+
+      const result = await pipeline.processPendingBySource(SocialPlatform.TELEGRAM, 'frontend_jobs');
+
+      expect(result.extracted).toBe(1);
+    });
+
+    it('invokes the hook once with the message and its extraction when a message reaches EXTRACTED', async () => {
+      pendingMessage(repository);
+      const engine = fakeExtractionEngine(MessageExtractionStatus.SUCCESS);
+      const pipeline = new SocialMessagePipeline(repository, engine, logger, metrics);
+      const onExtracted = vi.fn().mockResolvedValue(undefined);
+      pipeline.setOnExtracted(onExtracted);
+
+      await pipeline.processPendingBySource(SocialPlatform.TELEGRAM, 'frontend_jobs');
+
+      expect(onExtracted).toHaveBeenCalledTimes(1);
+      const [message, extraction] = onExtracted.mock.calls[0] as [SocialMessage, unknown];
+      expect(message.id).toBe('msg-1');
+      expect((extraction as { status: string }).status).toBe(MessageExtractionStatus.SUCCESS);
+    });
+
+    it('does not invoke the hook for LOW_CONFIDENCE/SPAM/FAILED outcomes', async () => {
+      pendingMessage(repository);
+      const engine = fakeExtractionEngine(MessageExtractionStatus.LOW_CONFIDENCE);
+      const pipeline = new SocialMessagePipeline(repository, engine, logger, metrics);
+      const onExtracted = vi.fn().mockResolvedValue(undefined);
+      pipeline.setOnExtracted(onExtracted);
+
+      await pipeline.processPendingBySource(SocialPlatform.TELEGRAM, 'frontend_jobs');
+
+      expect(onExtracted).not.toHaveBeenCalled();
+    });
+
+    it('a hook rejection does not turn a successful extraction into a failure', async () => {
+      pendingMessage(repository);
+      const engine = fakeExtractionEngine(MessageExtractionStatus.SUCCESS);
+      const pipeline = new SocialMessagePipeline(repository, engine, logger, metrics);
+      pipeline.setOnExtracted(vi.fn().mockRejectedValue(new Error('discovery blew up')));
+
+      const result = await pipeline.processPendingBySource(SocialPlatform.TELEGRAM, 'frontend_jobs');
+
+      expect(result.extracted).toBe(1);
+      expect(result.failed).toBe(0);
+    });
+  });
 });

@@ -5,6 +5,7 @@ import { createVacancyId, createUserId, SourceLifecycleServiceImpl } from '@care
 import type { InteractionAction } from '@careeros/career';
 import { UnauthorizedError, NotFoundError } from '../../middleware/error-handler.js';
 import { isNonVacancyContentShape } from '../../services/non-vacancy-content.js';
+import { isExcludedCompanyName } from '../../services/excluded-companies.js';
 
 const sourceLifecycleService = new SourceLifecycleServiceImpl();
 
@@ -233,12 +234,15 @@ export async function vacancyRoutes(fastify: FastifyInstance): Promise<void> {
     });
 
     const visibleVacancies = vacancies.filter((vacancy) => !isNonVacancyContentShape(vacancy));
-    const hiddenCount = vacancies.length - visibleVacancies.length;
     const companiesById = await batchFindCompanies(fastify, visibleVacancies);
-    const sourcesById = await batchFindSources(fastify, visibleVacancies.map((v) => v.id));
+    const nonExcludedVacancies = visibleVacancies.filter(
+      (vacancy) => !isExcludedCompanyName(companiesById.get(vacancy.companyId)?.name)
+    );
+    const hiddenCount = vacancies.length - nonExcludedVacancies.length;
+    const sourcesById = await batchFindSources(fastify, nonExcludedVacancies.map((v) => v.id));
 
     return reply.send({
-      vacancies: visibleVacancies.map((vacancy) =>
+      vacancies: nonExcludedVacancies.map((vacancy) =>
         serializeVacancySummary(vacancy, companiesById.get(vacancy.companyId) ?? null, sourcesById.get(vacancy.id) ?? [])
       ),
       total: Math.max(0, total - hiddenCount),
@@ -349,12 +353,15 @@ export async function vacancyRoutes(fastify: FastifyInstance): Promise<void> {
     });
 
     const visibleVacancies = vacancies.filter((vacancy) => !isNonVacancyContentShape(vacancy));
-    const hiddenCount = vacancies.length - visibleVacancies.length;
     const companiesById = await batchFindCompanies(fastify, visibleVacancies);
-    const sourcesById = await batchFindSources(fastify, visibleVacancies.map((v) => v.id));
+    const nonExcludedVacancies = visibleVacancies.filter(
+      (vacancy) => !isExcludedCompanyName(companiesById.get(vacancy.companyId)?.name)
+    );
+    const hiddenCount = vacancies.length - nonExcludedVacancies.length;
+    const sourcesById = await batchFindSources(fastify, nonExcludedVacancies.map((v) => v.id));
 
     return reply.send({
-      vacancies: visibleVacancies.map((vacancy) =>
+      vacancies: nonExcludedVacancies.map((vacancy) =>
         serializeVacancySummary(vacancy, companiesById.get(vacancy.companyId) ?? null, sourcesById.get(vacancy.id) ?? [])
       ),
       total: Math.max(0, total - hiddenCount),

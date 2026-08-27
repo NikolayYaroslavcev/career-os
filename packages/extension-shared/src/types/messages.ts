@@ -1,4 +1,5 @@
 import type { ContentVacancy, ApplyEvent, VacancyStatus } from './content-vacancy.js';
+import type { LinkedInFeedPostCandidate } from './linkedin-feed.js';
 
 export type ContentToBackgroundMessage =
   | { type: 'SAVE_VACANCY'; payload: ContentVacancy }
@@ -8,7 +9,8 @@ export type ContentToBackgroundMessage =
   | { type: 'INTERVIEW_PREP'; payload: ContentVacancy }
   | { type: 'APPLY_DETECTED'; payload: ApplyEvent }
   | { type: 'GET_VACANCY_STATUS'; payload: { url: string } }
-  | { type: 'CHECK_AUTH'; payload: Record<string, never> };
+  | { type: 'CHECK_AUTH'; payload: Record<string, never> }
+  | { type: 'LINKEDIN_FEED_POST_DETECTED'; payload: LinkedInFeedPostCandidate };
 
 export type PopupToBackgroundMessage =
   | { type: 'GET_RECENT_VACANCIES'; payload: { limit: number } }

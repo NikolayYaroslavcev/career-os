@@ -26,6 +26,7 @@ export const SOURCE_PRIORITY: Record<VacancySource, number> = {
   // research/free-provider-expansion/REPORT.md §4.5.
   wellfound: 70,
   otta: 70,
+  justjoin_it: 70,
   arbeitnow: 65,
   jobicy: 65,
   france_travail: 65,
@@ -40,6 +41,10 @@ export const SOURCE_PRIORITY: Record<VacancySource, number> = {
   rss_feed: 50,
   company_career_page: 45,
   telegram: 40,
+  // Below telegram: dedicated job channels are curated for that purpose,
+  // whereas a personal LinkedIn Feed mixes job posts with everything else,
+  // so on average it's the less-authoritative AI-extracted community source.
+  linkedin_feed: 35,
   manual: 10,
 };
 
@@ -81,8 +86,8 @@ export function shouldOverride(
  */
 export function inferProviderType(source: VacancySource): ProviderType {
   const atsProviders = ['greenhouse', 'lever', 'ashby', 'workday', 'smartrecruiters', 'recruitee', 'comeet', 'teamtailor', 'personio', 'workable'];
-  const jobBoardProviders = ['remotive', 'hh', 'superjob', 'habr_career', 'linkedin', 'wellfound', 'otta', 'arbeitnow', 'jobicy', 'we_work_remotely',   'working_nomads', 'nodesk', 'pyjobs', 'django_jobs', 'speedrun',   'france_travail', 'adzuna'];
-  const communityProviders = ['hn_hiring', 'rss_feed', 'company_career_page', 'telegram'];
+  const jobBoardProviders = ['remotive', 'hh', 'superjob', 'habr_career', 'linkedin', 'wellfound', 'otta', 'arbeitnow', 'jobicy', 'we_work_remotely',   'working_nomads', 'nodesk', 'pyjobs', 'django_jobs', 'speedrun',   'france_travail', 'adzuna', 'justjoin_it'];
+  const communityProviders = ['hn_hiring', 'rss_feed', 'company_career_page', 'telegram', 'linkedin_feed'];
 
   if (atsProviders.includes(source)) return 'ATS';
   if (jobBoardProviders.includes(source)) return 'JOB_BOARD';

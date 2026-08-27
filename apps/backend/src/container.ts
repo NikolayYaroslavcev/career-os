@@ -84,7 +84,7 @@ import {
   createWorkdayProvider,
   createTeamtailorProvider,
   createRemotiveProvider,
-  createArbeitnowProvider,
+  createJustJoinItProvider,
   createJobicyProvider,
   createWWRProvider,
   createWorkingNomadsProvider,
@@ -93,7 +93,6 @@ import {
   createDjangoJobsProvider,
   createSpeedrunProvider,
   createFranceTravailProvider,
-  createHNHiringProvider,
   createLinkedInProvider,
   createAdzunaProvider,
   createSmartRecruitersProvider,
@@ -150,6 +149,7 @@ import { SearchProfileSuggestionService } from './services/search-profile-sugges
 import { SyncSchedulerService } from './services/sync-scheduler-service.js';
 import { SocialMessageIngestionService } from './services/social-message-ingestion-service.js';
 import { SocialMessagePipeline } from './services/social-message-pipeline.js';
+import { LinkedInFeedDiscoveryService } from './services/linkedin-feed-discovery-service.js';
 import { TelegramChannelStatsService } from './services/telegram-channel-stats-service.js';
 import { DashboardStatsService } from './services/dashboard-stats-service.js';
 import { NotificationDispatcherService } from './services/notification-dispatcher-service.js';
@@ -251,6 +251,7 @@ export interface Container {
     readonly tailoringRequest: TailoringRequestService;
     readonly socialMessageIngestion: SocialMessageIngestionService;
     readonly socialMessagePipeline: SocialMessagePipeline;
+    readonly linkedInFeedDiscovery: LinkedInFeedDiscoveryService;
     readonly telegramChannelStats: TelegramChannelStatsService;
   };
 }
@@ -562,10 +563,21 @@ function registerConfiguredProviders(
   );
   outcomes.push({ providerId: 'remotive', registered: true, configured: true, authenticated: 'not_required' });
 
+  // Arbeitnow — disabled by provider audit (2026-08-25): general German job
+  // board, ~22.5% IT-relevant by title in this system's data, and sync
+  // wasn't producing distinct listings (a single unique externalId across
+  // every ingested row). Historical Vacancy/VacancySource rows are
+  // untouched; implementation stays in packages/providers.
+  {
+    const reason = 'disabled by provider audit 2026-08-25: low IT relevance, sync not producing distinct listings';
+    logger.warn(`Arbeitnow provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'arbeitnow', registered: false, configured: false, authenticated: 'not_required', reason });
+  }
+
   registry.register(
-    createArbeitnowProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
+    createJustJoinItProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
   );
-  outcomes.push({ providerId: 'arbeitnow', registered: true, configured: true, authenticated: 'not_required' });
+  outcomes.push({ providerId: 'justjoin_it', registered: true, configured: true, authenticated: 'not_required' });
 
   registry.register(
     createJobicyProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
@@ -602,10 +614,16 @@ function registerConfiguredProviders(
   );
   outcomes.push({ providerId: 'nodesk', registered: true, configured: true, authenticated: 'not_required' });
 
-  registry.register(
-    createHNHiringProvider({ logger, metrics: new ProviderInMemoryMetricsCollector(), tracer: new ProviderInMemoryTracer() })
-  );
-  outcomes.push({ providerId: 'hn_hiring', registered: true, configured: true, authenticated: 'not_required' });
+  // HN "Who's Hiring" — disabled by provider audit (2026-08-25): the fetcher
+  // was pulling comments from a March-2020 thread while stamping current
+  // publishedAt timestamps, plus garbled title/location mapping and no real
+  // apply flow (HN comment reply only). Historical Vacancy/VacancySource
+  // rows are untouched; implementation stays in packages/providers.
+  {
+    const reason = 'disabled by provider audit 2026-08-25: stale thread mislabeled as fresh, garbled fields, no apply flow';
+    logger.warn(`HN Hiring provider not registered: ${reason}`);
+    outcomes.push({ providerId: 'hn_hiring', registered: false, configured: false, authenticated: 'not_required', reason });
+  }
 
   // Habr Career — no auth, no config needed. High-value CIS IT source; see
   // habr-career-provider.ts for the RSS-feed ingestion approach.
@@ -1263,6 +1281,20 @@ export function buildContainer(config: Config): Container {
   );
   providerDiagnosticsService.setSyncScheduler(syncSchedulerService);
 
+  // Wired after syncSchedulerService (same setSyncScheduler-style ordering fix
+  // above): SocialMessagePipeline is constructed earlier than the service its
+  // LinkedIn Feed hook needs to call into, so the hook is attached here via
+  // setOnExtracted() rather than the pipeline's constructor. Strict no-op for
+  // Telegram extractions — see LinkedInFeedDiscoveryService's doc comment.
+  const linkedInFeedDiscoveryService = new LinkedInFeedDiscoveryService(
+    syncSchedulerService,
+    new ProviderConsoleLogger(config.LOG_LEVEL),
+  );
+  socialMessagePipeline.setOnExtracted((message, extraction) => {
+    if (message.platform !== SocialPlatform.LINKEDIN) return Promise.resolve();
+    return linkedInFeedDiscoveryService.discoverFromMessage(message, extraction).then(() => undefined);
+  });
+
   const dashboardStatsService = new DashboardStatsService(
     vacancyRepository,
     applicationRepository,
@@ -1489,6 +1521,7 @@ export function buildContainer(config: Config): Container {
       tailoringRequest: tailoringRequestService,
       socialMessageIngestion: socialMessageIngestionService,
       socialMessagePipeline,
+      linkedInFeedDiscovery: linkedInFeedDiscoveryService,
       telegramChannelStats: telegramChannelStatsService,
     },
   };

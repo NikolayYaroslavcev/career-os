@@ -117,6 +117,7 @@ vi.mock('@careeros/providers', () => ({
   createTeamtailorProvider: vi.fn(),
   createRemotiveProvider: vi.fn(),
   createArbeitnowProvider: vi.fn(),
+  createJustJoinItProvider: vi.fn(),
   createJobicyProvider: vi.fn(),
   createWWRProvider: vi.fn(),
   createWorkingNomadsProvider: vi.fn(),
@@ -168,6 +169,13 @@ vi.mock('@careeros/providers', () => ({
     validate: vi.fn(),
     transportType: 'BOT_API',
     capability: 'API',
+  })),
+  SocialMessageMapper: vi.fn().mockImplementation(() => ({
+    providerId: 'telegram',
+    map: vi.fn(),
+  })),
+  DefaultNormalizationPipeline: vi.fn().mockImplementation(() => ({
+    normalize: vi.fn(),
   })),
 }));
 

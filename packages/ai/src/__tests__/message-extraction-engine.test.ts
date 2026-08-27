@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { SocialMessage, createSocialMessageId, SocialPlatform, TransportType } from '@careeros/career';
 import { MessageExtractionEngine, type MessageExtractionEngineDeps } from '../extraction/message-extraction-engine.js';
@@ -11,9 +11,11 @@ import { NoopAILogger } from '../observability/ai-logger.js';
 import { InMemoryAIMetricsCollector } from '../observability/ai-metrics.js';
 import { InMemoryAITracer } from '../observability/ai-tracer.js';
 import { BaseAIProvider } from '../providers/base-provider.js';
+import { FallbackAIProvider } from '../providers/fallback-ai-provider.js';
+import { AIRetryPolicy } from '../resilience/retry-policy.js';
 import { AIError, AIErrorType } from '../domain/ai-error.js';
 import type { AIRequest, AIResponse, AICapabilities } from '../domain/ai-types.js';
-import type { AIProviderConfig } from '../domain/ai-provider.js';
+import type { AIProvider, AIProviderConfig } from '../domain/ai-provider.js';
 
 class MockProvider extends BaseAIProvider {
   readonly name = 'mock';
@@ -267,5 +269,134 @@ describe('MessageExtractionEngine', () => {
     const { extraction } = await engine.extract(createTestMessage('just some unrelated chatter'));
 
     expect(extraction.status).toBe(MessageExtractionStatus.SPAM);
+  });
+
+  // Regression guard for the Telegram AI-extraction outage (root cause: the
+  // request built here pinned `model` to the primary provider's defaultModel,
+  // and FallbackAIProvider forwards that same request object to every
+  // provider in the chain unchanged — so a Groq model id reached OpenRouter/
+  // DeepSeek, who rejected it as invalid. matching-engine.ts already avoids
+  // this by leaving `model` unset; this test guards the same fix here.
+  it('does not leak the primary provider default model into a fallback provider request', async () => {
+    const primaryDefaultModel = 'llama-3.3-70b-versatile';
+    const rateLimitError = new AIError({
+      type: AIErrorType.RATE_LIMITED,
+      message: 'rate limited',
+      provider: 'groq',
+      retryable: true,
+    });
+
+    const primary: AIProvider & { complete: ReturnType<typeof vi.fn> } = {
+      name: 'groq',
+      defaultModel: primaryDefaultModel,
+      complete: vi.fn().mockRejectedValue(rateLimitError),
+      getCapabilities: vi.fn((): AICapabilities => ({ supportsStreaming: false, supportsVision: false, maxTokens: 4000, supportedModels: [] })),
+      validateConfig: vi.fn(() => true),
+    };
+
+    let secondaryReceivedRequest: AIRequest | undefined;
+    const secondary: AIProvider & { complete: ReturnType<typeof vi.fn> } = {
+      name: 'openrouter',
+      defaultModel: 'openai/gpt-4o',
+      complete: vi.fn(async (request: AIRequest): Promise<AIResponse> => {
+        secondaryReceivedRequest = request;
+        return {
+          content: JSON.stringify(VALID_EXTRACTION_DATA),
+          usage: { promptTokens: 100, completionTokens: 200, totalTokens: 300 },
+          model: 'openai/gpt-4o',
+          provider: 'openrouter',
+          latencyMs: 5,
+          confidence: 0.9,
+          requestId: 'req-2',
+        };
+      }),
+      getCapabilities: vi.fn((): AICapabilities => ({ supportsStreaming: false, supportsVision: false, maxTokens: 4000, supportedModels: [] })),
+      validateConfig: vi.fn(() => true),
+    };
+
+    const fallbackProvider = new FallbackAIProvider([primary, secondary], {
+      retryPolicy: new AIRetryPolicy({ maxAttempts: 2, baseDelayMs: 0, maxDelayMs: 0, backoffMultiplier: 1, jitter: false }),
+    });
+
+    const deps: MessageExtractionEngineDeps = {
+      provider: fallbackProvider,
+      promptBuilder: new MessageExtractionPromptBuilder(),
+      repository,
+      cache: new InMemoryAICache(),
+      costTracker: new InMemoryCostTracker(),
+      logger: new NoopAILogger(),
+      metrics: new InMemoryAIMetricsCollector(),
+      tracer: new InMemoryAITracer(),
+    };
+    const engine = new MessageExtractionEngine(deps, { enableCache: false });
+
+    const { extraction } = await engine.extract(createTestMessage(RAW_TEXT));
+
+    expect(secondary.complete).toHaveBeenCalledTimes(1);
+    expect(secondaryReceivedRequest?.model).not.toBe(primaryDefaultModel);
+    expect(extraction.status).toBe(MessageExtractionStatus.SUCCESS);
+  });
+
+  // Regression guard for the Telegram frontend/backend extraction-asymmetry
+  // investigation: a realistic, detail-rich frontend posting must have its
+  // real technologies (React/TypeScript/Next.js) come through unchanged —
+  // proving the pipeline doesn't drop them — while a thin, tech-free posting
+  // (see the next test) correctly yields an empty array rather than a
+  // fabricated one. Both behaviors are content-driven, not category-driven.
+  it('extracts React/TypeScript/Next.js from a realistic frontend vacancy that actually mentions them', async () => {
+    const frontendRawText =
+      'Middle/Senior Frontend-разработчик (команда роста)\n' +
+      'Компания: Rocket Sci. Remote.\n' +
+      'Требования:\n' +
+      '-опыт коммерческой разработки на React от 2 лет\n' +
+      '-уверенное владение TypeScript\n' +
+      '-опыт работы с Next.js будет плюсом\n' +
+      'Зарплата: 250000-350000 RUB';
+
+    provider.queueResponse({
+      ...VALID_EXTRACTION_DATA,
+      title: 'Middle/Senior Frontend-разработчик',
+      technologies: ['React', 'TypeScript', 'Next.js'],
+      category: 'frontend',
+      salaryMin: 250000,
+      salaryMax: 350000,
+      currency: 'RUB',
+      evidence: {
+        title: 'Middle/Senior Frontend-разработчик (команда роста)',
+        company: 'Rocket Sci',
+        remoteType: 'Remote',
+      },
+    });
+    const engine = new MessageExtractionEngine(createDeps(provider, repository), { enableCache: false });
+
+    const { extraction } = await engine.extract(createTestMessage(frontendRawText));
+
+    expect(extraction.status).toBe(MessageExtractionStatus.SUCCESS);
+    expect(extraction.extractedFields.technologies).toEqual(['React', 'TypeScript', 'Next.js']);
+  });
+
+  it('does not fabricate technologies for a thin posting that names none', async () => {
+    const thinRawText = 'Senior Frontend Developer\nWebito is a commerce platform. Germany (Munich). Remote work.\nJob description on LinkedIn.';
+
+    provider.queueResponse({
+      ...VALID_EXTRACTION_DATA,
+      title: 'Senior Frontend Developer',
+      technologies: [],
+      category: 'frontend',
+      salaryMin: null,
+      salaryMax: null,
+      currency: null,
+      evidence: {
+        title: 'Senior Frontend Developer',
+        country: 'Germany',
+        remoteType: 'Remote',
+      },
+    });
+    const engine = new MessageExtractionEngine(createDeps(provider, repository), { enableCache: false });
+
+    const { extraction } = await engine.extract(createTestMessage(thinRawText));
+
+    expect(extraction.status).toBe(MessageExtractionStatus.SUCCESS);
+    expect(extraction.extractedFields.technologies).toEqual([]);
   });
 });

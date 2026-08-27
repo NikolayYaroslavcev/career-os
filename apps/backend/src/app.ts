@@ -141,11 +141,22 @@ export async function buildApp(): Promise<ReturnType<typeof Fastify>> {
 
   await app.register(apiRoutes);
 
-  // Start the sync scheduler — registers periodic sync for every workspace.
+  // Start the sync scheduler — registers periodic sync for every allowlisted
+  // workspace (SYNC_WORKSPACE_ALLOWLIST; unset = every workspace, previous
+  // behavior). Providers take no workspace parameter, so starting sync for
+  // N workspaces fetches the same external content N times over — see the
+  // SYNC_WORKSPACE_ALLOWLIST doc comment in packages/shared/src/config.ts.
   // Non-blocking: runs in the background after the server starts accepting requests.
   app.addHook('onReady', async () => {
     try {
-      const workspaces = await prisma.workspace.findMany({ select: { id: true } });
+      const allowlist = config.SYNC_WORKSPACE_ALLOWLIST
+        ?.split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+      const workspaces = await prisma.workspace.findMany({
+        where: allowlist && allowlist.length > 0 ? { id: { in: allowlist } } : undefined,
+        select: { id: true },
+      });
       for (const workspace of workspaces) {
         try {
           container.services.syncScheduler.startAll(workspace.id);

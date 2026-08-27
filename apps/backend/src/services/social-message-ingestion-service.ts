@@ -1,12 +1,17 @@
 import { createHash } from 'node:crypto';
-import type { SocialMessageRepository, SocialPlatform, TransportType } from '@careeros/career';
-import type { TransportManager, TransportSource, Logger, MetricsCollector } from '@careeros/providers';
+import type { SocialMessage, SocialMessageRepository, SocialPlatform, TransportType } from '@careeros/career';
+import type { TransportManager, TransportSource, Logger, MetricsCollector, SocialMessageCandidate, SocialMessageValidationError } from '@careeros/providers';
+import { validateSocialMessageCandidate } from '@careeros/providers';
 
 export interface SocialMessageIngestionResult {
   readonly fetched: number;
   readonly persisted: number;
   readonly duplicatesSkipped: number;
 }
+
+export type IngestPushedCandidateResult =
+  | { readonly ok: true; readonly message: SocialMessage; readonly created: boolean }
+  | { readonly ok: false; readonly error: SocialMessageValidationError };
 
 // Own namespace rather than reusing TRANSPORT_METRICS/PROVIDER_METRICS —
 // those belong to packages/providers (which has no @careeros/career
@@ -130,5 +135,57 @@ export class SocialMessageIngestionService {
     });
 
     return { fetched: result.data.messages.length, persisted, duplicatesSkipped };
+  }
+
+  /**
+   * Push-based counterpart to ingestSource() — for a transport that already
+   * has one candidate in hand (e.g. a browser extension posting a single
+   * detected LinkedIn Feed post) rather than something TransportManager.fetch()
+   * polls. Reuses the exact same validate -> find-or-create idempotency this
+   * class already applies per-candidate inside ingestSource()'s loop, so
+   * there is only ever one dedup mechanism for SocialMessage, not two.
+   */
+  async ingestPushedCandidate(
+    providerId: string,
+    platform: SocialPlatform,
+    transportType: TransportType,
+    candidate: SocialMessageCandidate,
+  ): Promise<IngestPushedCandidateResult> {
+    const validationError = validateSocialMessageCandidate(candidate);
+    if (validationError) {
+      return { ok: false, error: validationError };
+    }
+
+    const tags = { providerId, sourceId: candidate.sourceId, transportType };
+
+    const existing = await this.socialMessageRepository.findBySourceAndExternalId(
+      platform,
+      candidate.sourceId,
+      candidate.externalMessageId,
+    );
+
+    if (existing) {
+      this.metrics.incrementCounter(INGESTION_METRICS.MESSAGES_DUPLICATE, 1, tags);
+      return { ok: true, message: existing, created: false };
+    }
+
+    const message = await this.socialMessageRepository.upsertRaw({
+      platform,
+      sourceId: candidate.sourceId,
+      sourceName: candidate.sourceName,
+      externalMessageId: candidate.externalMessageId,
+      authorUsername: candidate.authorUsername,
+      publishedAt: candidate.publishedAt,
+      rawText: candidate.rawText,
+      rawHtml: candidate.rawHtml,
+      media: candidate.media,
+      links: candidate.links,
+      language: candidate.language,
+      contentHash: computeContentHash(candidate.rawText),
+      transport: transportType,
+    });
+
+    this.metrics.incrementCounter(INGESTION_METRICS.MESSAGES_PERSISTED, 1, tags);
+    return { ok: true, message, created: true };
   }
 }

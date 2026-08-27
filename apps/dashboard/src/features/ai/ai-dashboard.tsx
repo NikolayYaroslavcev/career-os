@@ -74,7 +74,7 @@ export function AIDashboard(): React.JSX.Element | null {
       } catch (err) {
         console.error('Failed to fetch AI data:', err);
         if (isMounted) {
-          setError('Failed to load AI dashboard data');
+          setError(t('ai.loadFailed'));
         }
       } finally {
         if (isMounted) {

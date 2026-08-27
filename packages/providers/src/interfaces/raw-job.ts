@@ -9,7 +9,10 @@ export interface RawJob {
   readonly salary?: RawSalary;
   readonly experienceLevel?: string;
   readonly technologies: readonly string[];
-  readonly url: string;
+  // Optional because a LinkedIn Feed post can have no working URL at all
+  // (no job card, no in-text link, and LinkedIn's SDUI feed markup exposes no
+  // real post permalink) — every other provider still always supplies one.
+  readonly url?: string;
   readonly publishedAt: Date;
   readonly remote?: boolean;
   readonly employmentType?: string;

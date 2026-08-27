@@ -202,6 +202,16 @@ const configSchema = z.object({
   // conditionally-registered providers above.
   TELEGRAM_CHANNELS: z.string().optional(),
 
+  // Comma-separated workspace IDs allowed to receive scheduled provider
+  // sync at boot (apps/backend/src/app.ts onReady hook). Providers like
+  // Telegram/JustJoin.it/HH take no workspace parameter — the same global
+  // content gets fetched and persisted once per workspace that's started,
+  // so syncing every row in the Workspace table (including throwaway
+  // e2e-test workspaces that never get cleaned up) fans a single sync out
+  // into dozens of redundant external fetches and duplicate VacancySource
+  // rows. Unset = sync all workspaces (previous, unfiltered behavior).
+  SYNC_WORKSPACE_ALLOWLIST: z.string().optional(),
+
   // Vacancy search / matching pipeline
   // Max vacancies requested per provider per search.
   PROVIDER_SEARCH_LIMIT: numberField(50),

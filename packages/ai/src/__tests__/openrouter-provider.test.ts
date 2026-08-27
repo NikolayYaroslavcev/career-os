@@ -61,6 +61,34 @@ describe('OpenRouterProvider', () => {
     expect(result.provider).toBe('openrouter');
   });
 
+  it('sends the exact endpoint, headers, and body OpenRouter\'s chat completions API expects', async () => {
+    const fetchMock = mockOkResponse({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    });
+    global.fetch = fetchMock;
+
+    const provider = new OpenRouterProvider({ apiKey: 'sk-or-test-key' });
+    await provider.complete({ ...request, systemPrompt: 'You are a helpful assistant' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+
+    expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
+    expect(init.method).toBe('POST');
+
+    const headers = init.headers as Record<string, string>;
+    expect(headers['Authorization']).toBe('Bearer sk-or-test-key');
+    expect(headers['Content-Type']).toBe('application/json');
+
+    const body = JSON.parse(init.body as string);
+    expect(body.model).toBe('openai/gpt-4o');
+    expect(body.messages).toEqual([
+      { role: 'system', content: 'You are a helpful assistant' },
+      { role: 'user', content: 'Analyze this resume' },
+    ]);
+  });
+
   it.each([500, 502, 503])('classifies an HTTP %d response as a retryable NETWORK_ERROR', async (status) => {
     global.fetch = mockErrorResponse(status);
     const provider = new OpenRouterProvider({ apiKey: 'key' });

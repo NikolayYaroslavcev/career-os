@@ -93,5 +93,9 @@ export function createLinkedInProvider(config: LinkedInProviderConfig): DefaultP
     mapper,
     normalizer,
     syncStrategy,
+    // LinkedIn's guest search endpoint (jobs-guest/jobs/api/seeMoreJobPostings)
+    // returns an empty results page — not an error — when called with no
+    // keywords, so the scheduled sync silently imported 0 jobs on every run.
+    { query: 'software engineer' },
   );
 }

@@ -3,6 +3,7 @@ import type { VacancyRepository, VacancySourceRepository, CompanyRepository, Vac
 import { Vacancy, Source as VacancySourceEntity, createVacancySourceId, createVacancyId, createCompanyId, Location, Salary, Technology, ExperienceLevel } from '@careeros/career';
 import type { NormalizedVacancy } from '@careeros/providers';
 import { inferProviderType, shouldOverride } from '../config/source-priority.js';
+import { isExcludedCompanyName } from './excluded-companies.js';
 
 interface ProviderConfigRepo {
   isProviderSyncEnabled(providerId: string): Promise<boolean>;
@@ -59,6 +60,7 @@ const DEFAULT_SYNC_INTERVALS: Record<string, number> = {
   remotive: 60 * 60 * 1000,
   arbeitnow: 60 * 60 * 1000,
   jobicy: 60 * 60 * 1000,
+  justjoin_it: 60 * 60 * 1000,
   we_work_remotely: 2 * 60 * 60 * 1000,
   working_nomads: 2 * 60 * 60 * 1000,
   nodesk: 2 * 60 * 60 * 1000,
@@ -307,6 +309,19 @@ export class SyncSchedulerService {
   }
 
   /**
+   * Public counterpart to ingestVacancy() for a caller that already has one
+   * NormalizedVacancy in hand and its target workspaceId — e.g. LinkedIn Feed
+   * discovery (apps/backend/src/services/linkedin-feed-discovery-service.ts),
+   * which produces vacancies one at a time from push-ingested SocialMessage
+   * rows rather than from a ProviderRegistry provider's scheduled sync()
+   * batch. Same dedup/merge behavior as the periodic sync path — no second
+   * ingestion mechanism.
+   */
+  async ingestVacancyForWorkspace(normalized: NormalizedVacancy, workspaceId: string): Promise<boolean> {
+    return this.ingestVacancy(normalized, workspaceId);
+  }
+
+  /**
    * Ingest a normalized vacancy into the system.
    * Handles multi-source deduplication:
    * 1. Find canonical vacancy by title + company
@@ -314,6 +329,8 @@ export class SyncSchedulerService {
    * 3. If found, attach VacancySource if missing, merge data if higher priority
    */
   private async ingestVacancy(normalized: NormalizedVacancy, workspaceId: string): Promise<boolean> {
+    if (isExcludedCompanyName(normalized.companyName)) return false;
+
     const providerId = normalized.source as VacancySource;
     const externalId = normalized.sourceId;
 

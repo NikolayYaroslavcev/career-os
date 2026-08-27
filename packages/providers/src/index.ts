@@ -241,6 +241,7 @@ export { RemotiveSyncStrategy } from './providers/remotive/remotive-sync-strateg
 
 // Arbeitnow Provider
 export { createArbeitnowProvider, ARBEITNOW_PROVIDER_INFO, ARBEITNOW_PROVIDER_CAPABILITIES } from './providers/arbeitnow/arbeitnow-provider.js';
+export { createJustJoinItProvider, JUSTJOINIT_PROVIDER_INFO, JUSTJOINIT_PROVIDER_CAPABILITIES } from './providers/justjoinit/justjoinit-provider.js';
 export type { ArbeitnowProviderConfig } from './providers/arbeitnow/arbeitnow-provider.js';
 export { ArbeitnowFetcher } from './providers/arbeitnow/arbeitnow-fetcher.js';
 export { ArbeitnowMapper } from './providers/arbeitnow/arbeitnow-mapper.js';

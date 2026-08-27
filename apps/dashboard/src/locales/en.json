@@ -402,7 +402,8 @@
     "notFound": "Job not found",
     "actions": "Actions",
     "applyToTrack": "Apply & Track",
-    "creatingApplication": "Creating application..."
+    "creatingApplication": "Creating application...",
+    "applyFailed": "Failed to create application"
   },
   "careerIntelligencePage": {
     "title": "Career Intelligence",
@@ -916,6 +917,7 @@
     "dashboard": "AI Dashboard",
     "dashboardDescription": "Monitor AI usage, costs, and performance",
     "loading": "Loading AI dashboard...",
+    "loadFailed": "Failed to load AI dashboard data",
     "mode": "AI Mode",
     "modeManual": "Manual",
     "modeSmart": "Smart",

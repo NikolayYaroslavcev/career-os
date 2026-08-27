@@ -25,7 +25,7 @@ export interface MappedJob {
   };
   readonly experienceLevel?: string;
   readonly technologies: readonly string[];
-  readonly url: string;
+  readonly url?: string;
   readonly publishedAt: Date;
   readonly fetchedAt: Date;
   readonly remote?: boolean;

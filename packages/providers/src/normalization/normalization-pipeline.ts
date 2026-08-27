@@ -52,7 +52,7 @@ export class DefaultNormalizationPipeline implements NormalizationPipeline {
       title,
       companyName,
       location: location.raw,
-      url: job.url,
+      url: job.url ?? '',
     });
 
     return {

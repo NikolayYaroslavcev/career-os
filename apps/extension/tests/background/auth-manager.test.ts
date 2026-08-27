@@ -100,4 +100,44 @@ describe('AuthManager', () => {
     expect(result).toEqual({ ok: true });
     expect(auth.isAuthenticated()).toBe(true);
   });
+
+  it('coalesces concurrent proactive refreshes so a losing single-use-token 401 cannot log out a request that already succeeded', async () => {
+    // Several feed posts detected in the same batch each call authenticatedRequest
+    // around the same time; if the token is inside the proactive-refresh window,
+    // each independently calling refresh() with the same refreshToken would race
+    // the backend's single-use rotation — the second call gets a 401 for a token
+    // the first call already consumed.
+    const nearExpiry = Math.floor(Date.now() / 1000) + 30; // inside the 60s proactive-refresh window
+    const initialAccessToken = buildFakeJwt(nearExpiry);
+    const newAccessToken = buildFakeJwt(Math.floor(Date.now() / 1000) + 900);
+
+    let refreshCalls = 0;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/api/v1/auth/login')) {
+        return {
+          ok: true,
+          json: async () => ({ accessToken: initialAccessToken, refreshToken: 'refresh-1', user: { id: 'user-1', email: 'jane@example.com' } }),
+        };
+      }
+      if (url.endsWith('/api/v1/auth/refresh')) {
+        refreshCalls++;
+        if (refreshCalls > 1) {
+          return { ok: false, status: 401, text: async () => 'invalid refresh token' };
+        }
+        return { ok: true, json: async () => ({ accessToken: newAccessToken, refreshToken: 'refresh-2' }) };
+      }
+      return { ok: true, json: async () => ({ ok: true }) };
+    });
+
+    const auth = new AuthManager(buildStorage());
+    await auth.login('jane@example.com', 'password');
+
+    await Promise.all([
+      auth.authenticatedRequest('/api/v1/a'),
+      auth.authenticatedRequest('/api/v1/b'),
+    ]);
+
+    expect(refreshCalls).toBe(1);
+    expect(auth.isAuthenticated()).toBe(true);
+  });
 });

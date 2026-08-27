@@ -109,6 +109,14 @@
       "js": ["content/providers/generic.js", "content/core.js"],
       "run_at": "document_idle",
       "all_frames": false
+    },
+    {
+      "matches": [
+        "https://www.linkedin.com/feed",
+        "https://www.linkedin.com/feed/*"
+      ],
+      "js": ["content/linkedin-feed.js"],
+      "run_at": "document_idle"
     }
   ],
   "options_page": "options/options.html",

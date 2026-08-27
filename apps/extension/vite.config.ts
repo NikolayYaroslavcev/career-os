@@ -2,8 +2,10 @@ import { defineConfig } from 'vite';
 import { resolve } from 'path';
 
 export default defineConfig({
+  root: resolve(__dirname, 'src'),
+  publicDir: resolve(__dirname, 'public'),
   build: {
-    outDir: 'dist',
+    outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,
     rollupOptions: {
       input: {
@@ -21,6 +23,7 @@ export default defineConfig({
         'content/providers/smartrecruiters': resolve(__dirname, 'src/content/providers/smartrecruiters/detector.ts'),
         'content/providers/recruitee': resolve(__dirname, 'src/content/providers/recruitee/detector.ts'),
         'content/providers/generic': resolve(__dirname, 'src/content/providers/generic/jsonld.ts'),
+        'content/linkedin-feed': resolve(__dirname, 'src/content/linkedin-feed/feed-detector.ts'),
       },
       output: {
         entryFileNames: '[name].js',

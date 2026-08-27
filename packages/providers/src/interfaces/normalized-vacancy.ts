@@ -13,7 +13,7 @@ export interface NormalizedVacancy {
   readonly salary?: SalaryInfo;
   readonly experienceLevel?: ExperienceLevel;
   readonly technologies: readonly string[];
-  readonly url: string;
+  readonly url?: string;
   readonly publishedAt: Date;
   readonly fetchedAt: Date;
   readonly remote: RemoteInfo;

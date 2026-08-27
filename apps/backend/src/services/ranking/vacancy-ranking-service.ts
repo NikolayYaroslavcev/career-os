@@ -297,9 +297,9 @@ function classifyUserRole(desiredPositions: readonly string[]): RoleCategory {
 function calculateRoleScore(
   vacancyTitle: string,
   desiredPositions: readonly string[],
-): { score: number; reason: string; vacancyRole: RoleCategory; userRole: RoleCategory } {
+): { score: number; reason: string; vacancyRole: RoleCategory; userRole: RoleCategory; isMismatch: boolean } {
   if (desiredPositions.length === 0) {
-    return { score: 0, reason: 'No desired positions specified', vacancyRole: 'other', userRole: 'other' };
+    return { score: 0, reason: 'No desired positions specified', vacancyRole: 'other', userRole: 'other', isMismatch: false };
   }
 
   const vacancyRole = classifyVacancyRole(vacancyTitle);
@@ -315,6 +315,7 @@ function calculateRoleScore(
         reason: `Title exactly matches "${position}"`,
         vacancyRole,
         userRole,
+        isMismatch: false,
       };
     }
   }
@@ -325,6 +326,7 @@ function calculateRoleScore(
       reason: `Role category matches (${vacancyRole})`,
       vacancyRole,
       userRole,
+      isMismatch: false,
     };
   }
 
@@ -334,6 +336,7 @@ function calculateRoleScore(
       reason: `Fullstack role compatible with ${userRole}`,
       vacancyRole,
       userRole,
+      isMismatch: false,
     };
   }
 
@@ -343,6 +346,7 @@ function calculateRoleScore(
       reason: `${vacancyRole} role compatible with fullstack`,
       vacancyRole,
       userRole,
+      isMismatch: false,
     };
   }
 
@@ -352,14 +356,16 @@ function calculateRoleScore(
       reason: `Role mismatch: vacancy is ${vacancyRole}, user wants ${userRole}`,
       vacancyRole,
       userRole,
+      isMismatch: true,
     };
   }
 
   return {
-    score: Math.round(WEIGHTS.ROLE * 0.3),
-    reason: 'Role category unknown, partial match',
+    score: 0,
+    reason: 'Role category unknown - relying on technology match',
     vacancyRole,
     userRole,
+    isMismatch: false,
   };
 }
 
@@ -736,7 +742,7 @@ export function calculateRankingScore(input: RankingInput): RankingResult {
     (interactionBoost ?? 0),
   )));
 
-  const hasRoleMismatch = roleResult.score === 0;
+  const hasRoleMismatch = roleResult.isMismatch;
   const careerFitPenalty = hasRoleMismatch ? 0.5 : 1.0;
 
   const quality = qualityScore ?? 50;

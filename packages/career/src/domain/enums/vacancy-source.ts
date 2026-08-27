@@ -14,6 +14,11 @@ export const VacancySource = {
   RSS_FEED: 'rss_feed',
   COMPANY_CAREER_PAGE: 'company_career_page',
   TELEGRAM: 'telegram',
+  // Distinct from LINKEDIN ('linkedin', the LinkedIn Jobs guest-API scraper)
+  // — this is the browser-extension push path from the user's own
+  // authenticated LinkedIn Feed (SocialPlatform.LINKEDIN), AI-extracted the
+  // same way Telegram community posts are, not a structured job-board API.
+  LINKEDIN_FEED: 'linkedin_feed',
   MANUAL: 'manual',
   GREENHOUSE: 'greenhouse',
   LEVER: 'lever',
@@ -38,6 +43,7 @@ export const VacancySource = {
   SPEEDRUN: 'speedrun',
   FRANCE_TRAVAIL: 'france_travail',
   ADZUNA: 'adzuna',
+  JUSTJOIN_IT: 'justjoin_it',
 } as const;
 
 export type VacancySource = (typeof VacancySource)[keyof typeof VacancySource];

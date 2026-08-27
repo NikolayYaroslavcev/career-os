@@ -26,6 +26,7 @@ import type {
 import type { ProviderDiagnosticsService } from './provider-diagnostics-service.js';
 import { containsSearchTerm, extractMeaningfulPositionKeywords } from './search-term-matching.js';
 import { filterNonVacancyContent } from './non-vacancy-content.js';
+import { filterExcludedCompanies } from './excluded-companies.js';
 
 // Fallback defaults only used if a caller omits the config-sourced constructor
 // args below (e.g. older tests) — production wiring always passes explicit
@@ -163,7 +164,7 @@ export class ProviderSearchService {
     }
 
     const { unique: deduped, duplicateIds } = this.deduplicate(fetchedVacancies);
-    const contentFiltered = filterNonVacancyContent(deduped);
+    const contentFiltered = filterExcludedCompanies(filterNonVacancyContent(deduped));
     const filtered = filterByRelevance(contentFiltered, profile, this.minRelevanceScore);
 
     this.logger.info('Relevance filtering applied', {
@@ -425,7 +426,7 @@ export class ProviderSearchService {
       providerType: inferProviderType(source),
       providerId: source,
       externalId: normalized.sourceId,
-      sourceUrl: isValidUrl(normalized.url) ? normalized.url : undefined,
+      sourceUrl: normalized.url && isValidUrl(normalized.url) ? normalized.url : undefined,
       isPrimary: true,
     });
 

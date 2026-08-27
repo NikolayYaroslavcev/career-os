@@ -174,4 +174,76 @@ describe('SocialMessageIngestionService', () => {
     expect(metrics.getCounter('social_message.ingestion.duplicate_skipped')).toBe(0);
     expect(metrics.getHistogram('social_message.ingestion.duration_ms')).toHaveLength(1);
   });
+
+  describe('ingestPushedCandidate (LinkedIn Feed push ingestion)', () => {
+    function linkedInCandidate(overrides: Partial<{ externalMessageId: string; rawText: string }> = {}) {
+      return {
+        sourceId: 'linkedin-feed:ws-1',
+        sourceName: 'LinkedIn Feed',
+        externalMessageId: overrides.externalMessageId ?? 'urn:li:activity:123',
+        authorUsername: 'Jane Doe',
+        publishedAt: new Date('2026-08-20T10:00:00Z'),
+        rawText: overrides.rawText ?? 'We are hiring a senior engineer',
+        links: ['https://example.com/careers'],
+      };
+    }
+
+    it('persists a new LinkedIn Feed candidate as a SocialMessage', async () => {
+      const transportManager = fakeTransportManager([]);
+      const service = new SocialMessageIngestionService(transportManager, repository, logger, metrics);
+
+      const result = await service.ingestPushedCandidate(
+        'linkedin-feed',
+        SocialPlatform.LINKEDIN,
+        TransportType.BROWSER_EXTENSION,
+        linkedInCandidate(),
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('expected ok result');
+      expect(result.created).toBe(true);
+      expect(result.message.platform).toBe(SocialPlatform.LINKEDIN);
+      expect(result.message.transport).toBe(TransportType.BROWSER_EXTENSION);
+      expect(result.message.rawText).toBe('We are hiring a senior engineer');
+    });
+
+    it('is idempotent: ingesting the same externalMessageId twice does not create a duplicate', async () => {
+      const transportManager = fakeTransportManager([]);
+      const service = new SocialMessageIngestionService(transportManager, repository, logger, metrics);
+
+      const first = await service.ingestPushedCandidate('linkedin-feed', SocialPlatform.LINKEDIN, TransportType.BROWSER_EXTENSION, linkedInCandidate());
+      const second = await service.ingestPushedCandidate('linkedin-feed', SocialPlatform.LINKEDIN, TransportType.BROWSER_EXTENSION, linkedInCandidate());
+
+      expect(first.ok && first.created).toBe(true);
+      expect(second.ok && !second.created).toBe(true);
+      expect(await repository.countBySource(SocialPlatform.LINKEDIN, 'linkedin-feed:ws-1')).toBe(1);
+    });
+
+    it('creates separate SocialMessage rows for different LinkedIn posts', async () => {
+      const transportManager = fakeTransportManager([]);
+      const service = new SocialMessageIngestionService(transportManager, repository, logger, metrics);
+
+      await service.ingestPushedCandidate('linkedin-feed', SocialPlatform.LINKEDIN, TransportType.BROWSER_EXTENSION, linkedInCandidate({ externalMessageId: 'urn:li:activity:123' }));
+      await service.ingestPushedCandidate('linkedin-feed', SocialPlatform.LINKEDIN, TransportType.BROWSER_EXTENSION, linkedInCandidate({ externalMessageId: 'urn:li:activity:124' }));
+
+      expect(await repository.countBySource(SocialPlatform.LINKEDIN, 'linkedin-feed:ws-1')).toBe(2);
+    });
+
+    it('rejects an empty rawText using the existing SocialMessageCandidate contract, without persisting anything', async () => {
+      const transportManager = fakeTransportManager([]);
+      const service = new SocialMessageIngestionService(transportManager, repository, logger, metrics);
+
+      const result = await service.ingestPushedCandidate(
+        'linkedin-feed',
+        SocialPlatform.LINKEDIN,
+        TransportType.BROWSER_EXTENSION,
+        linkedInCandidate({ rawText: '   ' }),
+      );
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('expected validation failure');
+      expect(result.error.field).toBe('rawText');
+      expect(await repository.countBySource(SocialPlatform.LINKEDIN, 'linkedin-feed:ws-1')).toBe(0);
+    });
+  });
 });

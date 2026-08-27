@@ -12,28 +12,34 @@ const queue = new OfflineQueue(storage, auth);
 const sync = new SyncManager(auth, queue, notifications);
 const router = new MessageRouter(auth, queue, sync, notifications);
 
+// MV3 service workers are non-persistent: a message can wake this worker from
+// scratch, and chrome.runtime.onMessage fires immediately — before the async
+// auth.init() below has read tokens back out of chrome.storage. Without this
+// gate, a message handled during that window sees auth.tokens still null,
+// which authenticatedRequest treats as "not logged in" and surfaces as a
+// spurious, wake-triggered logout even though the real session in storage is
+// intact. onInstalled/onStartup await the same promise instead of calling
+// auth.init() a second time, so every entry point observes one ready signal.
+const authReady = auth.init();
+
 chrome.runtime.onMessage.addListener(
   (message, sender, sendResponse) => {
-    router.handle(message, sender, sendResponse);
+    authReady.then(() => router.handle(message, sender, sendResponse));
     return true;
   }
 );
 
 chrome.runtime.onInstalled.addListener(async (details) => {
+  await authReady;
+  await notifications.init();
+  await sync.init();
   if (details.reason === 'install') {
-    await auth.init();
-    await notifications.init();
-    await sync.init();
     chrome.runtime.openOptionsPage();
-  } else if (details.reason === 'update') {
-    await auth.init();
-    await notifications.init();
-    await sync.init();
   }
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  await auth.init();
+  await authReady;
   await notifications.init();
   await sync.init();
 });
@@ -55,6 +61,6 @@ chrome.notifications.onClicked.addListener((notificationId) => {
   chrome.notifications.clear(notificationId);
 });
 
-auth.init().then(() => {
+authReady.then(() => {
   console.log('[CareerOS] Background service worker initialized');
 });

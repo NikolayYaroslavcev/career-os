@@ -22,6 +22,7 @@ import { matchExplanationRoutes } from './match-explanation/match-explanation-ro
 import { careerIntelligenceRoutes } from './career-intelligence/career-intelligence-routes.js';
 import { providerManagementRoutes } from './providers/provider-management-routes.js';
 import { recommendationRoutes } from './recommendations/recommendation-routes.js';
+import { socialMessageIngestRoutes } from './social-messages/social-message-ingest-routes.js';
 import { authMiddleware } from '../middleware/auth-middleware.js';
 
 export async function apiRoutes(fastify: FastifyInstance): Promise<void> {
@@ -54,6 +55,7 @@ export async function apiRoutes(fastify: FastifyInstance): Promise<void> {
       await fastify.register(careerIntelligenceRoutes, { prefix: '/career-intelligence' });
       await fastify.register(providerManagementRoutes, { prefix: '/providers' });
       await fastify.register(recommendationRoutes, { prefix: '/recommendations' });
+      await fastify.register(socialMessageIngestRoutes, { prefix: '/social-messages' });
     });
   }, { prefix: '/api/v1' });
 }

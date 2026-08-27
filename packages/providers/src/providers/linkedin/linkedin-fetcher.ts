@@ -542,8 +542,14 @@ export class LinkedInFetcher implements Fetcher {
   }
 
   private extractJobId(url: string): string | null {
-    const match = url.match(/\/jobs\/view\/(\d+)/);
-    return match?.[1] ?? null;
+    // LinkedIn now serves job links as /jobs/view/<title-slug>-<numeric-id>
+    // (e.g. /jobs/view/software-engineer-at-acme-4419969671), not the bare
+    // /jobs/view/<numeric-id> this used to assume. Isolate the path segment
+    // first, then take its trailing digit run, so a number appearing
+    // earlier in the slug isn't mistaken for the id.
+    const segment = url.match(/\/jobs\/view\/([^/?]+)/)?.[1];
+    if (!segment) return null;
+    return segment.match(/(\d+)$/)?.[1] ?? null;
   }
 
   private extractText(html: string, regex: RegExp): string {

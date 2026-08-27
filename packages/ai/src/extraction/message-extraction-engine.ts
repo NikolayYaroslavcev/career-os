@@ -105,6 +105,14 @@ export class MessageExtractionEngine {
 
     try {
       const builtPrompt = this.deps.promptBuilder.build({ rawText: message.rawText });
+      // Cache/idempotency keys still need a concrete model, so this uses the
+      // primary's defaultModel for lookup purposes only — it is NOT put on
+      // the AIRequest below, since FallbackAIProvider forwards that same
+      // request object to every provider in the chain unchanged, and a model
+      // id pinned to the primary would reach fallback vendors who don't
+      // recognize it (e.g. Groq's "llama-3.3-70b-versatile" rejected by
+      // OpenRouter as "not a valid model ID"). See matching-engine.ts for the
+      // sibling implementation this mirrors.
       const model = this.deps.provider.defaultModel;
 
       span.setAttribute('promptId', builtPrompt.version.id);
@@ -131,7 +139,6 @@ export class MessageExtractionEngine {
         promptId: builtPrompt.version.id,
         promptVersion: builtPrompt.version.version,
         promptChecksum: builtPrompt.version.checksum,
-        model,
         systemPrompt: builtPrompt.system,
       };
 

@@ -3,6 +3,7 @@ import { MessageProcessingStatus } from '@careeros/career';
 import type { Logger, MetricsCollector } from '@careeros/providers';
 import { runTelegramPrecheck } from '@careeros/providers';
 import { MessageExtractionEngine, MessageExtractionStatus } from '@careeros/ai';
+import type { MessageExtraction } from '@careeros/ai';
 
 export interface SocialMessagePipelineResult {
   readonly processed: number;
@@ -49,12 +50,29 @@ function toSocialMessageStatus(status: MessageExtractionStatus): MessageProcessi
  * pipeline's contribution to ADR's token-optimization goal.
  */
 export class SocialMessagePipeline {
+  /**
+   * Optional, platform-agnostic hook fired after a message reaches EXTRACTED
+   * (i.e. extraction.status === SUCCESS) — mirrors SyncSchedulerService's
+   * onProviderSynced pattern (best-effort, logged not thrown). Wired via
+   * setOnExtracted() rather than the constructor because the container needs
+   * to construct this pipeline before the service the hook calls into
+   * (SyncSchedulerService, via LinkedInFeedDiscoveryService) exists — same
+   * ordering fix as ProviderDiagnosticsService.setSyncScheduler(). Telegram
+   * never sets this (its own VacancySource path runs through the periodic
+   * ProviderRegistry sync instead), so it's a strict no-op for Telegram.
+   */
+  private onExtracted?: (message: SocialMessage, extraction: MessageExtraction) => Promise<void>;
+
   constructor(
     private readonly socialMessageRepository: SocialMessageRepository,
     private readonly messageExtractionEngine: MessageExtractionEngine,
     private readonly logger: Logger,
     private readonly metrics: MetricsCollector,
   ) {}
+
+  setOnExtracted(hook: (message: SocialMessage, extraction: MessageExtraction) => Promise<void>): void {
+    this.onExtracted = hook;
+  }
 
   async processPendingBySource(platform: SocialPlatform, sourceId: string, limit = 50): Promise<SocialMessagePipelineResult> {
     const messages = await this.socialMessageRepository.findPendingBySource(platform, sourceId, limit);
@@ -98,10 +116,27 @@ export class SocialMessagePipeline {
         const nextStatus = toSocialMessageStatus(extraction.status);
         await this.socialMessageRepository.updateStatus(message.id, nextStatus, extraction.errorMessage ?? null);
 
-        if (nextStatus === MessageProcessingStatus.EXTRACTED) extracted++;
-        else if (nextStatus === MessageProcessingStatus.LOW_CONFIDENCE) lowConfidence++;
-        else if (nextStatus === MessageProcessingStatus.SPAM) spam++;
-        else failed++;
+        if (nextStatus === MessageProcessingStatus.EXTRACTED) {
+          extracted++;
+          if (this.onExtracted) {
+            try {
+              await this.onExtracted(message, extraction);
+            } catch (hookError) {
+              // Best-effort side effect — must never turn a successful extraction into a reported failure.
+              this.logger.warn('SocialMessagePipeline onExtracted hook failed', {
+                operation: 'social_message.pipeline.on_extracted',
+                messageId: message.id,
+                error: hookError instanceof Error ? hookError.message : String(hookError),
+              });
+            }
+          }
+        } else if (nextStatus === MessageProcessingStatus.LOW_CONFIDENCE) {
+          lowConfidence++;
+        } else if (nextStatus === MessageProcessingStatus.SPAM) {
+          spam++;
+        } else {
+          failed++;
+        }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         await this.socialMessageRepository.updateStatus(message.id, MessageProcessingStatus.FAILED, errorMessage);

@@ -4,6 +4,18 @@ import type { TelegramChannelStatsData } from './prisma-telegram-channel-stats-r
 
 export type TelegramChannelTransport = 'HTML_PREVIEW' | 'BOT_API' | 'MTPROTO' | 'EXPORT';
 
+/**
+ * The `transport` column is the shared, platform-agnostic TransportType enum
+ * (see schema.prisma), but a TelegramChannel row can only ever hold a
+ * Telegram-capable value — BROWSER_EXTENSION exists solely for push-based
+ * ingestion (e.g. LinkedIn Feed) and is never written here. Asserting that
+ * narrowing at the read boundary keeps TelegramChannelData's public type
+ * exactly as narrow as it always was, without every call site re-deriving it.
+ */
+function asChannelData<T extends { transport: string }>(row: T): T & { transport: TelegramChannelTransport } {
+  return row as T & { transport: TelegramChannelTransport };
+}
+
 export interface TelegramChannelData {
   id: string;
   username: string;
@@ -70,7 +82,7 @@ export class PrismaTelegramChannelRepository {
     const username = normalizeUsername(input.username);
     validateTelegramChannelUsername(username);
 
-    return prisma.telegramChannel.create({
+    return asChannelData(await prisma.telegramChannel.create({
       data: {
         username,
         name: input.name ?? null,
@@ -87,29 +99,33 @@ export class PrismaTelegramChannelRepository {
         defaultAiExtractionOn: input.defaultAiExtractionOn ?? true,
         defaultMinConfidence: input.defaultMinConfidence ?? 50,
       },
-    });
+    }));
   }
 
   async findById(id: string): Promise<TelegramChannelData | null> {
-    return prisma.telegramChannel.findUnique({ where: { id } });
+    const row = await prisma.telegramChannel.findUnique({ where: { id } });
+    return row ? asChannelData(row) : null;
   }
 
   async findByUsername(username: string): Promise<TelegramChannelData | null> {
-    return prisma.telegramChannel.findUnique({
+    const row = await prisma.telegramChannel.findUnique({
       where: { username: normalizeUsername(username) },
     });
+    return row ? asChannelData(row) : null;
   }
 
   async findAll(): Promise<TelegramChannelData[]> {
-    return prisma.telegramChannel.findMany({ orderBy: { username: 'asc' }, include: { stats: true } });
+    const rows = await prisma.telegramChannel.findMany({ orderBy: { username: 'asc' }, include: { stats: true } });
+    return rows.map(asChannelData);
   }
 
   async findEnabled(): Promise<TelegramChannelData[]> {
-    return prisma.telegramChannel.findMany({
+    const rows = await prisma.telegramChannel.findMany({
       where: { enabled: true },
       orderBy: { username: 'asc' },
       include: { stats: true },
     });
+    return rows.map(asChannelData);
   }
 
   async findEnabledUsernames(): Promise<string[]> {
@@ -125,7 +141,7 @@ export class PrismaTelegramChannelRepository {
     const existing = await prisma.telegramChannel.findUnique({ where: { id } });
     if (!existing) return null;
 
-    return prisma.telegramChannel.update({
+    return asChannelData(await prisma.telegramChannel.update({
       where: { id },
       data: {
         name: input.name,
@@ -143,7 +159,7 @@ export class PrismaTelegramChannelRepository {
         defaultMinConfidence: input.defaultMinConfidence,
         lastSyncAt: input.lastSyncAt,
       },
-    });
+    }));
   }
 
   async updateByUsername(username: string, input: UpdateTelegramChannelInput): Promise<TelegramChannelData | null> {
@@ -151,7 +167,7 @@ export class PrismaTelegramChannelRepository {
     const existing = await prisma.telegramChannel.findUnique({ where: { username: normalized } });
     if (!existing) return null;
 
-    return prisma.telegramChannel.update({
+    return asChannelData(await prisma.telegramChannel.update({
       where: { username: normalized },
       data: {
         name: input.name,
@@ -169,7 +185,7 @@ export class PrismaTelegramChannelRepository {
         defaultMinConfidence: input.defaultMinConfidence,
         lastSyncAt: input.lastSyncAt,
       },
-    });
+    }));
   }
 
   async delete(id: string): Promise<void> {
@@ -220,7 +236,7 @@ export class PrismaTelegramChannelRepository {
         const record = await prisma.telegramChannel.create({
           data: { username, enabled: true },
         });
-        created.push(record);
+        created.push(asChannelData(record));
       }
     }
 

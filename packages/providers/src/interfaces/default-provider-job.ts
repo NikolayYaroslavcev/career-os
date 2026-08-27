@@ -28,6 +28,14 @@ export class DefaultProviderJob implements ProviderJob {
     readonly mapper: Mapper,
     readonly normalizer: Normalizer,
     readonly syncStrategy: SyncStrategy,
+    /**
+     * Criteria merged into every scheduled sync() search. Providers whose
+     * fetcher requires an explicit keyword/location to return results (e.g.
+     * LinkedIn's guest search, which returns an empty page rather than an
+     * error when called with none) set this; providers with an inherently
+     * scoped feed (niche job boards, single-tenant ATS) leave it undefined.
+     */
+    private readonly defaultSyncCriteria?: Partial<SearchCriteria>,
   ) {
     this._state = createInitialState(info.id);
   }
@@ -138,7 +146,11 @@ export class DefaultProviderJob implements ProviderJob {
     }
 
     const cursor = this.syncStrategy.getIncrementalCursor(this.state);
-    const searchResult = await this.search({ cursor, limit: this.capabilities.pagination.defaultPageSize });
+    const searchResult = await this.search({
+      ...this.defaultSyncCriteria,
+      cursor,
+      limit: this.capabilities.pagination.defaultPageSize,
+    });
 
     if (!searchResult.ok) {
       this.applyStateUpdate({

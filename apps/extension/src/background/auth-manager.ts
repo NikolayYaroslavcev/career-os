@@ -26,6 +26,7 @@ export class AuthManager {
   private tokens: AuthTokens | null = null;
   private user: AuthUser | null = null;
   private backendUrl: string = 'http://localhost:3000';
+  private refreshPromise: Promise<boolean> | null = null;
 
   constructor(private storage: StorageBridge) {}
 
@@ -134,7 +135,24 @@ export class AuthManager {
     await this.refresh();
   }
 
+  /**
+   * Coalesces concurrent callers onto a single in-flight refresh. Several
+   * feed posts detected in the same MutationObserver batch each trigger their
+   * own authenticatedRequest around the same time; without this, they'd each
+   * read the same not-yet-rotated refreshToken and race the backend's
+   * single-use rotation (see auth-service.ts's refresh()) — the loser gets a
+   * 401 for a refreshToken the winner already consumed and logs the user out
+   * from under a request that actually just succeeded.
+   */
   private async refresh(): Promise<boolean> {
+    if (this.refreshPromise) return this.refreshPromise;
+    this.refreshPromise = this.doRefresh().finally(() => {
+      this.refreshPromise = null;
+    });
+    return this.refreshPromise;
+  }
+
+  private async doRefresh(): Promise<boolean> {
     if (!this.tokens?.refreshToken) return false;
 
     try {

@@ -4,7 +4,7 @@ export const extensionSettingsSchema = z.object({
   backend: z.object({
     url: z.string().url().default('http://localhost:3000'),
     dashboardUrl: z.string().url().default('http://localhost:3001'),
-  }),
+  }).default({}),
   theme: z.enum(['light', 'dark', 'system']).default('system'),
   providers: z.object({
     enabled: z.array(z.string()).default([

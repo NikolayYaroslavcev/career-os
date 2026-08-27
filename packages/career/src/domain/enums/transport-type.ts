@@ -9,6 +9,8 @@ export const TransportType = {
   BOT_API: 'BOT_API',
   MTPROTO: 'MTPROTO',
   EXPORT: 'EXPORT',
+  /** Pushed directly by an authenticated browser extension (e.g. LinkedIn Feed) rather than polled by a server-side transport. */
+  BROWSER_EXTENSION: 'BROWSER_EXTENSION',
 } as const;
 
 export type TransportType = (typeof TransportType)[keyof typeof TransportType];

@@ -402,7 +402,8 @@
     "notFound": "Вакансия не найдена",
     "actions": "Действия",
     "applyToTrack": "Откликнуться и отслеживать",
-    "creatingApplication": "Создание отклика..."
+    "creatingApplication": "Создание отклика...",
+    "applyFailed": "Не удалось создать отклик"
   },
   "careerIntelligencePage": {
     "title": "Карьерная аналитика",
@@ -916,6 +917,7 @@
     "dashboard": "AI Дашборд",
     "dashboardDescription": "Мониторинг использования AI, затрат и производительности",
     "loading": "Загрузка AI дашборда...",
+    "loadFailed": "Не удалось загрузить данные AI дашборда",
     "mode": "Режим AI",
     "modeManual": "Ручной",
     "modeSmart": "Умный",

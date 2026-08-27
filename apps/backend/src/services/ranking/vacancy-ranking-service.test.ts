@@ -932,4 +932,126 @@ describe('VacancyRankingService', () => {
       expect(resultWithBoost.score).toBeLessThan(60);
     });
   });
+
+  describe('Unknown Role Handling', () => {
+    const frontendProfile = createTestSearchProfile({
+      desiredPositions: ['Senior Frontend Developer', 'Full Stack Developer', 'React Developer'],
+      desiredTechnologies: ['React', 'TypeScript', 'Node.js'],
+    });
+
+    it('should give a high score for Frontend Developer + React', () => {
+      const vacancy = createTestVacancy({
+        title: 'Frontend Developer',
+        technologies: ['React', 'TypeScript'],
+      });
+
+      const result = calculateRankingScore({ vacancy, searchProfile: frontendProfile });
+
+      expect(result.score).toBeGreaterThanOrEqual(60);
+    });
+
+    it('should give a high score for Senior Full Stack Developer + React/TypeScript/Node', () => {
+      const vacancy = createTestVacancy({
+        title: 'Senior Full Stack Developer',
+        technologies: ['React', 'TypeScript', 'Node.js'],
+      });
+
+      const result = calculateRankingScore({ vacancy, searchProfile: frontendProfile });
+
+      expect(result.score).toBeGreaterThanOrEqual(60);
+    });
+
+    it('should not destroy Product Engineer score via the unknown-role fallback when technologies match', () => {
+      const vacancy = createTestVacancy({
+        title: 'Product Engineer',
+        technologies: ['React', 'TypeScript'],
+      });
+
+      const result = calculateRankingScore({ vacancy, searchProfile: frontendProfile });
+
+      expect(result.reasons).toContain('Role category unknown - relying on technology match');
+      expect(result.matchedSkills).toContain('react');
+      expect(result.matchedSkills).toContain('typescript');
+      expect(result.score).toBeGreaterThanOrEqual(50);
+    });
+
+    it('should not destroy Founding Engineer score via the unknown-role fallback when technologies match', () => {
+      const vacancy = createTestVacancy({
+        title: 'Founding Engineer',
+        technologies: ['TypeScript', 'React'],
+      });
+
+      const result = calculateRankingScore({ vacancy, searchProfile: frontendProfile });
+
+      expect(result.reasons).toContain('Role category unknown - relying on technology match');
+      expect(result.matchedSkills).toContain('typescript');
+      expect(result.matchedSkills).toContain('react');
+      expect(result.score).toBeGreaterThanOrEqual(50);
+    });
+
+    it('should give a low score for Director, SOX Compliance with no technology match', () => {
+      const vacancy = createTestVacancy({
+        title: 'Director, SOX Compliance',
+        technologies: [],
+      });
+
+      const result = calculateRankingScore({ vacancy, searchProfile: frontendProfile });
+
+      expect(result.tier).toBe('REJECT');
+      expect(result.score).toBeLessThan(40);
+    });
+
+    it('should give a low score for Sales Director with no technology match', () => {
+      const vacancy = createTestVacancy({
+        title: 'Fleet Charging Sales Director',
+        technologies: [],
+      });
+
+      const result = calculateRankingScore({ vacancy, searchProfile: frontendProfile });
+
+      expect(result.tier).toBe('REJECT');
+      expect(result.score).toBeLessThan(40);
+    });
+
+    it('should give a low score for Chief of Staff with no technology match', () => {
+      const vacancy = createTestVacancy({
+        title: 'Chief of Staff to GM & COO',
+        technologies: [],
+      });
+
+      const result = calculateRankingScore({ vacancy, searchProfile: frontendProfile });
+
+      expect(result.tier).toBe('REJECT');
+      expect(result.score).toBeLessThan(40);
+    });
+
+    it('should not award role points to an unrecognized title with no technology match', () => {
+      const vacancy = createTestVacancy({
+        title: 'Director of Something Unrelated',
+        technologies: [],
+      });
+
+      const result = calculateRankingScore({ vacancy, searchProfile: frontendProfile });
+
+      const roleFactor = result.positiveFactors.find((f) => f.name === 'Role match')
+        ?? result.negativeFactors.find((f) => f.name === 'Role mismatch');
+      expect(roleFactor?.score).toBe(0);
+      expect(result.score).toBeLessThan(40);
+    });
+
+    it('should not let remote + seniority alone produce a good-looking recommendation without technology match', () => {
+      const vacancy = createTestVacancy({
+        title: 'Director of Something Unrelated',
+        technologies: [],
+        remote: 'remote',
+        experienceLevel: ExperienceLevel.SENIOR,
+      });
+
+      const result = calculateRankingScore({ vacancy, searchProfile: frontendProfile });
+
+      expect(result.tier).not.toBe('WARM');
+      expect(result.tier).not.toBe('HOT');
+      expect(result.score).toBeLessThan(45);
+    });
+  });
 });

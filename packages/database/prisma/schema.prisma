@@ -1104,6 +1104,7 @@ enum TransportType {
   BOT_API
   MTPROTO // reserved — ProviderConfigurationError thrown if selected; see ADR-0XX roadmap
   EXPORT // reserved — same
+  BROWSER_EXTENSION // pushed directly by an authenticated browser extension (e.g. LinkedIn Feed), not polled by a server-side transport
 }
 
 // ==================== SOCIAL MESSAGE INGESTION PLATFORM ====================
@@ -1114,6 +1115,7 @@ enum TransportType {
 
 enum SocialPlatform {
   TELEGRAM
+  LINKEDIN
   // DISCORD / SLACK / REDDIT / X / FACEBOOK / VK / THREADS — reserved, not implemented
 }
 
