@@ -4,11 +4,47 @@ CareerOS is a career workspace: it searches job boards on your
 behalf, deduplicates and persists vacancies, runs AI matching against your resume,
 and surfaces ranked recommendations through a dashboard (and optionally Telegram).
 
-This README covers getting the whole stack running locally. For product vision and
-architecture, see [`CareerOS_AI_Agent_Project_Specification.md`](CareerOS_AI_Agent_Project_Specification.md)
-and [`docs/`](docs/README.md).
+Solo-built, production-grade side project — a Fastify API, a Next.js dashboard,
+and a BullMQ worker sharing a common domain layer.
+
+## Highlights
+
+- **28 job providers and ATS platforms** — Greenhouse, Lever, Ashby, Workday,
+  Teamtailor, SmartRecruiters, Workable, Recruitee, Comeet, Personio, HH.ru,
+  SuperJob, Habr Career, LinkedIn, Telegram channels, and more — each with its
+  own fetcher/mapper/normalizer and test suite behind a shared `Provider`
+  interface.
+- **AI resume matching** across five interchangeable providers (OpenAI,
+  Anthropic, Groq, Gemini, OpenRouter) with automatic fallback chains.
+- **39 Architecture Decision Records** — every non-trivial design decision is
+  written up with context and trade-offs, so the reasoning behind the
+  architecture is as inspectable as the code itself.
+- **363+ automated tests** (unit, integration, contract, e2e), gated on every
+  package by Turborepo.
+
+## Architecture
+
+A TypeScript monorepo (pnpm + Turborepo) split into three deployable apps and
+a shared domain layer:
+
+- `apps/backend` — Fastify REST API: auth, vacancy search/persistence, resume
+  and application management.
+- `apps/worker` — BullMQ background processor: provider sync, AI matching,
+  resume tailoring, notifications.
+- `apps/dashboard` — Next.js UI for search, applications, and resume
+  intelligence.
+- `packages/*` — domain logic, provider adapters, AI orchestration, database
+  layer, and shared config/infrastructure code, consumed by all three apps.
+
+Backend, worker, and dashboard talk through Postgres and Redis-backed BullMQ
+queues rather than directly calling each other, so provider syncs and AI
+analysis run asynchronously without blocking the API or UI. See
+[`docs/`](docs/README.md) and [`adr/`](adr/) for the full design record.
 
 ## Quick Start
+
+The steps below spin up the project locally. If you're just browsing the
+code rather than running it, skip to [Project Structure](#project-structure).
 
 Prerequisites: Node.js 22+, pnpm 9.15+, Docker Desktop, Git.
 
@@ -31,7 +67,17 @@ pnpm db:seed
 pnpm dev
 ```
 
-Then open the dashboard at **http://localhost:3001** and register an account.
+Then open the dashboard at **http://localhost:3001** and either register a new
+account or log in with the seeded demo account:
+
+```
+email:    demo@careeros.dev
+password: CareerOSDemo2026!
+```
+
+This account is created by `pnpm db:seed` in development only, has an `ADMIN`
+role, and no personal data attached — it's meant for checking out the repo,
+not a real user.
 
 HH (hh.ru) needs no configuration and is always active, so a fresh
 checkout can search real jobs immediately — no API keys required for that part.
@@ -64,7 +110,7 @@ for details.
 | Redis      | localhost:6379               | Cache & BullMQ queues        |
 | MinIO      | http://localhost:9001         | Object storage console (provisioned, not yet wired to any feature — resume uploads currently go to local disk) |
 | Mailpit    | http://localhost:8025         | Catches outbound email, no real SMTP needed |
-| pgAdmin    | http://localhost:5050         | Database admin UI (`admin@careeros.dev` / `admin`) |
+| pgAdmin    | http://localhost:5050         | Database admin UI (default local credentials, see `docker-compose.yml`) |
 
 ## Environment Variables
 
@@ -138,6 +184,9 @@ pnpm turbo test
 pnpm turbo build
 ```
 
+363+ automated tests across the monorepo (unit, integration, contract, e2e),
+gated by Turborepo on every package.
+
 ## Project Structure
 
 ```
@@ -152,7 +201,7 @@ career-os/
 │   ├── career/            # Career domain logic
 │   ├── database/         # Prisma ORM + repositories
 │   ├── notifications/    # Notification providers
-│   ├── providers/        # Job providers (HH, Greenhouse, Lever, Ashby, Workday, Teamtailor)
+│   ├── providers/        # 28 job providers/ATS adapters (HH, Greenhouse, Lever, Ashby, Workday, Teamtailor, ...)
 │   ├── resume/           # Resume parsing
 │   ├── shared/           # Config, Redis, health checks
 │   └── telegram/         # Telegram bot integration

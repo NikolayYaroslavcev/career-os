@@ -23,7 +23,7 @@ tasks/
 
 ## Task Format
 
-Each task follows the template from `CareerOS_AI_Agent_Task_Template.md`:
+Each task follows this template:
 
 - **Task ID**: TASK-XX-YY
 - **Title**: Short description

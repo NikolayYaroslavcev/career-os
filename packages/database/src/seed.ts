@@ -1,6 +1,10 @@
 import { PrismaClient } from '@prisma/client';
+import argon2 from 'argon2';
 
 const prisma = new PrismaClient();
+
+const DEMO_ADMIN_EMAIL = 'demo@careeros.dev';
+const DEMO_ADMIN_PASSWORD = 'CareerOSDemo2026!';
 
 async function main(): Promise<void> {
   console.log('Seeding database...');
@@ -17,12 +21,35 @@ async function main(): Promise<void> {
   });
   console.log(`Created workspace: ${workspace.id}`);
 
-  // Development seed: SearchProfile + Resume for the MVP user
+  // Development seed: SearchProfile + Resume for the MVP user, and a
+  // throwaway admin account for anyone checking out the repo to log in
+  // with instead of registering (and instead of the maintainer's own account).
   if (process.env.NODE_ENV === 'development') {
     await seedDevData();
+    await seedDemoAdmin();
   }
 
   console.log('Seeding complete!');
+}
+
+async function seedDemoAdmin(): Promise<void> {
+  const existing = await prisma.user.findUnique({ where: { email: DEMO_ADMIN_EMAIL } });
+  if (existing) {
+    console.log(`Demo admin ${DEMO_ADMIN_EMAIL} already exists, skipping`);
+    return;
+  }
+
+  const passwordHash = await argon2.hash(DEMO_ADMIN_PASSWORD, { type: argon2.argon2id });
+  const user = await prisma.user.create({
+    data: {
+      email: DEMO_ADMIN_EMAIL,
+      passwordHash,
+      firstName: 'Demo',
+      lastName: 'Admin',
+      role: 'ADMIN',
+    },
+  });
+  console.log(`Created demo admin user: ${user.email}`);
 }
 
 async function seedDevData(): Promise<void> {

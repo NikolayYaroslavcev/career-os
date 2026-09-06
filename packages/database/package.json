@@ -34,7 +34,8 @@
     "@careeros/discovery-sources": "workspace:*",
     "@careeros/providers": "workspace:*",
     "@careeros/shared": "workspace:*",
-    "@prisma/client": "^6.2.0"
+    "@prisma/client": "^6.2.0",
+    "argon2": "^0.41.1"
   },
   "devDependencies": {
     "@careeros/test-utils": "workspace:*",
