@@ -216,6 +216,7 @@ jobs:
           cp .env.example .env
           echo "AI_ENABLED=false" >> .env
           echo "JWT_SECRET=ci-only-test-secret-do-not-use-in-production" >> .env
+          sed -i "s/^MASTER_ENCRYPTION_KEY=.*/MASTER_ENCRYPTION_KEY=$(openssl rand -hex 32)/" .env
       - name: Start the full stack
         run: docker compose -f docker-compose.full.yml up -d --build
       - name: Wait for backend and dashboard to be healthy
