@@ -1,52 +1,54 @@
 # CareerOS
+**Русский** · [English](README.en.md)
 
-CareerOS is a career workspace: it searches job boards on your
-behalf, deduplicates and persists vacancies, runs AI matching against your resume,
-and surfaces ranked recommendations through a dashboard (and optionally Telegram).
+CareerOS это карьерное рабочее пространство: оно ищет вакансии на job-платформах
+за вас, дедуплицирует и сохраняет их, сопоставляет с вашим резюме с помощью ИИ
+и показывает ранжированные рекомендации в дашборде (и, по желанию, в Telegram).
 
-Solo-built, production-grade side project — a Fastify API, a Next.js dashboard,
-and a BullMQ worker sharing a common domain layer.
+Production-grade пет-проект, написанный в одиночку: Fastify API, Next.js дашборд
+и BullMQ воркер с общим доменным слоем.
 
-## Highlights
 
-- **28 job providers and ATS platforms** — Greenhouse, Lever, Ashby, Workday,
+![CareerOS](docs/screenshot.png)
+
+## Основное
+
+- **28 job-провайдеров и ATS-платформ**: Greenhouse, Lever, Ashby, Workday,
   Teamtailor, SmartRecruiters, Workable, Recruitee, Comeet, Personio, HH.ru,
-  SuperJob, Habr Career, LinkedIn, Telegram channels, and more — each with its
-  own fetcher/mapper/normalizer and test suite behind a shared `Provider`
-  interface.
-- **AI resume matching** across five interchangeable providers (OpenAI,
-  Anthropic, Groq, Gemini, OpenRouter) with automatic fallback chains.
-- **39 Architecture Decision Records** — every non-trivial design decision is
-  written up with context and trade-offs, so the reasoning behind the
-  architecture is as inspectable as the code itself.
-- **363+ automated tests** (unit, integration, contract, e2e), gated on every
-  package by Turborepo.
+  SuperJob, Habr Career, LinkedIn, Telegram-каналы и другие, у каждой свои
+  fetcher/mapper/normalizer и набор тестов поверх общего интерфейса `Provider`.
+- **ИИ-сопоставление с резюме** через пять взаимозаменяемых провайдеров (OpenAI,
+  Anthropic, Groq, Gemini, OpenRouter) с автоматическими цепочками fallback.
+- **39 Architecture Decision Records**: каждое нетривиальное проектное решение
+  описано с контекстом и компромиссами, так что логику архитектуры можно изучать
+  так же, как и сам код.
+- **363+ автоматических тестов** (unit, integration, contract, e2e), которые
+  Turborepo запускает для каждого пакета.
 
-## Architecture
+## Архитектура
 
-A TypeScript monorepo (pnpm + Turborepo) split into three deployable apps and
-a shared domain layer:
+TypeScript-монорепозиторий (pnpm + Turborepo) из трёх разворачиваемых приложений
+и общего доменного слоя:
 
-- `apps/backend` — Fastify REST API: auth, vacancy search/persistence, resume
-  and application management.
-- `apps/worker` — BullMQ background processor: provider sync, AI matching,
-  resume tailoring, notifications.
-- `apps/dashboard` — Next.js UI for search, applications, and resume
-  intelligence.
-- `packages/*` — domain logic, provider adapters, AI orchestration, database
-  layer, and shared config/infrastructure code, consumed by all three apps.
+- `apps/backend`: REST API на Fastify: аутентификация, поиск и сохранение
+  вакансий, управление резюме и откликами.
+- `apps/worker`: фоновый обработчик на BullMQ: синхронизация провайдеров,
+  ИИ-сопоставление, адаптация резюме, уведомления.
+- `apps/dashboard`: интерфейс на Next.js для поиска, откликов и анализа резюме.
+- `packages/*`: доменная логика, адаптеры провайдеров, оркестрация ИИ, слой базы
+  данных и общий конфиг и инфраструктурный код, которые используют все три приложения.
 
-Backend, worker, and dashboard talk through Postgres and Redis-backed BullMQ
-queues rather than directly calling each other, so provider syncs and AI
-analysis run asynchronously without blocking the API or UI. See
-[`docs/`](docs/README.md) and [`adr/`](adr/) for the full design record.
+Backend, worker и dashboard общаются через Postgres и очереди BullMQ на Redis, а
+не вызывают друг друга напрямую, поэтому синхронизация провайдеров и ИИ-анализ
+выполняются асинхронно и не блокируют API и интерфейс. Полное описание дизайна
+смотрите в [`docs/`](docs/README.md) и [`adr/`](adr/).
 
-## Quick Start
+## Быстрый старт
 
-The steps below spin up the project locally. If you're just browsing the
-code rather than running it, skip to [Project Structure](#project-structure).
+Шаги ниже поднимают проект локально. Если вы просто смотрите код и не собираетесь
+его запускать, переходите к разделу [Структура проекта](#структура-проекта).
 
-Prerequisites: Node.js 22+, pnpm 9.15+, Docker Desktop, Git.
+Требования: Node.js 22+, pnpm 9.15+, Docker Desktop, Git.
 
 ```bash
 # 1. Install dependencies
@@ -67,115 +69,118 @@ pnpm db:seed
 pnpm dev
 ```
 
-Then open the dashboard at **http://localhost:3001** and either register a new
-account or log in with the seeded demo account:
+Затем откройте дашборд по адресу **http://localhost:3001** и либо зарегистрируйте
+новый аккаунт, либо войдите под демо-аккаунтом из seed:
 
 ```
 email:    demo@careeros.dev
 password: CareerOSDemo2026!
 ```
 
-This account is created by `pnpm db:seed` in development only, has an `ADMIN`
-role, and no personal data attached — it's meant for checking out the repo,
-not a real user.
+Этот аккаунт создаёт `pnpm db:seed` только в режиме разработки, у него роль `ADMIN`
+и нет персональных данных. Он нужен для знакомства с репозиторием, а не для
+настоящего пользователя.
 
-HH (hh.ru) needs no configuration and is always active, so a fresh
-checkout can search real jobs immediately — no API keys required for that part.
-AI matching needs one API key (see [AI Configuration](#ai-configuration) below);
-without one, search and persistence still work, only AI analysis is skipped.
+HH (hh.ru) не требует настройки и всегда включён, поэтому свежий клон может сразу
+искать реальные вакансии: для этого API-ключи не нужны. Для ИИ-сопоставления нужен
+один API-ключ (см. [Настройка ИИ](#настройка-ии) ниже); без него поиск и сохранение
+работают, пропускается только ИИ-анализ.
 
-### Docker-only alternative
+### Вариант только на Docker
 
-`docker-compose.full.yml` runs the entire stack — Postgres, Redis, MinIO, Mailpit,
-migrations, backend, worker, and dashboard — as containers, no local `pnpm dev` needed:
+`docker-compose.full.yml` запускает весь стек (Postgres, Redis, MinIO, Mailpit,
+миграции, backend, worker и dashboard) в контейнерах, локальный `pnpm dev` не нужен:
 
 ```bash
 pnpm docker:full:up    # docker compose -f docker-compose.full.yml up -d --build
 ```
 
-Then open `http://localhost:3001`. This is a separate stack from `docker compose up -d`
-+ `pnpm dev` (different Postgres/Redis/MinIO volumes, so accounts don't carry over
-between the two) — don't run both at once, they publish the same host ports. See
-[`docs/LOCAL_DEVELOPMENT.md`](docs/LOCAL_DEVELOPMENT.md#docker-only-workflow-no-local-pnpm-dev)
-for details.
+Затем откройте `http://localhost:3001`. Это отдельный стек, не связанный с
+`docker compose up -d` + `pnpm dev` (у них разные тома Postgres/Redis/MinIO, поэтому
+аккаунты между ними не переносятся). Не запускайте оба сразу, они публикуют одни и
+те же порты хоста. Подробности в
+[`docs/LOCAL_DEVELOPMENT.md`](docs/LOCAL_DEVELOPMENT.md#docker-only-workflow-no-local-pnpm-dev).
 
-## What's running, and where
+## Что запускается и где
 
-| Service    | URL                          | Purpose                     |
-| ---------- | ---------------------------- | ---------------------------- |
-| Backend    | http://localhost:3000        | Fastify API (`/health`, `/api/v1/...`) |
-| Worker     | http://localhost:3002        | BullMQ job processor (health-only HTTP) |
-| Dashboard  | http://localhost:3001        | Next.js UI                  |
-| PostgreSQL | localhost:5432               | Primary database            |
-| Redis      | localhost:6379               | Cache & BullMQ queues        |
-| MinIO      | http://localhost:9001         | Object storage console (provisioned, not yet wired to any feature — resume uploads currently go to local disk) |
-| Mailpit    | http://localhost:8025         | Catches outbound email, no real SMTP needed |
-| pgAdmin    | http://localhost:5050         | Database admin UI (default local credentials, see `docker-compose.yml`) |
+| Сервис     | URL                   | Назначение                                                                                                                         |
+| ---------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Backend    | http://localhost:3000 | Fastify API (`/health`, `/api/v1/...`)                                                                                             |
+| Worker     | http://localhost:3002 | Обработчик задач BullMQ (HTTP только для health-проверки)                                                                          |
+| Dashboard  | http://localhost:3001 | Интерфейс на Next.js                                                                                                               |
+| PostgreSQL | localhost:5432        | Основная база данных                                                                                                               |
+| Redis      | localhost:6379        | Кэш и очереди BullMQ                                                                                                               |
+| MinIO      | http://localhost:9001 | Консоль объектного хранилища (развёрнуто, но пока не подключено ни к одной функции: загрузки резюме сейчас идут на локальный диск) |
+| Mailpit    | http://localhost:8025 | Перехватывает исходящую почту, настоящий SMTP не нужен                                                                             |
+| pgAdmin    | http://localhost:5050 | Интерфейс администрирования БД (локальные учётные данные по умолчанию, см. `docker-compose.yml`)                                   |
 
-## Environment Variables
+## Переменные окружения
 
-`.env.example` at the repo root documents every variable the backend and worker read
-(they share one root `.env` — see [`docs/LOCAL_DEVELOPMENT.md`](docs/LOCAL_DEVELOPMENT.md#environment-variable-loading)
-for why). The dashboard is a Next.js app and needs its own `apps/dashboard/.env.local`
-(templated by `apps/dashboard/.env.example`), since Next.js only loads env files from
-its own app directory.
+`.env.example` в корне репозитория описывает все переменные, которые читают backend
+и worker (у них один общий корневой `.env`; почему так, см.
+[`docs/LOCAL_DEVELOPMENT.md`](docs/LOCAL_DEVELOPMENT.md#environment-variable-loading)).
+Дашборд написан на Next.js и требует собственный `apps/dashboard/.env.local`
+(шаблон лежит в `apps/dashboard/.env.example`), потому что Next.js загружает env-файлы
+только из каталога своего приложения.
 
-Only two variables are truly required to boot the backend:
+Для запуска backend строго необходимы только две переменные:
 
-- `DATABASE_URL` — set by default to the `docker compose up -d` Postgres.
-- `JWT_SECRET` — must be at least 32 characters; `.env.example` ships a placeholder, change it for anything beyond local use.
+- `DATABASE_URL`: по умолчанию указывает на Postgres из `docker compose up -d`.
+- `JWT_SECRET`: не короче 32 символов; `.env.example` содержит заглушку, для любого использования кроме локального её нужно заменить.
 
-Everything else (Redis, MinIO, SMTP, AI, Telegram, every job provider) has a working
-default or degrades gracefully when unset.
+Всё остальное (Redis, MinIO, SMTP, ИИ, Telegram, все job-провайдеры) имеет рабочее
+значение по умолчанию или корректно отключается, если не задано.
 
-### Provider Configuration
+### Настройка провайдеров
 
-See [`docs/LOCAL_DEVELOPMENT.md#job-providers`](docs/LOCAL_DEVELOPMENT.md#job-providers)
-for the full table. Summary: HH needs nothing and is always on; Greenhouse,
-Lever, Ashby, Workday, and Teamtailor each need a board/tenant identifier and are silently
-skipped (with a startup warning in the logs) when unset — never a crash.
+Полная таблица в [`docs/LOCAL_DEVELOPMENT.md#job-providers`](docs/LOCAL_DEVELOPMENT.md#job-providers).
+Кратко: HH ничего не требует и всегда включён; Greenhouse, Lever, Ashby, Workday и
+Teamtailor требуют идентификатор board/tenant и молча пропускаются (с предупреждением
+в логах при старте), если он не задан, но никогда не приводят к падению.
 
-### AI Configuration
+### Настройка ИИ
 
-Set `AI_PROVIDER` (`openai` | `anthropic` | `groq` | `gemini` | `openrouter`) and its
-matching `*_API_KEY`. See [`docs/LOCAL_DEVELOPMENT.md#ai-providers`](docs/LOCAL_DEVELOPMENT.md#ai-providers)
-for fallback chains, timeouts, and concurrency limits. `GET /health`'s `ai` sub-check
-reports whether the selected provider has a key configured (a config check, not a live
-call — it won't burn API quota on every health poll).
+Задайте `AI_PROVIDER` (`openai` | `anthropic` | `groq` | `gemini` | `openrouter`) и
+соответствующий `*_API_KEY`. Цепочки fallback, таймауты и лимиты параллельности
+описаны в [`docs/LOCAL_DEVELOPMENT.md#ai-providers`](docs/LOCAL_DEVELOPMENT.md#ai-providers).
+Подпроверка `ai` в `GET /health` показывает, настроен ли ключ у выбранного провайдера
+(это проверка конфигурации, а не живой вызов, поэтому она не расходует квоту API при
+каждом опросе health).
 
-Set `AI_ENABLED=false` to skip AI matching and the vacancy-analysis queue entirely —
-`POST /intelligence/search` returns persisted vacancies immediately with no scores.
-Useful for local UI work, provider debugging, and smoke tests without burning AI
-provider quota. Defaults to `true`. See [ADR-026](adr/ADR-026-decoupled-vacancy-search.md)
-for why search never waits on AI matching in the first place, even with this on.
+Задайте `AI_ENABLED=false`, чтобы полностью отключить ИИ-сопоставление и очередь
+анализа вакансий. Тогда `POST /intelligence/search` сразу возвращает сохранённые
+вакансии без оценок. Это удобно для работы над интерфейсом, отладки провайдеров и
+smoke-тестов, когда не хочется тратить квоту ИИ-провайдера. По умолчанию `true`.
+О том, почему поиск не ждёт ИИ-сопоставления даже при включённом ИИ, см.
+[ADR-026](adr/ADR-026-decoupled-vacancy-search.md).
 
-## Running Locally
+## Локальный запуск
 
-Day to day, once set up:
+В повседневной работе, когда всё уже настроено:
 
 ```bash
 docker compose up -d
 pnpm dev
 ```
 
-To run a single app: `pnpm --filter @careeros/backend dev`, `pnpm --filter @careeros/worker dev`,
-or `pnpm --filter @careeros/dashboard dev`.
+Чтобы запустить одно приложение: `pnpm --filter @careeros/backend dev`,
+`pnpm --filter @careeros/worker dev` или `pnpm --filter @careeros/dashboard dev`.
 
-Full details — demo scripts, database reset, environment variable loading rules,
-troubleshooting — are in [`docs/LOCAL_DEVELOPMENT.md`](docs/LOCAL_DEVELOPMENT.md).
+Подробности (демо-скрипты, сброс базы данных, правила загрузки переменных окружения,
+решение проблем) в [`docs/LOCAL_DEVELOPMENT.md`](docs/LOCAL_DEVELOPMENT.md).
 
-## Common Problems
+## Частые проблемы
 
-- **Port already in use** — another process is bound to 3000/3001/5432/6379/9000-9001/8025/5050. Find and stop it, or stop the other CareerOS stack (`docker compose down` / `pnpm docker:full:down`).
-- **`/health` or `/ready` return 503** — check `docker compose ps`; confirm `DATABASE_URL`/`REDIS_URL` in `.env` match the ports Docker actually exposes.
-- **Backend won't start: "Invalid environment variables"** — `JWT_SECRET` is missing or shorter than 32 characters, or `DATABASE_URL` is unset. Check `.env` exists and was copied from `.env.example`.
-- **Vacancy search runs but no AI analysis appears** — no `*_API_KEY` set for `AI_PROVIDER`, or the worker isn't running (`pnpm --filter @careeros/worker dev`, or check `docker compose -f docker-compose.full.yml ps worker`). Vacancies still persist; only the matching step is skipped/pending.
-- **Stale/invalid auth token after switching between `pnpm dev` and `docker:full`** — the two stacks use separate database volumes. The dashboard detects a dead token, clears it, and redirects to `/login` automatically.
+- **Порт уже занят**: другой процесс использует 3000/3001/5432/6379/9000-9001/8025/5050. Найдите и остановите его или остановите другой стек CareerOS (`docker compose down` / `pnpm docker:full:down`).
+- **`/health` или `/ready` возвращают 503**: проверьте `docker compose ps`; убедитесь, что `DATABASE_URL`/`REDIS_URL` в `.env` совпадают с портами, которые реально открывает Docker.
+- **Backend не стартует: "Invalid environment variables"**: `JWT_SECRET` отсутствует или короче 32 символов, либо не задан `DATABASE_URL`. Проверьте, что `.env` существует и скопирован из `.env.example`.
+- **Поиск вакансий работает, но ИИ-анализа нет**: для `AI_PROVIDER` не задан `*_API_KEY`, либо не запущен worker (`pnpm --filter @careeros/worker dev` или проверьте `docker compose -f docker-compose.full.yml ps worker`). Вакансии всё равно сохраняются; шаг сопоставления пропускается или остаётся в ожидании.
+- **Устаревший или недействительный токен после переключения между `pnpm dev` и `docker:full`**: два стека используют разные тома базы данных. Дашборд сам определяет нерабочий токен, очищает его и перенаправляет на `/login`.
 
-More troubleshooting (Prisma migration errors, Redis/Postgres connection issues) is in
-[`docs/LOCAL_DEVELOPMENT.md#troubleshooting`](docs/LOCAL_DEVELOPMENT.md#troubleshooting).
+Другие проблемы (ошибки миграций Prisma, проблемы подключения к Redis/Postgres)
+разобраны в [`docs/LOCAL_DEVELOPMENT.md#troubleshooting`](docs/LOCAL_DEVELOPMENT.md#troubleshooting).
 
-## Verification
+## Проверка
 
 ```bash
 pnpm turbo typecheck
@@ -184,10 +189,10 @@ pnpm turbo test
 pnpm turbo build
 ```
 
-363+ automated tests across the monorepo (unit, integration, contract, e2e),
-gated by Turborepo on every package.
+363+ автоматических тестов по всему монорепозиторию (unit, integration, contract,
+e2e), которые Turborepo запускает для каждого пакета.
 
-## Project Structure
+## Структура проекта
 
 ```
 career-os/
