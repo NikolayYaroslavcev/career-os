@@ -45,15 +45,13 @@ function clickViaPointer(el: HTMLElement): void {
 }
 
 // The AI action switcher (Analyze/Tailor/Cover Letter/Interview Prep/History)
-// is a Select rendered before any tab-specific content, so it's always the
-// first combobox in the DOM regardless of which tab is currently active.
+// is a tab list; only the active tab's panel is mounted.
 async function selectAiAction(name: string): Promise<void> {
-  clickViaPointer(screen.getAllByRole('combobox')[0] as HTMLElement);
-  clickViaPointer(await screen.findByRole('option', { name }));
+  clickViaPointer(await screen.findByRole('tab', { name }));
 }
 
 async function selectResume(name: string): Promise<void> {
-  clickViaPointer(screen.getAllByRole('combobox')[1] as HTMLElement);
+  clickViaPointer(screen.getByRole('combobox'));
   clickViaPointer(await screen.findByRole('option', { name }));
 }
 
@@ -101,7 +99,7 @@ describe('AiActionsPanel', () => {
     );
 
     await selectAiAction('Tailor Resume');
-    await waitFor(() => expect(screen.getAllByRole('combobox')).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByRole('combobox')).toHaveLength(1));
 
     await selectResume('My Resume');
     fireEvent.click(screen.getByRole('button', { name: 'Tailor Resume' }));
@@ -121,7 +119,7 @@ describe('AiActionsPanel', () => {
     );
 
     await selectAiAction('Tailor Resume');
-    await waitFor(() => expect(screen.getAllByRole('combobox')).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByRole('combobox')).toHaveLength(1));
 
     await selectResume('My Resume');
     fireEvent.click(screen.getByRole('button', { name: 'Tailor Resume' }));
@@ -151,7 +149,7 @@ describe('AiActionsPanel', () => {
     );
 
     await selectAiAction('Tailor Resume');
-    await waitFor(() => expect(screen.getAllByRole('combobox')).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByRole('combobox')).toHaveLength(1));
 
     await selectResume('My Resume');
     fireEvent.click(screen.getByRole('button', { name: 'Tailor Resume' }));

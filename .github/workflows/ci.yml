@@ -200,7 +200,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @careeros/database exec prisma generate
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm --filter @careeros/e2e exec playwright install --with-deps chromium
       - name: Build @careeros/database
         # The authenticatedAdminPage e2e fixture promotes a test user to
         # ADMIN by running apps/backend/src/scripts/promote-user-to-admin.ts
