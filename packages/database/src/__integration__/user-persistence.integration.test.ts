@@ -99,7 +99,6 @@ runIf('User persistence (real Postgres)', () => {
   });
 
   it('creates, looks up, and cascades away RefreshToken rows when the user is deleted', async () => {
-    const userRepository = new PrismaUserRepository();
     const refreshTokenRepository = new PrismaRefreshTokenRepository();
 
     const user = UserEntity.create({

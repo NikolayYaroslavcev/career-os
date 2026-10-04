@@ -11,7 +11,7 @@ import {
   PrismaProviderConfigRepository,
   PrismaUserVacancyInteractionRepository,
 } from '@careeros/database';
-import { createUserId, createVacancyId } from '@careeros/career';
+import { createUserId } from '@careeros/career';
 import { computePreferenceBoosts } from '../services/ranking/preference-boost.js';
 import { VacancyRankingService } from '../services/ranking/vacancy-ranking-service.js';
 
@@ -30,9 +30,9 @@ async function main(): Promise<void> {
   const activeProfile = profiles.find((p) => p.isActive);
   console.log('Active search profile:', activeProfile ? JSON.stringify({
     id: activeProfile.id, isActive: activeProfile.isActive,
-    keywords: (activeProfile as any).keywords,
-    technologies: (activeProfile as any).technologies,
-    remote: (activeProfile as any).remotePreference,
+    keywords: (activeProfile as unknown as Record<string, unknown>).keywords,
+    technologies: (activeProfile as unknown as Record<string, unknown>).technologies,
+    remote: (activeProfile as unknown as Record<string, unknown>).remotePreference,
   }, null, 2) : 'NONE');
   if (!activeProfile) return;
 
@@ -50,7 +50,8 @@ async function main(): Promise<void> {
     if (first) vacancyProviderTypes.set(v.id.toString(), first.providerId);
   }
 
-  const vacancyLookup = async (id: any) => vacancyRepo.findByIdForWorkspace(id, SEEKER_WS);
+  const vacancyLookup = async (id: Parameters<typeof vacancyRepo.findByIdForWorkspace>[0]) =>
+    vacancyRepo.findByIdForWorkspace(id, SEEKER_WS);
   const preferenceBoosts = await computePreferenceBoosts(createUserId(SEEKER_USER_ID), interactionRepo, vacancyLookup);
   const interactions = await interactionRepo.findByUserId(createUserId(SEEKER_USER_ID));
   const interactionData = interactions.map((i) => ({ action: i.action, vacancyId: i.vacancyId as string }));

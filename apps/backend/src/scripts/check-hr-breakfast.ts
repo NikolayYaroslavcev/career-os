@@ -32,7 +32,7 @@ async function main(): Promise<void> {
   });
   console.log(`\nVacancySource rows (telegram, hr_breakfast_emergency): ${sources.length}`);
   for (const s of sources) {
-    console.log(`- externalId=${s.externalId} sourceUrl=${s.sourceUrl} vacancyId=${s.vacancyId} workspaceId=${(s as any).workspaceId}`);
+    console.log(`- externalId=${s.externalId} sourceUrl=${s.sourceUrl} vacancyId=${s.vacancyId}`);
   }
 
   await prisma.$disconnect();

@@ -21,6 +21,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @careeros/database exec prisma generate
       - run: pnpm lint
 
   typecheck:
@@ -34,6 +35,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @careeros/database exec prisma generate
       - run: pnpm typecheck
 
   # Unit tests + the mocked-Prisma repository/mapper "integration" tests that
@@ -50,6 +52,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @careeros/database exec prisma generate
       - run: pnpm test
 
   # Fixture-based contract tests for every job-board provider (Jobicy,
@@ -67,6 +70,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @careeros/database exec prisma generate
       - run: pnpm test:contract
 
   build:
@@ -80,6 +84,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @careeros/database exec prisma generate
       - run: pnpm build
 
   # Non-blocking dead-code/dependency report (see docs/development/knip.md).
@@ -96,6 +101,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @careeros/database exec prisma generate
       - run: pnpm knip:ci
 
   # Fails the PR if schema.prisma and prisma/migrations/ have diverged, if a
@@ -133,6 +139,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @careeros/database exec prisma generate
       - run: pnpm --filter @careeros/database exec prisma migrate deploy
       - run: psql "$DATABASE_URL" -c "CREATE DATABASE careeros_shadow;"
         env:
@@ -171,6 +178,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @careeros/database exec prisma generate
       - run: pnpm build
       - run: pnpm --filter @careeros/database exec prisma migrate deploy
       - run: pnpm test:integration
@@ -191,6 +199,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @careeros/database exec prisma generate
       - run: pnpm exec playwright install --with-deps chromium
       - name: Build @careeros/database
         # The authenticatedAdminPage e2e fixture promotes a test user to

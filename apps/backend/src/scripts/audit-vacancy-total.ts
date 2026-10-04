@@ -5,7 +5,7 @@ import { prisma } from '@careeros/database';
 
 async function main(): Promise<void> {
   const totalVacancies = await prisma.vacancy.count();
-  const totalSources = await (prisma as any).vacancySource.count();
+  const totalSources = await prisma.vacancySource.count();
   console.log('Total Vacancy rows (all workspaces):', totalVacancies);
   console.log('Total VacancySource rows:', totalSources);
   await prisma.$disconnect();
